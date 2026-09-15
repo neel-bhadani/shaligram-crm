@@ -239,7 +239,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
     >
       <div class="flex shrink-0 items-center gap-2 border-b border-white/10 px-5 pb-4 pt-5 font-bold">
         <span class="block h-6 w-6 rounded border-2 border-teal-500"></span>
-        Leads CRM
+        Shaligram CRM
         <button class="ml-auto text-xl text-slate-400 lg:hidden" @click="open = false">&times;</button>
       </div>
 

@@ -75,7 +75,7 @@ const submitSignup = () => signup.post(route('signup.store'), {
                   bg-[radial-gradient(circle_at_30%_30%,rgba(15,118,110,.55),transparent_62%)]" />
 
       <div class="relative flex items-center gap-2.5 font-bold">
-        <span class="block h-6 w-6 rounded border-2 border-teal-500"></span> Leads CRM
+        <span class="block h-6 w-6 rounded border-2 border-teal-500"></span> Shaligram CRM
       </div>
 
       <div class="relative">

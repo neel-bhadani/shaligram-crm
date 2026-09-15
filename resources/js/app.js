@@ -8,7 +8,7 @@ import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import Toaster from '@/Components/Toaster.vue';
 import { toast, flashToasts } from '@/composables/useToast';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'Shaligram CRM';
 
 /*
  | Failures that produce no flash message of their own are announced here, once

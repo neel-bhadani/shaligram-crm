@@ -18,7 +18,7 @@ defineProps({ account: Object })
   <div class="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
     <div class="card w-full max-w-md p-7 sm:p-9">
       <div class="mb-6 flex items-center gap-2.5 font-bold">
-        <span class="block h-6 w-6 rounded border-2 border-teal-600"></span> Leads CRM
+        <span class="block h-6 w-6 rounded border-2 border-teal-600"></span> Shaligram CRM
       </div>
 
       <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 text-teal-700">
