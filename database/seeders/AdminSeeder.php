@@ -24,9 +24,9 @@ class AdminSeeder extends Seeder
         User::unguarded(fn () => User::firstOrCreate(
             ['email' => 'admin1@gmail.com'],
             [
-                'first_name' => 'Admin',
-                'last_name' => 'One',
-                'mobile_number' => '9512779295',
+                'first_name' => 'Sagar',
+                'last_name' => 'Moradia',
+                'mobile_number' => '8866834847',
                 'password' => '123456789',
                 'role' => 'admin',
                 'is_active' => true,
