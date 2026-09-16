@@ -343,22 +343,23 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
         page. From sm up they sit back on the title row and stick with it.
       -->
       <header
-        class="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-4 border-b
+        class="sticky top-0 z-20 flex flex-nowrap items-start justify-between gap-3 border-b
+               lg:flex-wrap lg:items-center lg:gap-4
                border-slate-200 bg-white px-4 py-4 transition-shadow duration-200 sm:px-7"
         :class="{ 'shadow-sm': scrolled, 'max-sm:border-transparent': !scrolled && $slots.actions }"
       >
-        <div class="flex min-w-0 items-center gap-3">
+        <div class="flex min-w-0 flex-1 items-start gap-3 lg:flex-initial lg:items-center">
           <button
-            class="rounded-lg border border-slate-200 p-2 lg:hidden"
+            class="shrink-0 rounded-lg border border-slate-200 p-2 lg:hidden"
             aria-label="Open menu" @click="open = true"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M3 12h18M3 18h18" />
             </svg>
           </button>
-          <div class="min-w-0">
-            <h1 class="truncate text-lg font-semibold tracking-tight text-slate-900">{{ title }}</h1>
-            <p v-if="subtitle" class="truncate text-sm text-slate-500">{{ subtitle }}</p>
+          <div class="min-w-0 flex-1 lg:flex-initial">
+            <h1 class="break-words text-lg font-semibold tracking-tight text-slate-900 lg:truncate">{{ title }}</h1>
+            <p v-if="subtitle" class="break-words text-sm text-slate-500 lg:truncate">{{ subtitle }}</p>
           </div>
         </div>
         <!--
@@ -367,7 +368,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
           An unread count that disappeared on a phone would be an unread count
           nobody acted on.
         -->
-        <div class="flex items-center gap-2">
+        <div class="flex shrink-0 flex-row-reverse items-center gap-2 lg:shrink lg:flex-row">
           <AlertBell />
           <div class="hidden flex-wrap items-center gap-2 sm:flex">
             <slot name="actions" />
