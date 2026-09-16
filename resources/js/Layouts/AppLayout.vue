@@ -10,6 +10,35 @@ const user = computed(() => page.props.auth.user)
 const open = ref(false)
 
 /*
+ | The avatar monogram, from the display name itself: first letter of the
+ | first word and first letter of the last word. "Sagar Moradia" -> SM.
+ | `Array.from` rather than `[0]` so a multi-byte character counts as one
+ | letter and is not split into surrogate halves.
+ */
+const initials = computed(() => {
+  const parts = (user.value?.name ?? '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  const first = Array.from(parts[0])[0] ?? ''
+  const last = parts.length > 1 ? Array.from(parts[parts.length - 1])[0] ?? '' : ''
+  return (first + last).toUpperCase()
+})
+
+/*
+ | admin -> Admin, salesperson -> Salesperson, telecaller -> Telecaller.
+ | Underscores and dashes (none today, but cheap insurance) become spaces and
+ | each word is capitalised, so a stored value can never leak as raw text.
+ */
+const roleLabel = computed(() => {
+  const role = (user.value?.role ?? '').trim()
+  if (!role) return ''
+  return role
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+})
+
+/*
  | Channel Partners, Users and Integrations are admin-only and are left out of
  | the array rather than rendered disabled — a greyed link advertises a page
  | somebody cannot reach. This is presentation only: `role:admin` on each route
@@ -314,16 +343,50 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
         </div>
       </nav>
 
-      <div class="shrink-0 px-5 py-4">
+      <div class="shrink-0 px-4 py-4">
         <div class="border-t border-white/10 pt-4">
-          <div class="text-sm font-semibold">{{ user.name }}</div>
-          <div class="text-xs capitalize text-slate-400">{{ user.role }}</div>
-          <!-- every role has a profile; it lives with the name it edits -->
-          <div class="mt-2 flex items-center gap-3 text-xs">
-            <Link :href="route('account.edit')"
-                  :class="route().current('account.*') ? 'text-white' : 'text-slate-400 hover:text-white'"
-                  @click="open = false">My profile</Link>
-            <button class="text-slate-400 hover:text-white" @click="logout">Sign out</button>
+          <!--
+            One compact row: avatar + name/role as the way into My profile, and the
+            sign-out button filling the square on the right. Name and role truncate
+            rather than wrap, so a long name can never widen or overflow the sidebar.
+          -->
+          <div class="flex items-center gap-3">
+            <Link
+              :href="route('account.edit')"
+              :title="user.name"
+              class="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 transition-colors
+                     hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+              :class="route().current('account.*') ? 'bg-white/5' : ''"
+              @click="open = false"
+            >
+              <span
+                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full
+                       bg-teal-700 text-sm font-semibold text-white"
+                aria-hidden="true"
+              >{{ initials }}</span>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-semibold leading-tight text-white">{{ user.name }}</span>
+                <span class="block truncate text-xs leading-tight text-slate-400">{{ roleLabel }}</span>
+              </span>
+            </Link>
+
+            <!-- Sign out. The icon is the only content, so the button itself is named. -->
+            <button
+              type="button"
+              title="Sign out"
+              aria-label="Sign out"
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400
+                     transition-colors hover:bg-white/5 hover:text-white
+                     focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+              @click="logout"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="M16 17l5-5-5-5" />
+                <path d="M21 12H9" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>
