@@ -1,12 +1,11 @@
 <script setup>
 /*
- | The leads report: one page, four groupings.
+ | The leads report: one page, shared groupings.
  |
  | Every "Leads · By …" link in the sidebar lands here with a different `group`
- | in the query string. The page does not branch on which one — the server sends
- | rows of the same shape whatever the dimension is, and the only things that
- | change here are the word in the first column heading and which filter a
- | drill-through hands to the Leads page.
+ | in the query string. The server sends rows of the same shape for each
+ | dimension. Channel partners get a summarized chart; the table and metrics
+ | always use every row, and drill-through uses the dimension's lead filter.
  |
  | Two populations are on screen at once and the notes say so, because they are
  | measured over the same window through different columns:
@@ -27,6 +26,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import ReportFilterBar from '@/Components/ReportFilterBar.vue'
 import ReportKpis from '@/Components/ReportKpis.vue'
 import ReportChart from '@/Components/ReportChart.vue'
+import ChannelPartnerChart from '@/Components/ChannelPartnerChart.vue'
 import ReportTable from '@/Components/ReportTable.vue'
 import { useReportFilters } from '@/composables/useReportFilters.js'
 import { withoutEmpty } from '@/lib/withoutEmpty.js'
@@ -114,7 +114,8 @@ const columns = computed(() => [
     <ReportKpis :kpis="kpis" />
 
     <div class="mb-5">
-      <ReportChart :rows="rows" :title="`Leads by ${dimension.toLowerCase()}`"
+      <ChannelPartnerChart v-if="filters.group === 'channel_partner'" :rows="rows" :period="range.label" />
+      <ReportChart v-else :rows="rows" :title="`Leads by ${dimension.toLowerCase()}`"
                    metric="Leads"
                    :colors="filters.group === 'stage' ? options.stageColors : null"
                    :note="`Leads created ${range.label}, zero-filled so an empty ${dimension.toLowerCase()} still shows.`" />

@@ -98,7 +98,7 @@ const when = iso => {
 
     <div
       v-if="open"
-      class="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-xl border border-slate-200
+      class="absolute right-0 top-11 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200
              bg-white shadow-xl sm:w-96"
     >
       <div class="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
