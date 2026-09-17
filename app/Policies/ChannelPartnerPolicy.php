@@ -15,8 +15,11 @@ use App\Models\User;
  * telecaller reads all day is not an admin privilege — and so is MERGING:
  * finding the duplicate and putting it back together is the other half of the
  * same cleanup. update() and merge() therefore allow any authenticated user.
- * Index, update and merge sit outside the `role:admin` group for the same
- * reason — see the channel-partners block in routes/web.php.
+ * CREATING a deliberate row from the roster page is the same crowd too —
+ * anyone who can read the roster can add a partner to it, and store() keeps
+ * every validation rule the inline door keeps. Index, create, update and merge
+ * sit outside the `role:admin` group for the same reason — see the
+ * channel-partners block in routes/web.php.
  *
  * DELETE is where the asymmetry lands. It is refused by role:admin on the
  * route group, and destroy() has no request of its own to say it again, so the
@@ -37,6 +40,11 @@ class ChannelPartnerPolicy
     public function view(User $user, ChannelPartner $partner): bool
     {
         return true;   // the roster is one list; nothing on it is per-user
+    }
+
+    public function create(User $user): bool
+    {
+        return true;   // any authenticated user may add a partner from the roster
     }
 
     public function update(User $user, ChannelPartner $partner): bool

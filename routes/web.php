@@ -154,14 +154,11 @@ Route::middleware(['auth'])->group(function () {
     /* ---------------- channel partners ---------------- */
 
     /*
-     | CREATING a partner is part of creating a lead, so it is gated like one.
-     |
-     | This is the only route in the application that writes a channel partner
-     | into existence — there is no POST in the admin group below, and no Add
-     | button on the Channel Partners page. A partner is added from inside the
-     | Add lead modal, at the moment somebody is logging the lead that came
-     | through them, which is the only moment anybody actually knows the
-     | broker's name and number.
+     | CREATING a partner mid-call is part of creating a lead, so it is gated
+     | like one. This is the lead modal's inline four-field form — quickStore,
+     | the route below. A deliberate, at-a-desk partner typed from the roster
+     | page goes through the store() route instead (see the block after merge),
+     | which is open to every signed-in role.
      |
      | No `role:admin`, and it must not have one: a salesperson logging a broker
      | lead has to be able to name the broker. QuickChannelPartnerRequest
@@ -231,6 +228,28 @@ Route::middleware(['auth'])->group(function () {
      */
     Route::post('/channel-partners/{partner}/merge', [ChannelPartnerController::class, 'merge'])
         ->name('channel-partners.merge');
+
+    /*
+     | CREATING an un-attributed partner is open to every signed-in role too,
+     | on the same door as reading and editing. Two doors now write this table:
+     | THIS one, the Add button on the roster page — a deliberate, at-a-desk
+     | partner entered by hand, with the contact person, email and address the
+     | four-field inline form skips — and the quickStore above, the mid-call
+     | broker who arrives beside a lead. Both sit on the outer `auth` group,
+     | both keep the same validation, and ChannelPartnerPolicy::create and the
+     | request's own authorize() say so again in the controller.
+     |
+     | The GET is the create form. There is no page of its own — the form is
+     | the same modal the page's Edit button opens, so this renders the roster
+     | with the modal already up (`adding` prop), exactly as if the Add button
+     | had been clicked. The POST is the form's submit, an ordinary Inertia
+     | request like every other write: validation errors come back to the modal
+     | and a success redirects to the roster.
+     */
+    Route::get('/channel-partners/create', [ChannelPartnerController::class, 'create'])
+        ->name('channel-partners.create');
+    Route::post('/channel-partners', [ChannelPartnerController::class, 'store'])
+        ->name('channel-partners.store');
 
     /*
      | DELETE stays admin-only, on the group rather than on the route, for

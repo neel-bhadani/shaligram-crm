@@ -235,6 +235,105 @@ class ChannelPartnerAccessTest extends TestCase
         $this->assertNotSoftDeleted('channel_partners', ['id' => $partner->id]);
     }
 
+    /* ---------------- creating ---------------- */
+
+    public function test_an_admin_can_open_the_create_form(): void
+    {
+        $this->assertTrue(
+            $this->page('/channel-partners/create', [], $this->admin)['adding'],
+            'the create-form visit renders the roster with the Add modal already up',
+        );
+    }
+
+    public function test_a_non_admin_can_open_the_create_form(): void
+    {
+        foreach ([$this->alice, $this->suresh] as $user) {
+            $this->assertTrue($this->page('/channel-partners/create', [], $user)['adding']);
+        }
+    }
+
+    public function test_an_unauthenticated_user_cannot_open_the_create_form(): void
+    {
+        $this->get('/channel-partners/create')->assertRedirect(route('login'));
+    }
+
+    public function test_an_admin_can_create_a_channel_partner(): void
+    {
+        $this->actingAs($this->admin)
+            ->post('/channel-partners', $this->payload())
+            ->assertRedirect(route('channel-partners.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('channel_partners', ['name' => 'Shreeji Realty', 'type' => 'firm']);
+    }
+
+    public function test_a_non_admin_can_create_a_channel_partner(): void
+    {
+        foreach ([$this->alice, $this->suresh] as $user) {
+            $this->actingAs($user)
+                ->post('/channel-partners', $this->payload([
+                    'type' => 'broker', 'name' => "Broker {$user->id}",
+                ]))
+                ->assertRedirect(route('channel-partners.index'))
+                ->assertSessionHasNoErrors();
+        }
+
+        $this->assertSame(2, ChannelPartner::count());
+    }
+
+    public function test_an_unauthenticated_user_cannot_create_a_channel_partner(): void
+    {
+        $this->post('/channel-partners', $this->payload())
+            ->assertRedirect(route('login'));
+
+        $this->assertSame(0, ChannelPartner::count());
+    }
+
+    /**
+     * The route is open, not the rules. A non-admin's create is validated the
+     * way an admin's is — the same request, the same shape rules — so a bad
+     * value is refused rather than silently saved.
+     */
+    public function test_create_validation_still_guards_a_non_admin(): void
+    {
+        $this->actingAs($this->alice)
+            ->post('/channel-partners', [
+                'name' => '', 'type' => 'broker', 'parent_id' => '', 'phone' => '1',
+            ])
+            ->assertSessionHasErrors(['name', 'phone']);
+
+        $this->assertSame(0, ChannelPartner::count());
+    }
+
+    /**
+     * The duplicate-name rule is the same door the quick form uses, and a
+     * non-admin create cannot walk past it: the row already exists, so the
+     * create is refused and the roster does not grow.
+     */
+    public function test_duplicate_validation_still_guards_a_non_admin_create(): void
+    {
+        $this->partner('firm', 'Shreeji Realty');
+
+        $this->actingAs($this->alice)
+            ->post('/channel-partners', $this->payload(['type' => 'firm', 'name' => 'shreeji realty']))
+            ->assertSessionHasErrors('name');
+
+        $this->assertSame(1, ChannelPartner::count());
+    }
+
+    /**
+     * Widening the channel-partner door must not widen any other door: every
+     * admin-only route stays behind role:admin, whatever a non-admin types.
+     */
+    public function test_no_admin_routes_open_up_for_a_non_admin(): void
+    {
+        foreach ([$this->alice, $this->suresh] as $user) {
+            foreach (['/users', '/projects', '/pipeline', '/automation', '/integrations'] as $url) {
+                $this->actingAs($user)->get($url)->assertForbidden();
+            }
+        }
+    }
+
     /* ---------------- deleting ---------------- */
 
     public function test_an_admin_can_delete_a_channel_partner(): void
@@ -281,6 +380,18 @@ class ChannelPartnerAccessTest extends TestCase
             'type'  => $type,
             'phone' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function payload(array $overrides = []): array
+    {
+        return $overrides + [
+            'name'      => 'Shreeji Realty',
+            'type'      => 'firm',
+            'parent_id' => '',
+            'phone'     => '9876543210',
+            'is_active' => true,
+        ];
     }
 
     private function user(string $role, string $name): User

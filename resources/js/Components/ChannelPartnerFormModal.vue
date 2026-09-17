@@ -5,22 +5,23 @@ import Modal from './Modal.vue'
 import FormField from './FormField.vue'
 
 /*
- | EDITING a channel partner. Not adding one — there is no create path through
- | this modal, no Add button on the page behind it and no POST route to its
- | controller. A partner is created from inside the Add lead modal, four fields
- | wide, by whoever is logging the lead; this is where the fields that form
- | deliberately skipped get filled in afterwards.
+ | EDITING a channel partner, or ADDING one — the same modal, the same fields,
+ | the same rule-set, one modal on the roster page.
  |
- | So `partner` is always present, the title never changes, and the submit is
- | always a PUT. A modal that served both would carry a create branch that
- | nothing could ever reach, which is the kind of dead path somebody later wires
- | a button to.
+ | `partner` is what says which. Present, the title reads "Edit channel
+ | partner", the form is loaded from the row and the submit is a PUT. Absent
+ | (created by the page's Add button or the `adding` prop), it reads "Add
+ | channel partner", the form starts blank and the submit is a POST to
+ | channel-partners.store. A modal that served only one of those would hide a
+ | dead branch; serving both is what keeps one partner form from drifting into
+ | two.
  |
  | One field is conditional and it is the whole of the hierarchy: Parent firm
  | appears only for a broker. A firm is the top of the tree and has no parent,
  | and a broker's parent may only be a firm, which is what caps the nesting at
- | one level. ChannelPartnerRequest refuses every shape this hides, so the
- | conditional is an explanation rather than the guarantee.
+ | one level. ChannelPartnerRequest refuses every shape this hides, on the
+ | create POST exactly as on the edit PUT, so the conditional is an explanation
+ | rather than the guarantee.
  */
 const props = defineProps({ show: Boolean, partner: Object, options: Object })
 const emit = defineEmits(['close'])
@@ -33,10 +34,19 @@ const blank = {
 
 const form = useForm({ ...blank })
 
+/** Absent `partner` is the create branch — the Add button opens the modal with editing = null. */
+const isAdd = computed(() => !props.partner)
+
 watch(() => props.show, v => {
   form.clearErrors()
 
-  if (!v || !props.partner) return
+  if (!v) return
+
+  // blank first, so a create that follows an edit (or vice versa) never
+  // carries a row's stale values into another mode
+  Object.assign(form, { ...blank })
+
+  if (!props.partner) return
 
   Object.assign(form, {
     ...blank,
@@ -85,14 +95,26 @@ const blockedDemotion = computed(() =>
 const firms = computed(() =>
   props.options.firms.filter(f => f.id !== props.partner?.id))
 
-const submit = () => form.put(route('channel-partners.update', props.partner.id), {
-  preserveScroll: true,
-  onSuccess: () => emit('close'),
-})
+const submit = () => {
+  const onSuccess = () => emit('close')
+
+  if (props.partner) {
+    form.put(route('channel-partners.update', props.partner.id), {
+      preserveScroll: true,
+      onSuccess,
+    })
+  } else {
+    form.post(route('channel-partners.store'), {
+      preserveScroll: true,
+      onSuccess,
+    })
+  }
+}
 </script>
 
 <template>
-  <Modal :show="show" title="Edit channel partner" @close="emit('close')">
+  <Modal :show="show" :title="isAdd ? 'Add channel partner' : 'Edit channel partner'"
+         @close="emit('close')">
 
     <div class="grid gap-4 sm:grid-cols-2">
       <FormField label="Type" required
@@ -173,7 +195,7 @@ const submit = () => form.put(route('channel-partners.update', props.partner.id)
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Cancel</button>
       <button class="btn flex-1 sm:flex-none" :disabled="form.processing" @click="submit">
-        {{ form.processing ? 'Saving…' : 'Save changes' }}
+        {{ form.processing ? 'Saving…' : isAdd ? 'Add channel partner' : 'Save changes' }}
       </button>
     </template>
   </Modal>

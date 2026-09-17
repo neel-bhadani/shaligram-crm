@@ -92,14 +92,31 @@ class ChannelPartnerTest extends TestCase
     }
 
     /**
-     * The page manages partners; it does not make them. There is no route
-     * behind an Add button, which is what stops one being added back.
+     * The page manages partners and, since the Add button landed, makes them:
+     * POST /channel-partners is the store the Add modal submits to, open to
+     * every signed-in role with the same rule-set as the quick door.
      */
-    public function test_there_is_no_create_route_on_the_page(): void
+    public function test_a_partner_can_be_created_from_the_page(): void
     {
         $this->actingAs($this->admin)
-            ->post('/channel-partners', $this->payload())
-            ->assertStatus(405);
+            ->post('/channel-partners', $this->payload([
+                'type'           => 'firm',
+                'name'           => 'Orchid Estates',
+                'contact_person' => 'Nita',
+                'email'          => 'nita@orchid.example.test',
+                'address'        => 'MG Road',
+            ]))
+            ->assertRedirect(route('channel-partners.index'))
+            ->assertSessionHasNoErrors();
+
+        $partner = ChannelPartner::firstOrFail();
+
+        $this->assertSame('Orchid Estates', $partner->name);
+        $this->assertSame('firm', $partner->type);
+        $this->assertSame('Nita', $partner->contact_person);
+        $this->assertSame('nita@orchid.example.test', $partner->email);
+        $this->assertSame('MG Road', $partner->address);
+        $this->assertTrue($partner->is_active);
     }
 
     public function test_a_deactivated_admin_can_read_edit_and_merge_but_not_delete(): void

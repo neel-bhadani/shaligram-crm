@@ -80,6 +80,46 @@ class ChannelPartnerController extends Controller
         // somebody moving the route back into the group later
         $this->authorize('viewAny', ChannelPartner::class);
 
+        return $this->page($request);
+    }
+
+    /**
+     * The create form — the roster page with the Add modal already up.
+     *
+     * There is no page of its own: the Add button and the Edit button open the
+     * same modal, so this renders the same Inertia page with `adding` set, which
+     * is how the modal knows to start blank and POST rather than PUT. Open to
+     * every signed-in role, like reading the roster; the route sits on the
+     * `auth` group, not the admin one.
+     */
+    public function create(Request $request)
+    {
+        // creating is open to every signed-in role, on the same `auth` group as
+        // the page itself; this is the second lock, the one that survives
+        // somebody moving the route back into the admin group
+        $this->authorize('create', ChannelPartner::class);
+
+        return $this->page($request, true);
+    }
+
+    public function store(ChannelPartnerRequest $request)
+    {
+        // creating is open to every signed-in role, on the same `auth` group as
+        // the page itself; this is the second lock, the one that survives
+        // somebody moving the route back into the admin group. The validation
+        // is the same shape-guard the update and the quick door use, so a
+        // duplicate name or a bad hierarchy is refused here exactly as there.
+        $this->authorize('create', ChannelPartner::class);
+
+        ChannelPartner::create($request->channelPartnerAttributes());
+
+        return redirect()->route('channel-partners.index')
+            ->with('success', 'Channel partner added.');
+    }
+
+    /** The roster, as the page draws it. `adding` opens the create modal. */
+    private function page(Request $request, bool $adding = false)
+    {
         $user    = $request->user();
         $filters = $this->filters($request);
 
@@ -221,6 +261,7 @@ class ChannelPartnerController extends Controller
                         'type'  => $p->type,
                     ]),
             ],
+            'adding' => $adding,
         ]);
     }
 

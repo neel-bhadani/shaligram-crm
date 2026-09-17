@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ChannelPartnerFormModal from '@/Components/ChannelPartnerFormModal.vue'
@@ -21,19 +21,19 @@ import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisi
  | everyone, Delete for an admin — which is presentation matching
  | already-working routes.
  |
- | THERE IS NO ADD BUTTON, and its absence is the design. A partner is created
- | from inside the Add lead modal, at the moment somebody is logging the lead
- | that came through them — that is the only moment anybody actually knows the
- | broker's name and number, and there is no POST route to this page's
- | controller at all. A second Add here would produce rows an admin typed from
- | memory a day later and never attributed a lead to. The notice above the table
- | says so, because a management screen with no way to add anything reads as a
- | missing button unless it explains itself.
+ | THERE IS AN ADD BUTTON, in the header above, for every signed-in role — the
+ | same crowd that reads, edits and merges. A partner is usually created from
+ | inside the Add lead modal, at the moment somebody is logging the lead that
+ | came through them, because that is the only moment anybody actually knows the
+ | broker's name and number; the button here is for a deliberate at-a-desk row,
+ | entered with the contact person, email and address the four-field inline form
+ | skips. Both doors write through one rule-set (ValidatesChannelPartner), so a
+ | duplicate name is refused from here exactly as it is from the lead modal.
  |
- | What this page is for instead: filling in the details the four-field inline
- | form deliberately did not ask for, switching partners off, deleting them, and
- | MERGING the duplicates that creating rows mid-call inevitably produces. That
- | last one is not optional — see MergeChannelPartnerDialog.
+ | What this page is for besides adding: filling in the details the four-field
+ | inline form deliberately did not ask for, switching partners off, deleting
+ | them, and MERGING the duplicates that creating rows mid-call inevitably
+ | produces. That last one is not optional — see MergeChannelPartnerDialog.
  |
  | FIRMS AND BROKERS ARE NOT DRAWN AS A TREE, and that was a choice. A firm
  | heading with its brokers indented under it reads beautifully on a whiteboard
@@ -54,7 +54,7 @@ import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisi
  | report under Reports · Leads · By channel partner is the same number with the
  | site visits, bookings and conversion beside it.
  */
-const props = defineProps({ partners: Object, filters: Object, options: Object })
+const props = defineProps({ partners: Object, filters: Object, options: Object, adding: Boolean })
 
 const page = usePage()
 const isAdmin = computed(() => page.props.auth.user?.role === 'admin')
@@ -111,7 +111,8 @@ const editing = ref(null)
 const deleting = ref(null)
 const merging = ref(null)
 
-// no openAdd: this page does not create partners — see the note at the top
+// the same modal serves both: editing passes the row, adding passes null
+const openAdd = () => { editing.value = null; formOpen.value = true }
 const openEdit = p => { editing.value = p; formOpen.value = true }
 const openDelete = p => { deleting.value = p }
 const openMerge = p => { merging.value = p }
@@ -136,23 +137,29 @@ const lockReason = p =>
     ? `${p.active_brokers_count} active broker${p.active_brokers_count === 1 ? '' : 's'} `
       + 'are filed under this firm. Reassign or deactivate them first.'
     : ''
+
+/*
+ | GET /channel-partners/create renders this page with `adding` true, so the
+ | modal is already up on arrival — the same as clicking the Add button.
+ */
+onMounted(() => { if (props.adding) openAdd() })
 </script>
 
 <template>
   <Head title="Channel Partners" />
 
   <AppLayout title="Channel Partners" subtitle="The firms and brokers your leads come through">
-    <!--
-      No #actions slot. Creation is not available from this page — the header
-      would otherwise carry an Add button that has no route behind it.
-    -->
+    <template #actions>
+      <button class="btn w-full sm:w-auto" @click="openAdd">Add channel partner</button>
+    </template>
 
     <p class="info-box mb-4">
-      Partners are added while logging a lead, not from here. On the Leads page, choose
+      A partner is usually added while logging a lead — on the Leads page, choose
       <span class="font-semibold">Broker</span> as the source and use
-      <span class="font-semibold">Add new partner</span> in the picker — the person taking
-      the enquiry is the one who knows the broker's name and number. This page is where
-      those rows are then completed, merged and retired.
+      <span class="font-semibold">Add new partner</span> in the picker, where the person
+      taking the enquiry knows the broker's name and number. You can also add one directly
+      from here with the button above; this page is where rows are then completed, merged
+      and retired.
     </p>
 
     <div class="card overflow-hidden">
@@ -196,8 +203,8 @@ const lockReason = p =>
 
       <div v-if="!partners.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
         <p class="mb-1 font-semibold text-slate-700">No channel partners match</p>
-        Try clearing the filters. New partners appear here once somebody adds one while
-        logging a broker lead.
+        Try clearing the filters. New partners appear here once somebody adds one —
+        from the button above, or while logging a broker lead.
       </div>
 
       <!-- table on desktop, cards on mobile: the same pattern as Users and To-do -->
