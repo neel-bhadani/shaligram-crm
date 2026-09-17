@@ -23,11 +23,23 @@ const emit = defineEmits(['close'])
 const stageOptions = computed(() =>
   pickable(props.options.stages, props.options.activeStages, props.todo?.lead?.stage))
 
-const form = useForm({
+/*
+ | The form a fresh open starts from, captured once.
+ |
+ | Inertia rewrites a useForm's "defaults" to whatever was submitted the last
+ | time the form saved successfully, so a bare reset() on open would bring
+ | back the PREVIOUS follow-up's answers — its "What happened?", its next
+ | date, its remarks for the next call — instead of a clean form. Restore
+ | these pristine defaults first, then reset, so a reset can only ever mean
+ | "a blank call record" and never "whatever the last save happened to be".
+ */
+const blank = {
   remarks: '', stage: 'connected',
   follow_up_type: 'call', follow_up_at: '', follow_up_remarks: '',
   reason: '', booked_unit: '', booking_date: '',
-})
+}
+
+const form = useForm({ ...blank })
 
 // the past-date guard on the follow-up field; the message matches the one
 // CompleteTodoRequest sends back, so a bypassed `min` reads the same either way
@@ -84,7 +96,9 @@ watch(() => props.show, v => {
   clearConflict()
 
   if (!v) return
-  form.reset()
+
+  form.defaults(blank)   // undo Inertia's post-save rewrite of the defaults
+  form.reset()           // ... so this now means a truly blank form
   form.clearErrors()
   // now, as of this opening — not as of whenever the page was loaded
   refreshMinAt()

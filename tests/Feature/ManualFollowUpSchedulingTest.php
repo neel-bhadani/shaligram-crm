@@ -156,6 +156,36 @@ class ManualFollowUpSchedulingTest extends TestCase
         $this->assertSame('completed', $todo->fresh()->status);
     }
 
+    /**
+     * The save is scoped to one task. Completing Follow-up A must leave
+     * Follow-up B's row exactly where it was — the stale-form bug is
+     * frontend state, but the wall between the two rows is worth guarding
+     * from the server side too.
+     */
+    public function test_completing_one_follow_up_leaves_another_untouched(): void
+    {
+        $a = $this->openLead();
+        $b = $this->openLead();
+
+        $this->actingAs($this->admin)
+            ->post("/todos/{$a->id}/complete", [
+                'stage'             => 'details_shared',
+                'remarks'           => 'A TEST VALUE',
+                'follow_up_type'    => 'call',
+                'follow_up_at'      => '2026-09-06 20:30',
+                'follow_up_remarks' => 'A NEXT REMARK',
+            ])->assertRedirect()->assertSessionHasNoErrors();
+
+        // A changed as expected: closed, with the remark the form sent
+        $this->assertSame('completed', $a->fresh()->status);
+        $this->assertSame('A TEST VALUE', $a->fresh()->remarks);
+
+        // B untouched: still pending, still carrying its own values
+        $this->assertSame('pending', $b->fresh()->status);
+        $this->assertSame($b->scheduled_at->toDateTimeString(), $b->fresh()->scheduled_at->toDateTimeString());
+        $this->assertSame($b->remarks, $b->fresh()->remarks);
+    }
+
     public function test_logging_a_call_that_leaves_the_lead_open_demands_a_date(): void
     {
         $todo = $this->openLead();
