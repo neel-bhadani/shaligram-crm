@@ -21,16 +21,19 @@ use Illuminate\Validation\Validator;
  * row being merged away, and it is the one that ends up soft deleted. The
  * source is the bound {partner}; the target is what this request names.
  *
- * Admin only — the route sits inside the `role:admin` group and authorize()
- * says it again. Reassigning every lead that came through a broker is the one
- * operation on this table that rewrites attribution in bulk, which is the
- * number the whole feature exists to produce.
+ * Every signed-in role may start a merge — the same crowd that reads the
+ * roster, finds the duplicate, and filed the leads that made it one. The route
+ * this serves sits on the `auth` group rather than the admin one, and this
+ * second lock says the same thing, so a route moved out of that group, or
+ * added without the middleware, cannot change who reaches here either. The
+ * shape rules below are the real gate: they are what stops a bad merge
+ * whatever role asks for it.
  */
 class MergeChannelPartnerRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return (bool) $this->user()?->isAdmin();
+        return true;
     }
 
     public function rules(): array

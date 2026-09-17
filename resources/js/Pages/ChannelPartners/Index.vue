@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { Head, Link } from '@inertiajs/vue3'
+import { Head, Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ChannelPartnerFormModal from '@/Components/ChannelPartnerFormModal.vue'
 import DeleteChannelPartnerDialog from '@/Components/DeleteChannelPartnerDialog.vue'
@@ -8,9 +8,18 @@ import MergeChannelPartnerDialog from '@/Components/MergeChannelPartnerDialog.vu
 import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisit.js'
 
 /*
- | The channel partner roster, admin only. `role:admin` on the route group is
- | what enforces that — nothing on this page is a permission check, it is all
- | presentation of one the server already made.
+ | The channel partner roster. Reading it is open to every signed-in role —
+ | `auth` on the route group is the whole door, and ChannelPartnerPolicy::viewAny
+ | says it again — and editing and merging are the same crowd: the PUT this
+ | page's Edit button saves to and the POST /merge this page's Merge button
+ | sends both sit on the same group, with ChannelPartnerPolicy::update and
+ | ::merge repeating them. Only delete stays admin-only, and the boundary is
+ | the route, not the button: DELETE is behind `role:admin` in routes/web.php,
+ | destroy() is double-locked through ChannelPartnerPolicy::delete, and a
+ | non-admin who types that request directly gets a 403 before anything
+ | changes. The buttons below are drawn accordingly — Edit and Merge for
+ | everyone, Delete for an admin — which is presentation matching
+ | already-working routes.
  |
  | THERE IS NO ADD BUTTON, and its absence is the design. A partner is created
  | from inside the Add lead modal, at the moment somebody is logging the lead
@@ -46,6 +55,9 @@ import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisi
  | site visits, bookings and conversion beside it.
  */
 const props = defineProps({ partners: Object, filters: Object, options: Object })
+
+const page = usePage()
+const isAdmin = computed(() => page.props.auth.user?.role === 'admin')
 
 const f = reactive({
   search: props.filters.search ?? '',
@@ -240,12 +252,20 @@ const lockReason = p =>
                  business came through this partner, and how much of it closed -->
             <td class="px-4 py-3 text-right font-semibold tabular-nums">{{ p.leads_count }}</td>
             <td class="px-4 py-3 text-right font-semibold tabular-nums">{{ p.bookings_count }}</td>
+            <!--
+              Edit and merge are everyone's: the PUT and the POST /merge they
+              save to sit on the same `auth` group as this page, so whatever
+              label a telecaller reads they may also fix, and the duplicate
+              they find they may put back together. Delete is admin-only — its
+              route is behind `role:admin`, and a direct DELETE is refused
+              there, whichever way the button is drawn.
+            -->
             <td class="px-4 py-3">
               <div class="flex items-center gap-1.5">
                 <button class="btn-xs" @click="openEdit(p)">Edit</button>
                 <!-- the duplicate cleanup; every partner can be merged away -->
                 <button class="btn-xs" @click="openMerge(p)">Merge</button>
-                <button class="btn-xs disabled:cursor-not-allowed disabled:opacity-40"
+                <button v-if="isAdmin" class="btn-xs disabled:cursor-not-allowed disabled:opacity-40"
                         :disabled="!!lockReason(p)" :title="lockReason(p)"
                         @click="openDelete(p)">Delete</button>
               </div>
@@ -296,7 +316,7 @@ const lockReason = p =>
           <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
             <button class="btn-xs flex-1" @click="openEdit(p)">Edit</button>
             <button class="btn-xs flex-1" @click="openMerge(p)">Merge</button>
-            <button class="btn-xs flex-1 disabled:cursor-not-allowed disabled:opacity-40"
+            <button v-if="isAdmin" class="btn-xs flex-1 disabled:cursor-not-allowed disabled:opacity-40"
                     :disabled="!!lockReason(p)" :title="lockReason(p)"
                     @click="openDelete(p)">Delete</button>
           </div>

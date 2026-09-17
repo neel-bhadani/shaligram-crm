@@ -14,10 +14,14 @@ use Tests\TestCase;
 /**
  * Channel partners: the roster, the link from a lead, and the report.
  *
- * Four things are being protected here and they are not the same thing:
+ * Five things are being protected here and they are not the same thing:
  *
- *   the door       every route is admin-only, and typing the URL is not a way
- *                  around it.
+ *   the door       READING, EDITING and MERGING are open to every signed-in
+ *                  role — GET (index), PUT (update) and POST /merge sit on the
+ *                  `auth` group, not the admin one — while DELETE stays
+ *                  admin-only: its route is behind `role:admin`, and destroy()
+ *                  says it again through ChannelPartnerPolicy::delete. Typing
+ *                  the URL is neither a way in nor a way around.
  *
  *   the shapes     one level of nesting, always. A broker's parent is a firm, a
  *                  firm has no parent, and nothing is its own parent. None of
@@ -31,6 +35,8 @@ use Tests\TestCase;
  *   the arithmetic the report's channel-partner grouping has to sum to the same
  *                  dashboard cards every other grouping sums to, or one of the
  *                  two is lying.
+ *
+ * The read-for-everyone part has its own home in ChannelPartnerAccessTest.
  *
  * @see \App\Http\Controllers\ChannelPartnerController
  * @see \App\Http\Requests\ChannelPartnerRequest
@@ -56,40 +62,72 @@ class ChannelPartnerTest extends TestCase
 
     /* ---------------- the door ---------------- */
 
-    public function test_a_non_admin_hitting_the_channel_partner_urls_directly_gets_403(): void
+    public function test_every_role_can_read_edit_and_merge_but_not_delete(): void
     {
-        $partner = $this->partner('broker', 'Ravi Kumar');
-
         foreach (['telecaller', 'salesperson'] as $role) {
-            $staff = $this->user($role, ucfirst($role) . 'X');
+            $staff  = $this->user($role, ucfirst($role) . 'X');
+            $broker = $this->partner('broker', "Ravi {$role}");
+            $firm   = $this->partner('firm', "Target Firm {$role}");
 
-            $this->actingAs($staff)->get('/channel-partners')->assertForbidden();
-            $this->actingAs($staff)->put("/channel-partners/{$partner->id}", [])->assertForbidden();
-            $this->actingAs($staff)->delete("/channel-partners/{$partner->id}")->assertForbidden();
+            // reading, editing and merging are open to every signed-in role
+            $this->actingAs($staff)->get('/channel-partners')->assertOk();
             $this->actingAs($staff)
-                ->post("/channel-partners/{$partner->id}/merge", ['target_id' => $partner->id])
-                ->assertForbidden();
-        }
+                ->put("/channel-partners/{$broker->id}", $this->payload([
+                    'type'           => 'broker',
+                    'name'           => "Ravi {$role}",
+                    'contact_person' => $role,
+                ]))
+                ->assertSessionHasNoErrors();
+            $this->actingAs($staff)
+                ->post("/channel-partners/{$broker->id}/merge", ['target_id' => $firm->id])
+                ->assertSessionHasNoErrors();
 
-        $this->actingAs($this->admin)->get('/channel-partners')->assertOk();
+            $this->assertSoftDeleted('channel_partners', ['id' => $broker->id]);
+            $this->assertNotSoftDeleted('channel_partners', ['id' => $firm->id]);
+
+            // deleting stays admin-only: no DELETE gets past it
+            $this->actingAs($staff)->delete("/channel-partners/{$firm->id}")->assertForbidden();
+            $this->assertNotSoftDeleted('channel_partners', ['id' => $firm->id]);
+        }
     }
 
     /**
      * The page manages partners; it does not make them. There is no route
      * behind an Add button, which is what stops one being added back.
      */
-    public function test_there_is_no_create_route_on_the_admin_page(): void
+    public function test_there_is_no_create_route_on_the_page(): void
     {
         $this->actingAs($this->admin)
             ->post('/channel-partners', $this->payload())
             ->assertStatus(405);
     }
 
-    public function test_a_deactivated_admin_cannot_reach_the_roster(): void
+    public function test_a_deactivated_admin_can_read_edit_and_merge_but_not_delete(): void
     {
+        $broker = $this->partner('broker', 'Ravi Kumar');
+        $firm   = $this->partner('firm', 'Shreeji Realty');
         $this->admin->update(['is_active' => false]);
 
-        $this->actingAs($this->admin)->get('/channel-partners')->assertForbidden();
+        // reading, editing and merging live on the `auth` group now: all three
+        // stay open to a live session, exactly as a deactivated telecaller
+        // keeps reading /todos or /leads. Deleting is still admin-only, and
+        // role:admin re-checks is_active, so it cannot get past it.
+        $this->actingAs($this->admin)->get('/channel-partners')->assertOk();
+        $this->actingAs($this->admin)
+            ->put("/channel-partners/{$broker->id}", $this->payload([
+                'type' => 'broker',
+                'name' => 'Ravi Kumar',
+            ]))
+            ->assertSessionHasNoErrors();
+        $this->actingAs($this->admin)
+            ->post("/channel-partners/{$broker->id}/merge", ['target_id' => $firm->id])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSoftDeleted('channel_partners', ['id' => $broker->id]);
+        $this->assertNotSoftDeleted('channel_partners', ['id' => $firm->id]);
+
+        $this->actingAs($this->admin)->delete("/channel-partners/{$firm->id}")->assertForbidden();
+        $this->assertNotSoftDeleted('channel_partners', ['id' => $firm->id]);
     }
 
     /* ---------------- the three cases ---------------- */

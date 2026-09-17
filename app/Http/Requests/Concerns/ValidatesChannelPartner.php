@@ -14,7 +14,8 @@ use Illuminate\Validation\Validator;
  *   the INLINE form on the lead modal, which is where partners are actually
  *   created, open to anyone who may create a lead, four fields wide.
  *
- *   the EDIT modal on the Channel Partners page, admin only, every field.
+ *   the EDIT modal on the Channel Partners page, open to every signed-in role,
+ *   every field.
  *
  * Different authorisation, different field sets, one set of rules about what a
  * channel partner IS. That is what lives here — the hierarchy, and the name

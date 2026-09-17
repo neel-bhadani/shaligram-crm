@@ -29,14 +29,16 @@ class ChannelPartnerRequest extends FormRequest
     use ValidatesChannelPartner;
 
     /**
-     * The route is already behind `role:admin`. This is the second lock on the
-     * same door, exactly as UserRequest is: a route added to that group later
-     * without the middleware, or moved out of it by accident, still cannot
-     * reach here.
+     * Every signed-in role may edit a partner, the same crowd that reads the
+     * roster and names the broker on a lead. The route this serves sits on the
+     * `auth` group rather than the admin one — `web` + `Authenticate` is the
+     * whole door — and this second lock says the same thing, so a route moved
+     * out of that group, or added without the middleware, cannot change who
+     * reaches here either.
      */
     public function authorize(): bool
     {
-        return (bool) $this->user()?->isAdmin();
+        return true;
     }
 
     public function rules(): array
