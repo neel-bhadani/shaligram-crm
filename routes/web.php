@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AlertController;
+use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\AutomationController;
 use App\Http\Controllers\AutomationRuleController;
 use App\Http\Controllers\ChannelPartnerController;
@@ -55,6 +56,19 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/todos/{todo}', [TodoController::class, 'update'])->name('todos.update');
     Route::post('/todos/{todo}/complete', [TodoController::class, 'complete'])
         ->name('todos.complete');
+
+    /* ---------------- calendar ---------------- */
+
+    /*
+     | The follow-up calendar, one read-only month view.
+     |
+     | Auth-only on the outer group, with no further role middleware — the same
+     | door every other follow-up list sits behind. Visibility is decided inside
+     | the controller, by Todo::forUser() + hasLead(), so a telecaller gets
+     | their own follow-ups and an admin gets every visible one; the route
+     | refusing nobody is what lets one page serve both without leaking.
+     */
+    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
 
     /*
      | The clash warning's server half, and nothing more than a warning.

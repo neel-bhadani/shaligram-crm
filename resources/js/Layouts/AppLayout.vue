@@ -68,6 +68,13 @@ const nav = computed(() => [
   { name: 'Channel Partners', href: route('channel-partners.index'), active: route().current('channel-partners.*') },
   { name: 'Follow-ups', href: route('todos.index'), active: route().current('todos.*') },
   /*
+   | Calendar sits beside Follow-ups because it is the same list seen as a
+   | month: every entry is a follow-up on its scheduled date, scoped by the
+   | same forUser() + hasLead() rules. The page is read-only, so it carries no
+   | badge of its own and adds nothing to the links a non-admin already has.
+   */
+  { name: 'Calendar', href: route('calendar.index'), active: route().current('calendar.*'), icon: true },
+  /*
    | Alerts is for everyone, and deliberately so. A telecaller is told about
    | their own overdue follow-ups and carries an unread count in the header on
    | every page; hiding the page they would land on would leave that count
@@ -290,7 +297,21 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
           class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
           :class="item.active ? 'bg-teal-700 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'"
           @click="open = false"
-        >{{ item.name }}</Link>
+        >
+          <!--
+            A plain stroked calendar in the row's own colour: this is the one
+            nav item that earns an icon, because the page IS a calendar. It
+            reads the same text-slate-400 / text-white the label reads.
+          -->
+          <svg v-if="item.icon" class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          {{ item.name }}</Link>
 
         <!--
           Reports is a disclosure, not a link. There is no /reports landing page
