@@ -30,15 +30,24 @@ use Inertia\Inertia;
  * four-field form did not ask for, switch a partner off, delete one, and MERGE
  * the duplicates that creating rows mid-call inevitably produces.
  *
- * Every route here except quickStore() is behind `role:admin`, on the group in
- * routes/web.php rather than on each route, the same way staff management is. A
- * non-admin typing /channel-partners gets a 403, not a page with the buttons
- * taken off: this is the partner roster, and who a company's brokers are is not
- * something a telecaller needs. The sidebar link is hidden for the same people,
- * which is presentation and not the boundary.
+ * READING, EDITING and MERGING are for everyone. Index, update and merge sit
+ * on the outer `auth` group rather than inside the admin group: the list, the
+ * search, the filters and the broker picker on the lead form read this table
+ * for every role, so logging a lead is no reason to lock who may fix a name or
+ * a number — and the update and merge are the other half of that same cleanup.
+ * ChannelPartnerPolicy::viewAny, ::update and ::merge say so again in this
+ * controller, which is the lock that survives somebody reorganising
+ * routes/web.php.
  *
- * quickStore() is the exception and it is a different door for a different
- * question — see QuickChannelPartnerRequest.
+ * DELETE is admin-only. It stays behind `role:admin` on the group in
+ * routes/web.php, and destroy() is double-locked through
+ * ChannelPartnerPolicy::delete so a DELETE typed by hand is refused even
+ * around the middleware. A non-admin is never shown the delete button, but
+ * that is presentation and not the boundary.
+ *
+ * quickStore() is a different door for a different question — the Add lead
+ * modal's inline form, gated like the lead it belongs to. See
+ * QuickChannelPartnerRequest.
  *
  * FIRMS AND BROKERS ARE NOT GROUPED IN THE TABLE. They could have been —
  * a firm heading with its brokers indented under it — and it was the wrong
@@ -66,6 +75,11 @@ class ChannelPartnerController extends Controller
 
     public function index(Request $request)
     {
+        // reading the roster is open to every signed-in user (the route is on
+        // the `auth` group, not the admin one); this is the lock that survives
+        // somebody moving the route back into the group later
+        $this->authorize('viewAny', ChannelPartner::class);
+
         $user    = $request->user();
         $filters = $this->filters($request);
 
@@ -334,6 +348,11 @@ class ChannelPartnerController extends Controller
 
     public function update(ChannelPartnerRequest $request, ChannelPartner $partner)
     {
+        // editing is open to every signed-in role, on the same `auth` group as
+        // the page itself; this is the second lock, the one that survives
+        // somebody moving the route back into the admin group
+        $this->authorize('update', $partner);
+
         $partner->update($request->channelPartnerAttributes());
 
         return back()->with('success', 'Channel partner updated.');
@@ -416,6 +435,11 @@ class ChannelPartnerController extends Controller
      */
     public function merge(MergeChannelPartnerRequest $request, ChannelPartner $partner)
     {
+        // merging is open to every signed-in role, on the same `auth` group as
+        // the page itself; this is the second lock, the one that survives
+        // somebody moving the route back into the admin group
+        $this->authorize('merge', $partner);
+
         $target = ChannelPartner::findOrFail($request->input('target_id'));
 
         $moved = DB::transaction(function () use ($partner, $target) {
@@ -451,6 +475,11 @@ class ChannelPartnerController extends Controller
 
     public function destroy(ChannelPartner $partner)
     {
+        // admin-only, twice over: `role:admin` on the route group, and again here
+        // so a plain DELETE typed by hand is refused even if the group is ever
+        // reorganised. A non-admin hiding the button is not the boundary — this is.
+        $this->authorize('delete', $partner);
+
         $active = $partner->activeBrokers()->count();
 
         if ($partner->isFirm() && $active > 0) {

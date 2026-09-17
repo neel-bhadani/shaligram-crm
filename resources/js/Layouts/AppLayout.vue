@@ -39,20 +39,33 @@ const roleLabel = computed(() => {
 })
 
 /*
- | Channel Partners, Users and Integrations are admin-only and are left out of
- | the array rather than rendered disabled — a greyed link advertises a page
- | somebody cannot reach. This is presentation only: `role:admin` on each route
- | group is what actually refuses a telecaller who types /channel-partners,
- | /users or /integrations into the address bar, and all three come back 403
- | rather than empty.
+ | Users and Integrations are admin-only and are left out of the array rather
+ | than rendered disabled — a greyed link advertises a page somebody cannot
+ | reach. This is presentation only: `role:admin` on each route group is what
+ | actually refuses a telecaller who types /users or /integrations into the
+ | address bar, and both come back 403 rather than empty.
  |
- | Channel Partners sits next to Leads rather than next to Users, because it is
- | reference data the Leads page reads — the broker picker on the lead form is
- | this list — and not a staff-administration screen.
+ | Channel Partners used to sit in that admin block and now sits beside Leads,
+ | because the page is readable, editable AND mergeable by every role — see the
+ | channel-partners block in routes/web.php, which keeps GET (index), PUT
+ | (update) and POST /merge on the outer `auth` group and leaves only delete
+ | behind role:admin. The link is therefore not a widening: a non-admin who
+ | opens it gets the roster, the search and the filters, an Edit and a Merge
+ | button whose routes will accept them, and no delete button whose route would
+ | refuse them.
  */
 const nav = computed(() => [
   { name: 'Dashboard', href: route('dashboard'), active: route().current('dashboard') },
   { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') },
+/*
+    | Channel Partners sits next to Leads because the two are read, edited and
+    | merged together: the lead form's broker picker offers this same roster to
+    | anyone who can file a lead, the Edit button saves through a PUT on the
+    | same `auth` group, and the Merge button cleans up the duplicates that
+    | filing leads produces. Only delete is admin-only, so the link is
+    | presentation of already-open routes rather than a way around anything.
+    */
+  { name: 'Channel Partners', href: route('channel-partners.index'), active: route().current('channel-partners.*') },
   { name: 'Follow-ups', href: route('todos.index'), active: route().current('todos.*') },
   /*
    | Alerts is for everyone, and deliberately so. A telecaller is told about
@@ -76,25 +89,20 @@ const nav = computed(() => [
           active: route().current('automation.*'),
         },
         /*
-         | Projects and Channel Partners sit together because they are the same
-         | kind of thing: reference data the Add lead form reads, not staff
-         | administration. Projects is first of the two — every lead in the
-         | database points at one, and a broker is optional.
+         | Projects and Stages & Sources sit together because they are the same
+         | kind of thing: reference data the Add lead form reads and every lead
+         | in the database points at, not staff administration. Channel Partners
+         | used to sit with them and now lives beside Leads, because that page
+         | was opened up to every role while these two were not.
          |
          | Admin-only here and admin-only for real: `role:admin` on the route
          | group is what refuses a telecaller who types /projects, and they get
          | a 403 rather than an empty page.
          */
         { name: 'Projects', href: route('projects.index'), active: route().current('projects.*') },
-        {
-          name: 'Channel Partners',
-          href: route('channel-partners.index'),
-          active: route().current('channel-partners.*'),
-        },
         /*
-         | Stages & Sources sits with Projects and Channel Partners because it
-         | is the same kind of thing — reference data every lead points at, not
-         | staff administration. Last of the three, because it is the one that
+         | Stages & Sources is reference data every lead points at, not staff
+         | administration. Last of the admin block, because it is the one that
          | is set up once and rarely opened again.
          |
          | Admin-only here and admin-only for real: `role:admin` on the route

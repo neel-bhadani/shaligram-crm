@@ -191,33 +191,64 @@ Route::middleware(['auth'])->group(function () {
         ->name('channel-partners.check-name');
 
     /*
-     | MANAGING the partners that already exist. Admin only, on the group and
-     | not on each route, for exactly the reason the users group says: a route
-     | added here later cannot be forgotten. The middleware re-checks is_active
-     | as well, so a deactivated admin's live session cannot go on editing the
-     | roster.
+     | READING the roster is for everyone. `auth` on the outer group is the whole
+     | door — there is deliberately no `role:` here, because the list, the search,
+     | the filters and the pagination answer the same question the report's
+     | "By channel partner" grouping answers, which a telecaller already reads.
+     | The lead form's broker picker offers the same roster to every role that
+     | can file a lead, so hiding the page only made the picker a list nobody
+     | could look at whole. ChannelPartnerPolicy::viewAny says the same thing in
+     | the controller, which is the lock that survives somebody reorganising
+     | this file.
+     */
+    Route::get('/channel-partners', [ChannelPartnerController::class, 'index'])
+        ->name('channel-partners.index');
+
+    /*
+     | EDITING an existing partner is open to every signed-in role, on the same
+     | door as reading it. `auth` is the whole gate here, deliberately: the name
+     | and number the roster shows a telecaller are the same ones the page
+     | offers them to fix, so correcting a typo in a label is not an admin
+     | privilege. ChannelPartnerRequest authorises any authenticated user and
+     | ChannelPartnerPolicy::update says so again in the controller.
+     |
+     | This is the modal's PUT — there is no edit GET, the form lives on the
+     | roster page. It is edit only: creation is the route above and deletion is
+     | the DELETE in the admin-only group below.
+     */
+    Route::put('/channel-partners/{partner}', [ChannelPartnerController::class, 'update'])
+        ->name('channel-partners.update');
+
+    /*
+     | MERGING is open to every signed-in role too, on the same door as reading
+     | and editing. It is the cleanup for what inline creation costs: three
+     | people logging broker leads will enter "Shreeji" and "Shreeji Realty",
+     | and the report is only worth reading if the person who finds the
+     | duplicate can put it back together. The merge itself is unchanged — the
+     | direction, the reattribution, the hierarchy rule — only who may start one
+     | is wider. MergeChannelPartnerRequest still validates the shape, and
+     | ChannelPartnerPolicy::merge says so again in the controller.
+     */
+    Route::post('/channel-partners/{partner}/merge', [ChannelPartnerController::class, 'merge'])
+        ->name('channel-partners.merge');
+
+    /*
+     | DELETE stays admin-only, on the group rather than on the route, for
+     | exactly the reason the users group says: a route added here later cannot
+     | be forgotten. The middleware re-checks is_active as well, so a
+     | deactivated admin's live session cannot delete.
+     |
+     | This is what keeps the edit-and-merge promise honest. The page draws the
+     | Delete button only for an admin, but that is presentation and not the
+     | boundary — a DELETE typed by hand gets a 403 from this middleware, and
+     | destroy() says it yet again through ChannelPartnerPolicy::delete.
      |
      | Not permission-gated, and deliberately not. The five toggles in
      | config('crm.permissions') are about leads; who a company's channel
      | partners are is not one of them and must not become grantable from
-     | inside the app. The sidebar link is hidden for non-admins too, but that
-     | is presentation — this is the refusal.
-     |
-     | There is no POST here. Creation is the route above.
+     | inside the app.
      */
     Route::middleware('role:admin')->group(function () {
-        Route::get('/channel-partners', [ChannelPartnerController::class, 'index'])
-            ->name('channel-partners.index');
-        Route::put('/channel-partners/{partner}', [ChannelPartnerController::class, 'update'])
-            ->name('channel-partners.update');
-        /*
-         | Merge is the heaviest thing on this table — it reattributes every
-         | lead that came through one partner to another one — so it is a POST
-         | of its own rather than a flag on the update, and it is admin-only
-         | twice over: this group, and MergeChannelPartnerRequest::authorize().
-         */
-        Route::post('/channel-partners/{partner}/merge', [ChannelPartnerController::class, 'merge'])
-            ->name('channel-partners.merge');
         Route::delete('/channel-partners/{partner}', [ChannelPartnerController::class, 'destroy'])
             ->name('channel-partners.destroy');
     });

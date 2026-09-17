@@ -32,8 +32,10 @@ use Tests\TestCase;
  *   the hierarchy survives it. A firm's brokers travel with the firm, and the
  *   one direction that would leave them under a broker is refused.
  *
- *   the door. Reattributing every lead that came through a broker is the one
- *   bulk rewrite of the number this whole feature exists to produce.
+ *   the door. Merging is open to every signed-in role — the same crowd that
+ *   created the duplicates — while deleting stays admin-only, and the shape
+ *   rules in MergeChannelPartnerRequest are the real gate whichever role the
+ *   request comes from.
  *
  * @see \App\Http\Controllers\ChannelPartnerController::merge()
  * @see \App\Http\Requests\MergeChannelPartnerRequest
@@ -59,20 +61,23 @@ class ChannelPartnerMergeTest extends TestCase
 
     /* ---------------- the door ---------------- */
 
-    public function test_only_an_admin_can_merge(): void
+    public function test_every_role_can_merge_and_only_delete_stays_admin_only(): void
     {
-        $source = $this->partner('firm', 'Shreeji');
-        $target = $this->partner('firm', 'Shreeji Realty');
-
         foreach (['telecaller', 'salesperson'] as $role) {
-            $staff = $this->user($role, ucfirst($role) . 'X');
+            $staff  = $this->user($role, ucfirst($role) . 'X');
+            $source = $this->partner('firm', "Shreeji {$role}");
+            $target = $this->partner('firm', "Shreeji Realty {$role}");
 
             $this->actingAs($staff)
                 ->post("/channel-partners/{$source->id}/merge", ['target_id' => $target->id])
-                ->assertForbidden();
-        }
+                ->assertSessionHasNoErrors();
 
-        $this->assertNotSoftDeleted('channel_partners', ['id' => $source->id]);
+            $this->assertSoftDeleted('channel_partners', ['id' => $source->id]);
+            $this->assertNotSoftDeleted('channel_partners', ['id' => $target->id]);
+
+            // merging a partner away is open to every role; deleting one is not
+            $this->actingAs($staff)->delete("/channel-partners/{$target->id}")->assertForbidden();
+        }
     }
 
     /* ---------------- the move ---------------- */
