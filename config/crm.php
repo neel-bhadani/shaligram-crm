@@ -152,6 +152,14 @@ return [
         'possession_timeline_issue' => 'Possession timeline issue',
         'vastu' => 'Vastu',
         'upcoming_project' => 'Upcoming project',
+
+        /*
+         | Set only by LeadController::transfer(), never chosen by hand on the
+         | lead form — the lead is not really lost, the person went looking at
+         | a different project, and this is what keeps that distinct from
+         | every reason above it. See LeadFollowUpService::transferToProject().
+         */
+        'transferred_project' => 'Interested in another project',
     ],
 
     'todo_types' => [

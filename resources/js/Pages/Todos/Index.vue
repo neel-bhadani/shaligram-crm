@@ -1,6 +1,7 @@
 <script setup>
 import { ref, reactive, watch, computed } from 'vue'
 import { Head, Link, usePage } from '@inertiajs/vue3'
+import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import StageBadge from '@/Components/StageBadge.vue'
 import CompleteTaskModal from '@/Components/CompleteTaskModal.vue'
@@ -8,6 +9,7 @@ import TodoFormModal from '@/Components/TodoFormModal.vue'
 import CallButtons from '@/Components/CallButtons.vue'
 import AssignedTo from '@/Components/AssignedTo.vue'
 import FilterChips from '@/Components/FilterChips.vue'
+import LeadActivityTimeline from '@/Components/LeadActivityTimeline.vue'
 import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisit.js'
 
 const props = defineProps({
@@ -215,6 +217,98 @@ const isOverdue = t => t.status === 'pending' && new Date(t.scheduled_at) < new 
  */
 const leadName = t => t.lead?.full_name ?? 'Lead deleted'
 const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Boolean).join(' · ') || '—'
+
+/* ---------------- inline expandable activity ---------------- */
+
+/*
+ | The row-level +/- control. One follow-up row is expanded at a time, pinned by
+ | the follow-up's id (expandedTodoId), while the activity itself is cached by
+ | the LEAD's id: two follow-ups on the same lead show the same history with one
+ | request. The cache is in-memory for this page visit only — never localStorage
+ | — and the fetch is deferred until the first "+" click, so a page of follow-
+ | ups costs nothing on load.
+ */
+const expandedTodoId = ref(null)
+const activityCache = reactive({})
+const loadingLeadId = ref(null)
+const failedLeadIds = reactive({})
+
+/*
+ | Only one empty/invalid lead check. A row with no lead is unexpandable: there
+ | is no lead whose activity could be shown, and the page hides those rows'
+ | leads anyway.
+ */
+const expandable = t => Boolean(t.lead?.id)
+
+const isRowExpanded = t => expandedTodoId.value === t.id
+
+const timelineFor = t => activityCache[t.lead?.id] ?? []
+
+const isLoadingFor = t => loadingLeadId.value === t.lead?.id
+
+const hasFailedFor = t => Boolean(failedLeadIds[t.lead?.id])
+
+/*
+ | The request is keyed by lead id, so an activity still in flight when the user
+ | opens another row is remembered, never duplicated, and lands in the cache for
+ | whichever row asks next. Display never reads the in-flight response anyway:
+ | a row renders only its own lead's cached timeline, or the loading line.
+ */
+async function loadActivity(leadId) {
+  loadingLeadId.value = leadId
+  delete failedLeadIds[leadId]
+
+  try {
+    // the same endpoint the lead view modal reads, so authorization (LeadPolicy)
+    // and the timeline are identical to Lead -> View -> Activity
+    const { data } = await axios.get(route('leads.show', leadId))
+    activityCache[leadId] = data.timeline ?? []
+  } catch {
+    // 403 from LeadPolicy::view — the same rule that let the lead onto the
+    // page — shows a small inline error rather than breaking the table
+    failedLeadIds[leadId] = true
+  } finally {
+    if (loadingLeadId.value === leadId) loadingLeadId.value = null
+  }
+}
+
+function toggleActivity(t) {
+  const leadId = t.lead?.id
+  if (!leadId) return
+
+  // clicking a row already expanded collapses it — no navigation, no request
+  if (expandedTodoId.value === t.id) {
+    expandedTodoId.value = null
+    return
+  }
+
+  // click "+" on B while A is open: B takes the single expanded slot
+  expandedTodoId.value = t.id
+
+  if (!(leadId in activityCache) && loadingLeadId.value !== leadId) {
+    loadActivity(leadId)
+  }
+}
+
+/*
+ | The expanded row spans the whole table. The column count follows the headers
+ | exactly: the expand column, the four always-present columns, and then the
+ | tab-dependent ones.
+ */
+const activityColspan = computed(() => {
+  let cols = 5 // expand, Lead, Type, Scheduled, Stage
+  cols += props.tab === 'completed' ? 3 : 0 // Outcome, Remarks, Completed
+  if (props.tab !== 'completed') cols += isAdmin.value ? 2 : 1 // Handled by + Due, or just Due
+  cols += 1 // actions
+  return cols
+})
+
+/*
+ | Every visit — a tab, a filter, a search, a page change — hands the page a new
+ | list, and the expanded row may be gone from it. Close the expansion rather
+ | than leave it pointing at a follow-up no longer on screen.
+ */
+watch(() => props.todos, () => { expandedTodoId.value = null })
 </script>
 
 <template>
@@ -329,6 +423,7 @@ const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Bool
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
           <tr class="bg-slate-50 text-left text-xs text-slate-500">
+            <th class="w-10 px-2 py-2.5"><span class="sr-only">Expand activity</span></th>
             <th class="px-4 py-2.5 font-semibold">Lead</th>
             <th class="px-4 py-2.5 font-semibold">Type</th>
             <th class="px-4 py-2.5 font-semibold">Scheduled</th>
@@ -342,43 +437,96 @@ const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Bool
           </tr>
         </thead>
         <tbody>
-          <tr v-for="t in todos.data" :key="t.id"
-              class="border-b border-l-4 border-slate-100"
-              :class="isOverdue(t) ? 'border-l-rose-600 bg-rose-50/40' : 'border-l-transparent'">
-            <td class="px-4 py-3">
-              <div class="font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
-              <div class="text-xs text-slate-400">{{ leadLine(t) }}</div>
-            </td>
-            <td class="px-4 py-3">{{ options.types[t.type] }}</td>
-            <td class="px-4 py-3">{{ fmt(t.scheduled_at) }}</td>
-            <td class="px-4 py-3"><StageBadge v-if="t.lead" :stage="t.lead.stage" /></td>
-
-            <template v-if="tab === 'completed'">
-              <td class="px-4 py-3"><StageBadge :stage="t.outcome_stage" /></td>
-              <td class="max-w-[260px] px-4 py-3 text-slate-600">{{ t.remarks || '—' }}</td>
+          <template v-for="t in todos.data" :key="t.id">
+            <tr class="border-b border-l-4 border-slate-100"
+                :class="isOverdue(t) ? 'border-l-rose-600 bg-rose-50/40' : 'border-l-transparent'">
+              <!-- the one thing on this row that toggles the activity panel -->
+              <td class="px-2 py-3">
+                <button v-if="expandable(t)" type="button"
+                        class="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-base leading-none text-slate-500 transition
+                               hover:border-slate-300 hover:text-slate-700
+                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                        :aria-expanded="isRowExpanded(t) ? 'true' : 'false'"
+                        :aria-controls="`todo-activity-${t.id}`"
+                        :aria-label="isRowExpanded(t) ? 'Hide activity' : 'Show activity'"
+                        @click="toggleActivity(t)">
+                  <span aria-hidden="true">{{ isRowExpanded(t) ? '−' : '+' }}</span>
+                </button>
+              </td>
               <td class="px-4 py-3">
-                {{ fmt(t.completed_at) }}
-                <div class="text-xs text-slate-400">{{ t.completer?.display_name ?? '—' }}</div>
+                <div class="font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
+                <div class="text-xs text-slate-400">{{ leadLine(t) }}</div>
               </td>
-            </template>
-            <template v-else>
-              <td v-if="isAdmin" class="px-4 py-3"><AssignedTo :user="t.owner" /></td>
-              <td class="px-4 py-3" :class="isOverdue(t) ? 'font-semibold text-rose-700' : 'text-slate-500'">
-                {{ relative(t.scheduled_at) }}
-              </td>
-            </template>
+              <td class="px-4 py-3">{{ options.types[t.type] }}</td>
+              <td class="px-4 py-3">{{ fmt(t.scheduled_at) }}</td>
+              <td class="px-4 py-3"><StageBadge v-if="t.lead" :stage="t.lead.stage" /></td>
 
-            <td class="px-4 py-3">
-              <!-- dialling is useful on a closed task too, so it sits outside the pending check -->
-              <div class="flex items-center gap-1.5">
-                <template v-if="t.status === 'pending'">
-                  <button class="btn px-3 py-1 text-xs" @click="openComplete(t)">Update</button>
-                  <button class="btn-xs" @click="openEdit(t)">Edit</button>
-                </template>
-                <CallButtons v-if="t.lead?.mobile_number" compact :mobile="t.lead.mobile_number" />
-              </div>
-            </td>
-          </tr>
+              <template v-if="tab === 'completed'">
+                <td class="px-4 py-3"><StageBadge :stage="t.outcome_stage" /></td>
+                <td class="max-w-[260px] px-4 py-3 text-slate-600">{{ t.remarks || '—' }}</td>
+                <td class="px-4 py-3">
+                  {{ fmt(t.completed_at) }}
+                  <div class="text-xs text-slate-400">{{ t.completer?.display_name ?? '—' }}</div>
+                </td>
+              </template>
+              <template v-else>
+                <td v-if="isAdmin" class="px-4 py-3"><AssignedTo :user="t.owner" /></td>
+                <td class="px-4 py-3" :class="isOverdue(t) ? 'font-semibold text-rose-700' : 'text-slate-500'">
+                  {{ relative(t.scheduled_at) }}
+                </td>
+              </template>
+
+              <td class="px-4 py-3">
+                <!-- dialling is useful on a closed task too, so it sits outside the pending check -->
+                <div class="flex items-center gap-1.5">
+                  <template v-if="t.status === 'pending'">
+                    <button class="btn px-3 py-1 text-xs" @click="openComplete(t)">Update</button>
+                    <button class="btn-xs" @click="openEdit(t)">Edit</button>
+                  </template>
+                  <CallButtons v-if="t.lead?.mobile_number" compact :mobile="t.lead.mobile_number" />
+                </div>
+              </td>
+            </tr>
+
+            <!--
+              The expanded activity row, immediately under the follow-up that
+              owns it. The <tr> is always in the table; only its content mounts,
+              so the height animation runs on a div inside the colspan cell —
+              never on the <tr>, which browsers do not animate well. Collapsed,
+              the empty cell collapses to nothing. Switching A -> B trims A's
+              content and grows B's at the same time, so one click never flashes
+              a stale history.
+            -->
+            <tr v-if="expandable(t)">
+              <td :colspan="activityColspan" class="p-0">
+                <!--
+                  Smooth but subtle open/close: the content fades while the
+                  grid row unfurls between 0fr and 1fr, so tall histories are
+                  never clipped. motion-safe: keeps it instant for users who
+                  ask for no animation.
+                -->
+                <Transition
+                  enter-active-class="motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-200 motion-safe:ease-out"
+                  enter-from-class="motion-safe:opacity-0 motion-safe:grid-rows-[0fr]"
+                  leave-active-class="motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-200 motion-safe:ease-in"
+                  leave-to-class="motion-safe:opacity-0 motion-safe:grid-rows-[0fr]"
+                >
+                  <div v-if="isRowExpanded(t)" :id="`todo-activity-${t.id}`" class="grid grid-rows-[1fr]">
+                    <!-- min-h-0 + overflow-hidden lets the 0fr row actually clip -->
+                    <div class="min-h-0 overflow-hidden">
+                      <div class="bg-slate-50/70 py-4 pl-11 pr-5">
+                        <p v-if="hasFailedFor(t)" class="text-sm text-slate-500">Unable to load activity.</p>
+                        <LeadActivityTimeline v-else inset
+                                              :timeline="timelineFor(t)"
+                                              :stage-colors="options.stageColors"
+                                              :loading="isLoadingFor(t)" />
+                      </div>
+                    </div>
+                  </div>
+                </Transition>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
 
@@ -386,9 +534,21 @@ const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Bool
         <div v-for="t in todos.data" :key="t.id" class="border-l-4 p-4"
              :class="isOverdue(t) ? 'border-l-rose-600 bg-rose-50/40' : 'border-l-transparent'">
           <div class="mb-2 flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="truncate font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
-              <div class="text-xs text-slate-400">{{ t.lead?.mobile_number ?? '—' }}</div>
+            <div class="flex min-w-0 items-start gap-2">
+              <button v-if="expandable(t)" type="button"
+                      class="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md border border-slate-200 bg-white text-lg leading-none text-slate-500 transition
+                             hover:border-slate-300 hover:text-slate-700
+                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                      :aria-expanded="isRowExpanded(t) ? 'true' : 'false'"
+                      :aria-controls="`todo-activity-${t.id}`"
+                      :aria-label="isRowExpanded(t) ? 'Hide activity' : 'Show activity'"
+                      @click="toggleActivity(t)">
+                <span aria-hidden="true">{{ isRowExpanded(t) ? '−' : '+' }}</span>
+              </button>
+              <div class="min-w-0">
+                <div class="truncate font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
+                <div class="text-xs text-slate-400">{{ t.lead?.mobile_number ?? '—' }}</div>
+              </div>
             </div>
             <StageBadge v-if="t.lead" :stage="t.lead.stage" />
           </div>
@@ -413,6 +573,29 @@ const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Bool
           </dl>
 
           <p v-if="t.remarks" class="mt-2 text-xs text-slate-500">{{ t.remarks }}</p>
+
+          <!-- the same inline activity panel as the desktop row, animated the
+               same way: grid row 0fr -> 1fr plus a fade, motion-safe for users
+               who prefer no animation -->
+          <Transition
+            enter-active-class="motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-200 motion-safe:ease-out"
+            enter-from-class="motion-safe:opacity-0 motion-safe:grid-rows-[0fr]"
+            leave-active-class="motion-safe:transition-[grid-template-rows,opacity] motion-safe:duration-200 motion-safe:ease-in"
+            leave-to-class="motion-safe:opacity-0 motion-safe:grid-rows-[0fr]"
+          >
+            <div v-if="isRowExpanded(t) && expandable(t)"
+                 :id="`todo-activity-${t.id}`" class="mt-3 grid grid-rows-[1fr]">
+              <div class="min-h-0 overflow-hidden">
+                <div class="rounded-lg bg-slate-50/70 px-3 py-3">
+                  <p v-if="hasFailedFor(t)" class="text-sm text-slate-500">Unable to load activity.</p>
+                  <LeadActivityTimeline v-else inset
+                                        :timeline="timelineFor(t)"
+                                        :stage-colors="options.stageColors"
+                                        :loading="isLoadingFor(t)" />
+                </div>
+              </div>
+            </div>
+          </Transition>
 
           <!--
             Full width on a phone: this is the layout where someone is actually

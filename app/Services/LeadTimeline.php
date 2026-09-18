@@ -257,6 +257,16 @@ class LeadTimeline
                 ],
                 'remark' => $head->remark,
             ],
+            LeadActivity::TransferredOut => [
+                'kind' => 'transferred',
+                'title' => 'Transferred to another project',
+                'remark' => $head->remark,
+            ],
+            LeadActivity::TransferredIn => [
+                'kind' => 'transferred',
+                'title' => 'Transferred from another project',
+                'remark' => $head->remark,
+            ],
             // an orphaned child, see group()
             default => [
                 'kind' => 'edit',
