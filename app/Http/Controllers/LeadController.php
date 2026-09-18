@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesDateRange;
 use App\Http\Controllers\Concerns\ResolvesFilters;
 use App\Http\Requests\LeadReassignRequest;
 use App\Http\Requests\LeadRequest;
+use App\Http\Requests\LeadTransferRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
 use App\Models\Project;
@@ -387,6 +388,26 @@ class LeadController extends Controller
         $this->service->reassignTo($lead, $to, $request->validated('stage'));
 
         return back()->with('success', "Lead reassigned to {$to->display_name}.");
+    }
+
+    /**
+     * Transfer to another project — distinct from reassign(). Reassign moves
+     * a lead to a different person within its project; this closes the lead
+     * out as lost on its current project and opens a NEW lead for the same
+     * person on the target project, held by the same owner — see
+     * LeadFollowUpService::transferToProject() for why that owner is forced
+     * rather than resolved through the normal round robin.
+     */
+    public function transfer(LeadTransferRequest $request, Lead $lead)
+    {
+        $target = Project::findOrFail($request->validated('project_id'));
+
+        $newLead = $this->service->transferToProject($lead, $target, $request->validated('note'));
+
+        return back()->with(
+            'success',
+            "Lead marked lost here and transferred to {$target->name} — a new lead was opened for {$newLead->full_name}, kept with the same owner."
+        );
     }
 
     public function destroy(Lead $lead)

@@ -76,6 +76,19 @@ class LeadPolicy
     }
 
     /**
+     * Transfer to another project — a different action from reassign(),
+     * though it shares the same gate: whoever currently owns the lead, or
+     * anybody with `see_all_leads`. Reassign changes who owns a lead within
+     * its project; this changes which project it belongs to while keeping
+     * the owner. Both are things every role that can see a lead may do, not
+     * only whoever holds `edit_leads`.
+     */
+    public function transfer(User $user, Lead $lead): bool
+    {
+        return $this->view($user, $lead);
+    }
+
+    /**
      * Project boundary, said for one row — see Lead::scopeVisibleTo() for the
      * same rule as a query. Telecallers are a single company-wide desk, never
      * tied to a project (see LeadAssignmentService), so only a salesperson's
