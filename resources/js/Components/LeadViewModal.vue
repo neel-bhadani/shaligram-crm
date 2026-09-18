@@ -47,6 +47,16 @@ async function load() {
     timeline.value = data.timeline ?? []
     reassignCandidates.value = data.reassignCandidates ?? {}
     reassignStage.value = lead.value?.stage ?? ''
+  } catch (e) {
+    // A non-admin who just reassigned this lead away from themselves no
+    // longer passes LeadPolicy::view() on it — the same rule that dropped it
+    // from their list drops it here too. There is nothing left to show, so
+    // close rather than surface the 403 as a broken modal.
+    if (e.response?.status === 403) {
+      emit('close')
+      return
+    }
+    throw e
   } finally {
     loading.value = false
   }
