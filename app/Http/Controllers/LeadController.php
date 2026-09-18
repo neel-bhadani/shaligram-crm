@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ResolvesDateRange;
 use App\Http\Controllers\Concerns\ResolvesFilters;
+use App\Http\Requests\LeadReassignRequest;
 use App\Http\Requests\LeadRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
@@ -256,7 +257,56 @@ class LeadController extends Controller
             // before the timeline existed, and every key the modal reads from
             // it is where it always was
             'timeline' => $this->timeline->for($lead),
+            'reassignCandidates' => $this->reassignCandidates($request->user(), $lead),
         ]);
+    }
+
+    /**
+     * Who this lead could be manually reassigned to, by the role each stage
+     * in the pipeline is worked by: active users of that role, minus the
+     * current owner. Keyed by role rather than fixed to the lead's own
+     * stage, because the reassign form lets a stage and a person be picked
+     * together — moving a telecaller-stage lead onto a salesperson stage has
+     * to offer salespeople without a second round trip to the server.
+     *
+     * The lead's own current role rides along too (via $lead->assigned_role),
+     * so a terminal lead — whose stage answers no role at all — still offers
+     * somebody to hand it to.
+     *
+     * A salesperson role is narrowed to the lead's own project for anybody
+     * without `see_all_leads` — telecallers are a single company-wide desk
+     * and are never narrowed, and admin is exempt from the project boundary
+     * entirely, the same rule LeadReassignRequest checks on the way back in.
+     *
+     * @return array<string, list<array{id: int, name: string}>>
+     */
+    private function reassignCandidates(User $user, Lead $lead): array
+    {
+        return collect(CrmTaxonomy::stageRows())
+            ->pluck('owner_role')
+            ->push($lead->assigned_role)
+            ->filter()
+            ->unique()
+            ->mapWithKeys(fn (string $role) => [
+                $role => $this->reassignCandidatesForRole($role, $user, $lead),
+            ])
+            ->all();
+    }
+
+    /** @return list<array{id: int, name: string}> */
+    private function reassignCandidatesForRole(string $role, User $user, Lead $lead): array
+    {
+        $query = $role === 'salesperson' && ! $user->can_('see_all_leads')
+            ? $lead->project->salespeople()
+            : User::query()->where('role', $role);
+
+        return $query->active()
+            ->where('users.id', '!=', $lead->assigned_to)
+            ->orderBy('first_name')
+            ->get()
+            ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->display_name])
+            ->values()
+            ->all();
     }
 
     public function update(LeadRequest $request, Lead $lead)
@@ -320,6 +370,23 @@ class LeadController extends Controller
 
         // the service decided something on its own — say so
         return $notice ? $response->with('warning', $notice) : $response;
+    }
+
+    /**
+     * Move a lead to a specific person by hand, optionally onto a different
+     * stage in the same action. LeadReassignRequest has already checked the
+     * role the target stage is worked by, the project boundary and that this
+     * is actually a change; LeadFollowUpService::reassignTo() does the rest —
+     * moves the pending to-do, writes the activity rows, and never touches
+     * the round robin, because the person is the one this form asked for.
+     */
+    public function reassign(LeadReassignRequest $request, Lead $lead)
+    {
+        $to = User::findOrFail($request->validated('assigned_to'));
+
+        $this->service->reassignTo($lead, $to, $request->validated('stage'));
+
+        return back()->with('success', "Lead reassigned to {$to->display_name}.");
     }
 
     public function destroy(Lead $lead)
@@ -446,6 +513,10 @@ class LeadController extends Controller
               */
             'stages' => CrmTaxonomy::allStages(),
             'activeStages' => CrmTaxonomy::activeStageKeys(),
+            // which desk each stage belongs to — the reassign form reads this
+            // to work out who to offer as the lead's stage changes under the
+            // person picker, without asking the server again
+            'stageOwnerRoles' => CrmTaxonomy::stageOwnerRoles(),
             /*
              | Who a NEW lead would be assigned to, stage by stage, for the
              | follow-up clash warning on the add-lead form and for nothing

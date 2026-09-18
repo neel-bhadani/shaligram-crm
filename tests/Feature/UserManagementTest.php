@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\UserController;
+use App\Http\Requests\Concerns\HandsOverWork;
 use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\UserHandoverService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
@@ -28,22 +31,23 @@ use Tests\TestCase;
  *                  which has to survive a handover in either direction. It is
  *                  asserted after every one of them below.
  *
- * @see \App\Http\Controllers\UserController
- * @see \App\Services\UserHandoverService
- * @see \App\Http\Requests\Concerns\HandsOverWork
+ * @see UserController
+ * @see UserHandoverService
+ * @see HandsOverWork
  */
 class UserManagementTest extends TestCase
 {
     use RefreshDatabase;
 
     private User $admin;
+
     private Project $project;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->admin   = $this->user('admin', 'Ann');
+        $this->admin = $this->user('admin', 'Ann');
         $this->project = Project::create(['name' => 'Alpha']);
 
         Carbon::setTestNow(Carbon::parse('2026-09-02 14:03'));
@@ -126,7 +130,7 @@ class UserManagementTest extends TestCase
     /** The case an admin hits constantly: fixing a surname, not a password. */
     public function test_editing_without_a_password_leaves_the_password_alone(): void
     {
-        $staff  = $this->user('telecaller', 'Tara');
+        $staff = $this->user('telecaller', 'Tara');
         $before = $staff->password;
 
         $this->actingAs($this->admin)
@@ -165,7 +169,7 @@ class UserManagementTest extends TestCase
 
     public function test_an_untouched_user_falls_back_to_the_role_default(): void
     {
-        $tele  = $this->user('telecaller', 'Tara');
+        $tele = $this->user('telecaller', 'Tara');
         $sales = $this->user('salesperson', 'Sam');
 
         $this->assertNull($tele->permissions, 'nothing is written until it is set');
@@ -189,7 +193,7 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($this->admin)
             ->put("/users/{$tele->id}", $this->editPayload($tele, [
-                'last_name'   => 'Iyer',
+                'last_name' => 'Iyer',
                 // the modal always resubmits the resolved set, defaults and all
                 'permissions' => $tele->effectivePermissions(),
             ]))->assertSessionHasNoErrors();
@@ -204,7 +208,7 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($this->admin)
             ->put("/users/{$tele->id}", $this->editPayload($tele, [
-                'role'        => 'salesperson',
+                'role' => 'salesperson',
                 'permissions' => config('crm.permission_defaults.salesperson'),
             ]))->assertSessionHasNoErrors();
 
@@ -237,6 +241,7 @@ class UserManagementTest extends TestCase
     {
         $sales = $this->user('salesperson', 'Sam');
         $other = $this->user('salesperson', 'Sara');
+        $this->project->salespeople()->attach($sales->id);
 
         $this->lead($sales, 'Own');
         $this->lead($other, 'Someone');
@@ -341,8 +346,8 @@ class UserManagementTest extends TestCase
     public function test_deleting_with_reassignment_moves_everything_in_one_go(): void
     {
         $sales = $this->user('salesperson', 'Sam');
-        $heir  = $this->user('salesperson', 'Sara');
-        $todo  = $this->leadWithTask($sales);
+        $heir = $this->user('salesperson', 'Sara');
+        $todo = $this->leadWithTask($sales);
 
         $this->actingAs($this->admin)
             ->delete("/users/{$sales->id}", ['handover_to' => $heir->id])
@@ -368,7 +373,7 @@ class UserManagementTest extends TestCase
     public function test_deleting_with_leave_unassigned_keeps_the_invariant(): void
     {
         $sales = $this->user('salesperson', 'Sam');
-        $todo  = $this->leadWithTask($sales);
+        $todo = $this->leadWithTask($sales);
 
         $this->actingAs($this->admin)
             ->delete("/users/{$sales->id}", ['leave_unassigned' => true])
@@ -396,8 +401,8 @@ class UserManagementTest extends TestCase
     public function test_work_can_only_be_handed_to_an_active_user_of_the_same_role(): void
     {
         $sales = $this->user('salesperson', 'Sam');
-        $tele  = $this->user('telecaller', 'Tara');
-        $off   = $this->user('salesperson', 'Sara');
+        $tele = $this->user('telecaller', 'Tara');
+        $off = $this->user('salesperson', 'Sara');
         $off->update(['is_active' => false]);
 
         $this->leadWithTask($sales);
@@ -466,7 +471,7 @@ class UserManagementTest extends TestCase
     public function test_a_deleted_users_completed_calls_survive(): void
     {
         $sales = $this->user('salesperson', 'Sam');
-        $todo  = $this->leadWithTask($sales);
+        $todo = $this->leadWithTask($sales);
 
         $todo->update([
             'status' => 'completed', 'completed_at' => now(),
@@ -502,41 +507,41 @@ class UserManagementTest extends TestCase
         $lead = $this->lead($owner, 'Meera');
 
         return Todo::create([
-            'lead_id'      => $lead->id,
-            'assigned_to'  => $owner->id,
-            'created_by'   => $this->admin->id,
+            'lead_id' => $lead->id,
+            'assigned_to' => $owner->id,
+            'created_by' => $this->admin->id,
             'scheduled_at' => now()->addDay(),
-            'type'         => 'call',
-            'status'       => 'pending',
+            'type' => 'call',
+            'status' => 'pending',
         ]);
     }
 
     private function lead(User $owner, string $first): Lead
     {
         return Lead::create([
-            'first_name'    => $first,
-            'last_name'     => 'Sharma',
+            'first_name' => $first,
+            'last_name' => 'Sharma',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'project_id'    => $this->project->id,
-            'source'        => 'walk_in',
-            'stage'         => 'connected',
-            'assigned_to'   => $owner->id,
+            'project_id' => $this->project->id,
+            'source' => 'walk_in',
+            'stage' => 'connected',
+            'assigned_to' => $owner->id,
             'assigned_role' => $owner->role,
-            'created_by'    => $this->admin->id,
+            'created_by' => $this->admin->id,
         ]);
     }
 
     private function payload(array $overrides = []): array
     {
         return array_merge([
-            'first_name'    => 'New',
-            'last_name'     => 'Person',
-            'email'         => 'new@example.test',
+            'first_name' => 'New',
+            'last_name' => 'Person',
+            'email' => 'new@example.test',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'role'          => 'telecaller',
-            'password'      => 'secret123',
+            'role' => 'telecaller',
+            'password' => 'secret123',
             'password_confirmation' => 'secret123',
-            'is_active'     => true,
+            'is_active' => true,
         ], $overrides);
     }
 
@@ -544,26 +549,26 @@ class UserManagementTest extends TestCase
     private function editPayload(User $user, array $overrides = []): array
     {
         return array_merge([
-            'first_name'    => $user->first_name,
-            'last_name'     => $user->last_name,
-            'email'         => $user->email,
+            'first_name' => $user->first_name,
+            'last_name' => $user->last_name,
+            'email' => $user->email,
             'mobile_number' => $user->mobile_number,
-            'role'          => $user->role,
-            'is_active'     => $user->is_active,
+            'role' => $user->role,
+            'is_active' => $user->is_active,
         ], $overrides);
     }
 
     private function leadPayload(): array
     {
         return [
-            'first_name'    => 'Meera',
-            'last_name'     => 'Sharma',
+            'first_name' => 'Meera',
+            'last_name' => 'Sharma',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'project_id'    => $this->project->id,
-            'source'        => 'walk_in',
-            'stage'         => 'fresh',
+            'project_id' => $this->project->id,
+            'source' => 'walk_in',
+            'stage' => 'fresh',
             'follow_up_type' => 'call',
-            'follow_up_at'   => now()->addDay()->format('Y-m-d H:i'),
+            'follow_up_at' => now()->addDay()->format('Y-m-d H:i'),
         ];
     }
 
@@ -571,7 +576,7 @@ class UserManagementTest extends TestCase
     {
         return User::create([
             'first_name' => $first, 'last_name' => 'User',
-            'email' => strtolower($first) . '@example.test',
+            'email' => strtolower($first).'@example.test',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
             'role' => $role, 'is_active' => true, 'password' => 'password',
         ]);

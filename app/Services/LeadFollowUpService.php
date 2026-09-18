@@ -81,6 +81,19 @@ class LeadFollowUpService
     private int $systemDepth = 0;
 
     /**
+     * How deep we are inside handover(). Non-zero is what tells assign() the
+     * move it is about to log is a stage crossing a desk, not a person picked
+     * by hand — see assign()'s own $isHandover.
+     *
+     * Not operationDepth, on purpose. reassignTo() wraps a stage change and an
+     * explicit assign() in one operation() of its own for atomicity, and that
+     * nesting must not read as a handover — the whole point of that method is
+     * that the person is the one the form asked for, not whoever schedule()'s
+     * round robin would have picked.
+     */
+    private int $handoverDepth = 0;
+
+    /**
      * Called when a lead is created. Gives it its first task from the date the
      * user picked on the form, because an open lead must never exist without a
      * pending to-do.
@@ -179,10 +192,14 @@ class LeadFollowUpService
                 'completed_by' => $this->actorId(),
             ]);
 
+            // read before applyStage() overwrites it — schedule() needs the
+            // stage the lead is leaving to tell whether this crosses a desk
+            $fromStage = $lead->stage;
+
             $this->applyStage($lead, $stage, $extra);
             $this->activities->outcome($lead, $this->actorId());
 
-            $outcome = $this->schedule($lead, $stage, $nextAt, $nextType, $nextRemarks, $todo->id);
+            $outcome = $this->schedule($lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks, $todo->id);
 
             $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
 
@@ -213,6 +230,10 @@ class LeadFollowUpService
             // leaving, and this row has to precede the history row below
             $this->activities->stageChanging($lead, $this->actorId(), $stage, $remark);
 
+            // read before applyStage() overwrites it — schedule() needs the
+            // stage the lead is leaving to tell whether this crosses a desk
+            $fromStage = $lead->stage;
+
             $this->applyStage($lead, $stage, $extra);
             $this->activities->outcome($lead, $this->actorId());
 
@@ -221,7 +242,7 @@ class LeadFollowUpService
             // history at all
             $this->recordStageChange($lead, $stage, $remark);
 
-            $outcome = $this->schedule($lead, $stage, $nextAt, $nextType, $nextRemarks);
+            $outcome = $this->schedule($lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks);
 
             $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
 
@@ -254,13 +275,14 @@ class LeadFollowUpService
         }
 
         /*
-         | Already inside another operation means handover() called this: the
-         | lead is moving desks because of the stage it just reached, and the
-         | timeline shows that as part of that stage change. Called from the top
-         | — automation's assign actions — it is a reassignment in its own
-         | right. Read before operation() raises the depth for this call.
+         | Inside handover() means the lead is moving desks because of the
+         | stage it just reached, and the timeline shows that as part of that
+         | stage change. Called from anywhere else — automation's assign
+         | actions, a manual reassignment, reassignTo()'s own explicit pick —
+         | it is a reassignment in its own right, whatever else it happens to
+         | be nested inside for the sake of one transaction.
          */
-        $isHandover = $this->operationDepth > 0;
+        $isHandover = $this->handoverDepth > 0;
 
         return (bool) $this->operation(function () use ($lead, $to, $isHandover) {
             /*
@@ -485,13 +507,14 @@ class LeadFollowUpService
     }
 
     /**
-     * Cancel what is pending, hand over if this is the handover stage, and
+     * Cancel what is pending, hand over if this move crosses a desk, and
      * write the task the user asked for.
      *
      * @return array{handed_over_to: ?string}
      */
     private function schedule(
         Lead $lead,
+        string $fromStage,
         string $stage,
         ?Carbon $when,
         ?string $type,
@@ -521,9 +544,30 @@ class LeadFollowUpService
                 ->update(['status' => 'cancelled']);
         }
 
-        // handover — scheduling a site visit moves the lead to the desk that
-        // stage belongs to, when whoever holds it is not already on it
-        if ($stage === CrmTaxonomy::handoverStage()) {
+        /*
+         | Handover — not one named stage any more, and not one direction
+         | either. `lead_stages.owner_role` already says who works each
+         | stage, and the desk moves whenever that role changes, forward or
+         | backward: `fresh` to `site_visit_scheduled` crosses it, so does
+         | `not_connected` straight to `site_visit_done`, and so does a
+         | salesperson putting a lead back on `fresh` — the same handover,
+         | run in reverse, back onto a telecaller.
+         |
+         | Moving between two telecaller stages (`fresh` to `connected`) or
+         | two salesperson stages (`in_discussion` to `booking_done`) is not a
+         | handover — the lead stays exactly where it was, with no round robin
+         | re-run. Nor is landing on a terminal stage, whose owner_role is
+         | `null`: the lead stays with whoever was already holding it — see
+         | CrmTaxonomy::ownerRoleFor().
+         |
+         | `crm.handover_stage` itself is untouched and still read directly by
+         | LeadAssignmentService::stagesPastHandover() and routingWarning(),
+         | which measure positions in the pipeline rather than role changes.
+         */
+        $fromRole = CrmTaxonomy::ownerRoleFor($fromStage);
+        $toRole = CrmTaxonomy::ownerRoleFor($stage);
+
+        if ($fromRole !== null && $toRole !== null && $fromRole !== $toRole) {
             $outcome['handed_over_to'] = $this->handover($lead, $stage);
         }
 
@@ -609,9 +653,11 @@ class LeadFollowUpService
      * round robin — the same per-project turns, the same fallback and the same
      * admin alert as a lead created at this stage; a lead an admin was holding
      * because no telecaller was active goes the same way, which a check on
-     * `assigned_role === 'telecaller'` used to miss; a salesperson's lead stays
-     * put. Nobody on the desk, or `handover_mode` set to `admin`, and it stays
-     * put too.
+     * `assigned_role === 'telecaller'` used to miss. A salesperson's lead
+     * moving the other way goes to the first active telecaller — telecallers
+     * are a single company-wide desk, never chosen per project. Nobody on the
+     * desk, or `handover_mode` set to `admin` (which only silences the
+     * salesperson round robin), and the lead stays put.
      *
      * Already inside this class's transaction, so the turn is taken under the
      * project lock and rolls back with the stage change if anything fails.
@@ -638,8 +684,63 @@ class LeadFollowUpService
          | The new task, if there is one, is created after this returns and
          | reads $lead->assigned_to, so it lands on the salesperson by itself.
          */
-        $this->assign($lead, $next);
+        $this->handoverDepth++;
+
+        try {
+            $this->assign($lead, $next);
+        } finally {
+            $this->handoverDepth--;
+        }
 
         return $next->display_name;
+    }
+
+    /**
+     * Move a lead to a stage and to a named person, together, in one action.
+     *
+     * Everything schedule() does for a plain stage change happens here too —
+     * the pending to-do is cancelled if the new stage is terminal, and moved
+     * (never duplicated) to whoever ends up holding the lead — except the one
+     * thing that would fight the point of this method: schedule()'s own
+     * handover, which resolves the new owner itself by walking the round
+     * robin. This form already carries that answer — the person the user
+     * picked — so that resolution is skipped entirely rather than run and
+     * then overwritten, which would take a turn nobody asked for and write
+     * two owners to a lead that only ever had one in mind.
+     *
+     * $stage is optional: a plain "move this lead to somebody" reassignment,
+     * unchanged from before this method existed, is this with $stage left
+     * null or equal to the lead's current one.
+     *
+     * @return array{handed_over_to: ?string} shaped like changeStage()'s
+     *                                        return, though a handover never
+     *                                        happens here — see above
+     */
+    public function reassignTo(Lead $lead, User $to, ?string $stage = null, ?string $historyRemark = null): array
+    {
+        return $this->operation(function () use ($lead, $to, $stage, $historyRemark) {
+            $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+
+            if ($stage !== null && $stage !== $lead->stage) {
+                $remark = $historyRemark ?? 'Stage changed with a manual reassignment.';
+
+                $this->activities->stageChanging($lead, $this->actorId(), $stage, $remark);
+                $this->applyStage($lead, $stage);
+                $this->activities->outcome($lead, $this->actorId());
+                $this->recordStageChange($lead, $stage, $remark);
+
+                if (CrmTaxonomy::isTerminal($stage)) {
+                    Todo::where('lead_id', $lead->id)
+                        ->where('status', 'pending')
+                        ->update(['status' => 'cancelled']);
+                }
+
+                $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
+            }
+
+            $this->assign($lead, $to);
+
+            return ['handed_over_to' => null];
+        });
     }
 }

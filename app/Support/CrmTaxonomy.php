@@ -344,6 +344,22 @@ class CrmTaxonomy
     }
 
     /**
+     * Every stage's own answer to ownerRoleFor(), as one map, for a frontend
+     * that has to resolve a stage it has not saved yet — the reassign form
+     * lets a stage and a person be picked together, and the person list has
+     * to follow the stage a user has just clicked without a round trip to ask
+     * this class again.
+     *
+     * @return array<string, string|null>
+     */
+    public static function stageOwnerRoles(): array
+    {
+        return collect(self::stageRows())
+            ->mapWithKeys(fn (array $s) => [$s['key'] => self::ownerRoleFor($s['key'])])
+            ->all();
+    }
+
+    /**
      * The stage that hands a lead from a telecaller to a salesperson.
      *
      * Still a config value, and deliberately: it is a POINTER at a stage rather

@@ -249,7 +249,7 @@ class LeadTimeline
             ],
             LeadActivity::Reassigned => [
                 'kind' => 'assignment',
-                'title' => 'Reassigned',
+                'title' => 'Manually reassigned',
                 'change' => [
                     'field' => 'Owner',
                     'from' => $this->userName($head->from_value),

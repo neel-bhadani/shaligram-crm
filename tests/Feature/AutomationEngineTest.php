@@ -183,7 +183,7 @@ class AutomationEngineTest extends TestCase
             'is_active' => true,
         ]);
 
-        $lead = $this->lead(['stage' => 'connected', 'assigned_to' => $this->tele->id, 'assigned_role' => 'telecaller']);
+        $lead = $this->lead(['stage' => 'fresh', 'assigned_to' => $this->tele->id, 'assigned_role' => 'telecaller']);
         $todo = $this->todoFor($lead);
 
         // scheduling a site visit hands the lead from telecaller to salesperson
@@ -455,7 +455,7 @@ class AutomationEngineTest extends TestCase
     {
         $this->rule([
             'trigger' => 'stage_changed',
-            'trigger_config' => ['stage' => 'in_discussion'],
+            'trigger_config' => ['stage' => 'not_connected'],
             'actions' => [[
                 'type' => 'raise_alert', 'recipient' => 'role', 'recipient_role' => 'telecaller',
                 'severity' => 'info', 'title' => 'Look at {lead_name}',
@@ -465,11 +465,13 @@ class AutomationEngineTest extends TestCase
 
         $other = $this->user('telecaller', 'Nina');   // cannot see other people's leads
 
+        // 'connected' to 'not_connected' stays on the telecaller desk, so the
+        // lead is still Tara's to see when the alert fires
         $lead = $this->lead(['stage' => 'connected', 'assigned_to' => $this->tele->id]);
         $this->todoFor($lead);
 
         $this->actingAs($this->admin);
-        app(LeadFollowUpService::class)->changeStage($lead->fresh(), 'in_discussion');
+        app(LeadFollowUpService::class)->changeStage($lead->fresh(), 'not_connected');
 
         $this->assertSame(1, Alert::where('title', 'Look at Rahul Mehta')->count());
         $this->assertDatabaseHas('alerts', ['user_id' => $this->tele->id, 'title' => 'Look at Rahul Mehta']);

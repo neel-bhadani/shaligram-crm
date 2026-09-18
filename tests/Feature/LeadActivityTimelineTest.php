@@ -77,7 +77,7 @@ class LeadActivityTimelineTest extends TestCase
 
         $response = $this->actingAs($this->admin)->getJson("/leads/{$lead->id}")->assertOk();
 
-        $this->assertSame(['lead', 'timeline'], array_keys($response->json()));
+        $this->assertSame(['lead', 'timeline', 'reassignCandidates'], array_keys($response->json()));
 
         $response->assertJsonStructure([
             'lead' => [
@@ -472,8 +472,10 @@ class LeadActivityTimelineTest extends TestCase
                 ->assertSessionHasNoErrors();
         }
 
+        // as the admin: these stages bounce the lead between desks, and only
+        // volume for the query-count assertion below is the point here
         foreach (['connected', 'details_shared', 'in_discussion', 'connected', 'details_shared', 'in_discussion'] as $stage) {
-            $this->logCall($big, $this->tele, ['stage' => $stage]);
+            $this->logCall($big, $this->admin, ['stage' => $stage]);
         }
 
         $this->actingAs($this->admin)

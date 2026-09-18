@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
+import { router } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import StageBadge from './StageBadge.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 import { relativeTime } from '@/lib/relativeTime.js'
+import { pickable } from '@/composables/useTaxonomy.js'
 
 const props = defineProps({
   show: Boolean,
@@ -25,20 +27,81 @@ const lead = ref(null)
 const timeline = ref([])
 const loading = ref(false)
 const showAll = ref(false)
+// role => candidates, not a flat list — see LeadController::reassignCandidates().
+// The stage picker below decides which role's list is offered.
+const reassignCandidates = ref({})
+const reassignStage = ref('')
+const reassignTo = ref('')
+const reassigning = ref(false)
 
-watch(() => props.show, async v => {
-  if (!v || !props.leadId) { lead.value = null; timeline.value = []; return }
+async function load() {
+  if (!props.show || !props.leadId) {
+    lead.value = null; timeline.value = []; reassignCandidates.value = {}
+    return
+  }
 
   loading.value = true
-  showAll.value = false
   try {
     const { data } = await axios.get(route('leads.show', props.leadId))
     lead.value = data.lead
     timeline.value = data.timeline ?? []
+    reassignCandidates.value = data.reassignCandidates ?? {}
+    reassignStage.value = lead.value?.stage ?? ''
   } finally {
     loading.value = false
   }
+}
+
+watch(() => props.show, v => {
+  showAll.value = false
+  reassignTo.value = ''
+  load()
 })
+
+// picking a different stage changes who is offered — the choice made under
+// the old stage rarely still makes sense under the new one
+watch(reassignStage, () => { reassignTo.value = '' })
+
+/*
+ | pickable(), the same helper the lead form's own stage field uses: every
+ | active stage, plus the lead's current one even if it has since been
+ | retired. Nothing here restricts which stage may follow which — see
+ | LeadReassignRequest, which validates the same "active, or the lead's own
+ | value" rule as every other stage field in the application.
+ */
+const reassignStageOptions = computed(() =>
+  pickable(props.options.stages, props.options.activeStages, lead.value?.stage))
+
+// the desk the picked stage belongs to, falling back to the lead's own
+// current owner's role for a terminal stage — see CrmTaxonomy::stageOwnerRoles()
+const reassignRole = computed(() => props.options.stageOwnerRoles?.[reassignStage.value] ?? lead.value?.assigned_role)
+
+const reassignRoleCandidates = computed(() => reassignCandidates.value[reassignRole.value] ?? [])
+
+// shown whenever ANY stage's desk has somebody to offer, not only the one the
+// lead happens to be sitting in right now — see LeadController::reassignCandidates()
+const canReassign = computed(() => Object.values(reassignCandidates.value).some(list => list.length))
+
+function reassign() {
+  if (!reassignTo.value) { return }
+
+  reassigning.value = true
+  // Inertia's router, not a bare axios PUT: leads.reassign redirects back()
+  // on success, and only Inertia's client follows a PUT redirect as a GET
+  // (a 303) — a plain axios PUT would replay the redirect as PUT against a
+  // route that doesn't accept it (405). Going through the router also gets
+  // the success toast for free, since app.js flashes it on every Inertia
+  // response.
+  router.put(route('leads.reassign', props.leadId), {
+    assigned_to: reassignTo.value,
+    stage: reassignStage.value || null,
+  }, {
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => { reassignTo.value = ''; load() },
+    onFinish: () => { reassigning.value = false },
+  })
+}
 
 const fmt = v => v ? new Date(v).toLocaleString('en-IN',
   { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
@@ -77,6 +140,15 @@ const tint = e => {
 
   return { color: c, backgroundColor: c + '18' }
 }
+
+// Display only: a jump straight from Fresh/Not connected to a salesperson
+// stage reads as if the call that got it there never happened. This shows
+// "Connected" as an implied badge in between — the stored stage, the
+// database row and the handover logic never see it.
+const HANDOVER_LANDING_STAGES = ['details_shared', 'site_visit_scheduled', 'site_visit_done', 'in_discussion']
+
+const impliedStage = (from, to) =>
+  ['fresh', 'not_connected'].includes(from) && HANDOVER_LANDING_STAGES.includes(to) ? 'connected' : null
 </script>
 
 <template>
@@ -148,6 +220,10 @@ const tint = e => {
                   <template v-if="e.from_stage">
                     <StageBadge :stage="e.from_stage" />
                     <span class="text-xs font-normal text-slate-400" aria-label="to">→</span>
+                    <template v-if="impliedStage(e.from_stage, e.to_stage)">
+                      <StageBadge :stage="impliedStage(e.from_stage, e.to_stage)" />
+                      <span class="text-xs font-normal text-slate-400" aria-label="to">→</span>
+                    </template>
                   </template>
                   <StageBadge :stage="e.to_stage" />
                 </template>
@@ -189,6 +265,17 @@ const tint = e => {
     </div>
 
     <template #footer>
+      <div v-if="allowEdit && canReassign" class="flex flex-1 flex-wrap items-center gap-1.5 sm:flex-none">
+        <select v-model="reassignStage" class="!w-auto !py-1.5 text-xs" aria-label="Reassign stage">
+          <option v-for="s in reassignStageOptions" :key="s.key" :value="s.key">{{ s.label }}</option>
+        </select>
+        <select v-model="reassignTo" class="!w-auto !py-1.5 text-xs" aria-label="Reassign to">
+          <option value="" disabled>Reassign to…</option>
+          <option v-for="c in reassignRoleCandidates" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+        <button type="button" class="btn-ghost !py-1.5 text-xs" :disabled="!reassignTo || reassigning"
+                @click="reassign">{{ reassigning ? 'Reassigning…' : 'Reassign' }}</button>
+      </div>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Close</button>
       <button v-if="allowFollowUp && lead?.pending_todo" class="btn flex-1 sm:flex-none"
               @click="emit('followup', lead)">Update follow-up</button>
