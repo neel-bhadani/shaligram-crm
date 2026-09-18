@@ -33,14 +33,6 @@ const reassignStage = ref('')
 const reassignTo = ref('')
 const reassigning = ref(false)
 
-// distinct from reassign above: this moves the lead's PERSON to a different
-// PROJECT, closing this lead as lost and opening a new one there for them —
-// see LeadController::transfer()
-const transferOpen = ref(false)
-const transferProjectId = ref('')
-const transferNote = ref('')
-const transferring = ref(false)
-
 async function load() {
   if (!props.show || !props.leadId) {
     lead.value = null; timeline.value = []; reassignCandidates.value = {}
@@ -71,9 +63,6 @@ async function load() {
 
 watch(() => props.show, v => {
   reassignTo.value = ''
-  transferOpen.value = false
-  transferProjectId.value = ''
-  transferNote.value = ''
   load()
 })
 
@@ -100,30 +89,6 @@ const reassignRoleCandidates = computed(() => reassignCandidates.value[reassignR
 // shown whenever ANY stage's desk has somebody to offer, not only the one the
 // lead happens to be sitting in right now — see LeadController::reassignCandidates()
 const canReassign = computed(() => Object.values(reassignCandidates.value).some(list => list.length))
-
-// every active project but this lead's own — not narrowed to the current
-// user's projects, since the point of transferring is offering one they may
-// not normally touch
-const transferProjectOptions = computed(() =>
-  props.options.projects.filter(p => p.id !== lead.value?.project_id))
-
-// a lead already booked or lost has nowhere left to transfer from
-const canTransfer = computed(() => lead.value && !props.options.terminalStages.includes(lead.value.stage))
-
-function transfer() {
-  if (!transferProjectId.value || !transferNote.value) { return }
-
-  transferring.value = true
-  router.put(route('leads.transfer', props.leadId), {
-    project_id: transferProjectId.value,
-    note: transferNote.value,
-  }, {
-    preserveScroll: true,
-    preserveState: true,
-    onSuccess: () => { transferOpen.value = false; transferProjectId.value = ''; transferNote.value = ''; load() },
-    onFinish: () => { transferring.value = false },
-  })
-}
 
 function reassign() {
   if (!reassignTo.value) { return }
@@ -185,46 +150,6 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
       </dl>
 
       <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
-
-      <!--
-        Transfer to project — its own labeled section, styled like Activity's
-        heading above it so the modal reads as three distinct zones (history,
-        transfer, reassign) rather than one continuous form. Distinct from
-        Reassign in the footer below: Reassign moves this lead to a different
-        person on the same project; this closes it as lost here and opens a
-        new lead for the same person on a different project, kept with the
-        same owner. See LeadController::transfer().
-
-        The label and description stay on screen whether the form is open or
-        not — a bare "Transfer to project…" button with no explanation until
-        after it's clicked left people guessing what they were about to do.
-      -->
-      <div v-if="allowEdit && canTransfer" class="mt-6 border-t border-slate-100 pt-5">
-        <h4 class="text-xs font-semibold text-slate-500">Transfer to project</h4>
-        <p class="mt-0.5 text-xs text-slate-400">
-          Lead isn't interested in {{ lead.project?.name ?? 'this project' }} but wants another —
-          closes this lead as Lost and opens a new one on that project, still assigned to
-          {{ lead.owner?.display_name ?? 'its current owner' }}.
-        </p>
-
-        <button v-if="!transferOpen" type="button" class="btn-ghost mt-2 text-xs"
-                @click="transferOpen = true">Transfer to project…</button>
-
-        <div v-else class="mt-2 space-y-2">
-          <select v-model="transferProjectId" class="w-full text-xs" aria-label="Transfer to project">
-            <option value="" disabled>Choose a project…</option>
-            <option v-for="p in transferProjectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-          <textarea v-model="transferNote" rows="2" class="w-full text-xs"
-                    placeholder="Why is this lead moving projects?" aria-label="Transfer note"></textarea>
-          <div class="flex justify-end gap-1.5">
-            <button type="button" class="btn-ghost !py-1.5 text-xs" @click="transferOpen = false">Cancel</button>
-            <button type="button" class="btn !py-1.5 text-xs"
-                    :disabled="!transferProjectId || !transferNote || transferring"
-                    @click="transfer">{{ transferring ? 'Transferring…' : 'Transfer' }}</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <template #footer>

@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\Todo;
-use App\Models\User;
 use App\Support\CrmTaxonomy;
 use Illuminate\Support\Arr;
 
@@ -142,45 +141,6 @@ class LeadActivityRecorder
             $handover
                 ? 'Handed over on reaching '.CrmTaxonomy::stageLabel($lead->stage).'.'
                 : null,
-        );
-    }
-
-    /**
-     * This lead is being marked lost because the person is continuing on
-     * `$newLead`'s project instead. Written straight after the stage-change
-     * entry that lost it, but as its own head — see LeadActivity::TransferredOut
-     * for why this must never read as one more reason for the loss.
-     */
-    public function transferredOut(Lead $lead, ?int $userId, Lead $newLead): void
-    {
-        $this->write(
-            $lead,
-            $userId,
-            LeadActivity::TransferredOut,
-            'transferred_to_lead_id',
-            to: $newLead->id,
-            remark: "Transferred to {$newLead->project->name} (new lead created).",
-        );
-    }
-
-    /**
-     * This lead exists because `$oldLead` was transferred here. Written
-     * straight after the creation entry, on the new lead itself.
-     *
-     * The remark says plainly that the assignment was forced across the
-     * normal project boundary, so nobody reading it mistakes `$to` for a
-     * round-robin pick or a person who is actually staffed on this project.
-     */
-    public function transferredIn(Lead $lead, ?int $userId, Lead $oldLead, User $to): void
-    {
-        $this->write(
-            $lead,
-            $userId,
-            LeadActivity::TransferredIn,
-            'transferred_from_lead_id',
-            from: $oldLead->id,
-            remark: "Transferred from {$oldLead->project->name} (previously lost there). "
-                ."Assigned directly to {$to->display_name}, overriding normal project assignment.",
         );
     }
 

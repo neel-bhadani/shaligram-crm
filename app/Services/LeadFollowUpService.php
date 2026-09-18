@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Lead;
-use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\Automation\RuleEngine;
@@ -742,81 +741,6 @@ class LeadFollowUpService
             $this->assign($lead, $to);
 
             return ['handed_over_to' => null];
-        });
-    }
-
-    /**
-     * Close this lead out as lost, and open a new one for the same person on
-     * a different project, held by the same salesperson who already built
-     * the relationship — see LeadController::transfer().
-     *
-     * A DISTINCT ACTION, not a reassignment or a handover wearing a new name:
-     *
-     *   - The old lead is lost, with `reason = transferred_project`. Its
-     *     pending to-do is cancelled the same way any other loss cancels one
-     *     — see applyStage()/schedule() — never moved to the new lead.
-     *   - The new lead is created directly with `assigned_to` set to the
-     *     transferring salesperson, bypassing ownerFor() entirely. This is
-     *     the one place in the application a lead's owner is not resolved by
-     *     LeadAssignmentService: the whole point is to keep the person who
-     *     already has the relationship, whether or not they are staffed on
-     *     the target project.
-     *   - onLeadCreated() gives it the pending to-do every manually created
-     *     lead needs, and its own creation history.
-     *   - Both leads get one more entry each — TransferredOut, TransferredIn
-     *     — that exists only to say the two rows are one person's journey.
-     *     Neither is a child of the stage change or the creation before it,
-     *     so neither can be mistaken for an ordinary loss or an ordinary
-     *     lead arriving with an owner already on it.
-     *
-     * One operation(), so the loss, the new lead and both history entries
-     * commit together or not at all.
-     */
-    public function transferToProject(Lead $lead, Project $target, string $note): Lead
-    {
-        return $this->operation(function () use ($lead, $target, $note) {
-            $owner = $lead->assigned_to ? User::find($lead->assigned_to) : null;
-
-            $this->changeStage(
-                $lead,
-                'lost',
-                ['reason' => 'transferred_project'],
-                historyRemark: "Interested in {$target->name} instead. {$note}",
-            );
-
-            $newLead = Lead::create([
-                'first_name' => $lead->first_name,
-                'middle_name' => $lead->middle_name,
-                'last_name' => $lead->last_name,
-                'mobile_number' => $lead->mobile_number,
-                'email' => $lead->email,
-                'project_id' => $target->id,
-                'source' => $lead->source,
-                'broker_name' => $lead->broker_name,
-                'channel_partner_id' => $lead->channel_partner_id,
-                'requirement' => $lead->requirement,
-                'stage' => 'connected',
-                'assigned_to' => $owner?->id,
-                'assigned_role' => $owner?->role,
-                'created_by' => $this->actorId(),
-                'stage_changed_at' => now(),
-                'last_activity_at' => now(),
-            ]);
-
-            $this->onLeadCreated(
-                $newLead,
-                now()->addDay(),
-                'call',
-                "Transferred from {$lead->project->name}. {$note}",
-            );
-
-            $this->activities->transferredOut($lead, $this->actorId(), $newLead);
-
-            if ($owner) {
-                $this->activities->transferredIn($newLead, $this->actorId(), $lead, $owner);
-            }
-
-            return $newLead;
         });
     }
 }

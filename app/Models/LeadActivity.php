@@ -41,24 +41,6 @@ class LeadActivity extends Model
     /** The lead changed hands on its own. `from_value` → `to_value` are user ids. */
     public const Reassigned = 'reassigned';
 
-    /**
-     * This lead is closing because the person is continuing on another
-     * project — see LeadFollowUpService::transferToProject(). Written on the
-     * OLD lead, right after its stage change to lost. A head of its own,
-     * deliberately, and not a child of that change: the point of this action
-     * is that it is neither an ordinary loss nor a reassignment, and folding
-     * it into either entry would hide the one fact that matters. `to_value`
-     * is the new lead's id.
-     */
-    public const TransferredOut = 'transferred_out';
-
-    /**
-     * This lead continues a person's history that started, and was lost, on
-     * another project — the other half of TransferredOut, written on the NEW
-     * lead right after it is created. `from_value` is the old lead's id.
-     */
-    public const TransferredIn = 'transferred_in';
-
     /* ---------------- children: part of the head before them ---------------- */
 
     /** The follow-up the action booked next. Same columns as FollowUpScheduled. */
