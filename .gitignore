@@ -26,3 +26,7 @@ Homestead.yaml
 Thumbs.db
 _ide_helper.php
 old-data/*.before-cleanup.json
+.claude/.headroom_wrap_marker.json
+.claude/.headroom_wrap_owners.json
+.claude/.headroom_wrap_settings.lock
+.claude/settings.local.json

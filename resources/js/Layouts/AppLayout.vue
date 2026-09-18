@@ -68,6 +68,13 @@ const nav = computed(() => [
   { name: 'Channel Partners', href: route('channel-partners.index'), active: route().current('channel-partners.*') },
   { name: 'Follow-ups', href: route('todos.index'), active: route().current('todos.*') },
   /*
+   | Calendar sits beside Follow-ups because it is the same list drawn by the
+   | day: which follow-ups are due when. It reads the same rows as the To-do
+   | page, through the same Todo::forUser() boundary, so a telecaller's
+   | calendar is their own follow-ups and an admin's is the office's.
+   */
+  { name: 'Calendar', href: route('calendar.index'), active: route().current('calendar.*') },
+  /*
    | Alerts is for everyone, and deliberately so. A telecaller is told about
    | their own overdue follow-ups and carries an unread count in the header on
    | every page; hiding the page they would land on would leave that count

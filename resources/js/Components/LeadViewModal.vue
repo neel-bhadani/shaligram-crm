@@ -6,8 +6,20 @@ import StageBadge from './StageBadge.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 import { relativeTime } from '@/lib/relativeTime.js'
 
-const props = defineProps({ show: Boolean, leadId: Number, options: Object })
-const emit = defineEmits(['close', 'edit'])
+const props = defineProps({
+  show: Boolean,
+  leadId: Number,
+  options: Object,
+  // opt-in: the Calendar page reuses this popup as the way into
+  // CompleteTaskModal, so a follow-up can be updated without leaving it.
+  // Off elsewhere, so Leads keeps its own single "Edit lead" action.
+  allowFollowUp: Boolean,
+  // Leads is the only page with somewhere for "Edit lead" to open into
+  // (LeadFormModal, via @edit). Calendar has none, so it opts out rather
+  // than showing a button that does nothing.
+  allowEdit: { type: Boolean, default: true },
+})
+const emit = defineEmits(['close', 'edit', 'followup'])
 
 const lead = ref(null)
 const timeline = ref([])
@@ -178,7 +190,9 @@ const tint = e => {
 
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Close</button>
-      <button class="btn flex-1 sm:flex-none" @click="emit('edit', leadId)">Edit lead</button>
+      <button v-if="allowFollowUp && lead?.pending_todo" class="btn flex-1 sm:flex-none"
+              @click="emit('followup', lead)">Update follow-up</button>
+      <button v-if="allowEdit" class="btn flex-1 sm:flex-none" @click="emit('edit', leadId)">Edit lead</button>
     </template>
   </Modal>
 </template>
