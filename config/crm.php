@@ -323,6 +323,7 @@ return [
      */
     'stage_owner_roles' => [
         'fresh' => 'telecaller',
+        'connected' => 'telecaller',
         'not_connected' => 'telecaller',
     ],
 

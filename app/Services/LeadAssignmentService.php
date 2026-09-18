@@ -16,8 +16,8 @@ use Illuminate\Support\Facades\DB;
  * screen and seeded from `crm.stage_owner_roles`), and the lead goes to a
  * person doing that job:
  *
- *   fresh, not_connected    → telecaller
- *   any other open stage    → salesperson
+ *   fresh, connected, not_connected → telecaller
+ *   any other open stage            → salesperson
  *   a terminal stage        → nobody new; it stays with whoever added it
  *
  * Three callers, and they must never disagree, which is why none of them

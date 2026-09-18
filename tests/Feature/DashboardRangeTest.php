@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Lead;
 use App\Models\Project;
@@ -20,20 +21,21 @@ use Tests\TestCase;
  * and that difference is visible on the page: an event stamped later today
  * dropped out of Today while still counting in the longer ranges.
  *
- * @see \App\Http\Controllers\DashboardController::preset()
+ * @see DashboardController::preset()
  */
 class DashboardRangeTest extends TestCase
 {
     use RefreshDatabase;
 
     private User $admin;
+
     private Project $project;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->admin   = $this->user('admin');
+        $this->admin = $this->user('admin');
         $this->project = Project::create(['name' => 'Alpha']);
 
         Carbon::setTestNow(Carbon::parse('2026-09-02 12:00'));
@@ -155,13 +157,13 @@ class DashboardRangeTest extends TestCase
      */
     public function test_a_handover_does_not_revert_the_stage_it_was_triggered_by(): void
     {
-        $telecaller  = $this->user('telecaller');
+        $telecaller = $this->user('telecaller');
         $salesperson = $this->user('salesperson');
 
         $lead = $this->lead(now()->subDays(2));
         $lead->update([
-            'stage'         => 'details_shared',
-            'assigned_to'   => $telecaller->id,
+            'stage' => 'fresh',
+            'assigned_to' => $telecaller->id,
             'assigned_role' => 'telecaller',
         ]);
 
@@ -191,7 +193,7 @@ class DashboardRangeTest extends TestCase
                 'stage' => 'connected', 'remarks' => 'Spoke.',
                 // the call books the next one; nothing schedules it any more
                 'follow_up_type' => 'call',
-                'follow_up_at'   => now()->addDay()->format('Y-m-d H:i'),
+                'follow_up_at' => now()->addDay()->format('Y-m-d H:i'),
             ])->assertSessionHasNoErrors();
 
         $this->assertSame(1, Todo::whereNotNull('outcome_stage')->count());
@@ -210,7 +212,7 @@ class DashboardRangeTest extends TestCase
 
         $this->actingAs($this->admin)->put("/leads/{$lead->id}", $this->payload([
             'mobile_number' => $lead->mobile_number,
-            'stage'         => 'details_shared',
+            'stage' => 'details_shared',
         ]));
 
         $this->assertSame('details_shared', $lead->fresh()->stage);
@@ -262,7 +264,7 @@ class DashboardRangeTest extends TestCase
         $this->lead(now()->subDays(40))->forceFill(['stage' => 'booking_done'])->save();
 
         $queries = ['range=today', 'range=7', 'range=30',
-                    'from=2026-09-01&to=2026-09-01', 'from=2026-01-01&to=2026-09-02'];
+            'from=2026-09-01&to=2026-09-01', 'from=2026-01-01&to=2026-09-02'];
 
         $seen = [];
 
@@ -270,8 +272,8 @@ class DashboardRangeTest extends TestCase
             $seen[$query] = $this->charts($query)['stagesAllTime'];
         }
 
-        $this->assertCount(1, collect($seen)->unique(fn($c) => json_encode($c)),
-            'chart 1 moved with the range: ' . json_encode($seen));
+        $this->assertCount(1, collect($seen)->unique(fn ($c) => json_encode($c)),
+            'chart 1 moved with the range: '.json_encode($seen));
 
         // and it really is every lead, not merely a stable subset of them
         $this->assertSame(5, reset($seen)['total']);
@@ -494,9 +496,9 @@ class DashboardRangeTest extends TestCase
     private function props(string $only, string $query): array
     {
         return $this->actingAs($this->admin)->withHeaders([
-            'X-Inertia'                   => 'true',
-            'X-Inertia-Version'           => (string) app(HandleInertiaRequests::class)->version(request()),
-            'X-Inertia-Partial-Data'      => $only,
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => (string) app(HandleInertiaRequests::class)->version(request()),
+            'X-Inertia-Partial-Data' => $only,
             'X-Inertia-Partial-Component' => 'Dashboard',
         ])->get("/dashboard?reset=1&$query")->json("props.$only");
     }
@@ -552,15 +554,15 @@ class DashboardRangeTest extends TestCase
     private function payload(array $overrides = []): array
     {
         return $overrides + [
-            'first_name'    => 'Meera',
-            'last_name'     => 'Sharma',
+            'first_name' => 'Meera',
+            'last_name' => 'Sharma',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'project_id'    => $this->project->id,
-            'source'        => 'walk_in',
-            'stage'         => 'fresh',
+            'project_id' => $this->project->id,
+            'source' => 'walk_in',
+            'stage' => 'fresh',
             // follow-ups are booked by hand now, so the form carries one
             'follow_up_type' => 'call',
-            'follow_up_at'   => now()->addDay()->format('Y-m-d H:i'),
+            'follow_up_at' => now()->addDay()->format('Y-m-d H:i'),
         ];
     }
 

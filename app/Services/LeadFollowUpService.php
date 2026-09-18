@@ -179,10 +179,14 @@ class LeadFollowUpService
                 'completed_by' => $this->actorId(),
             ]);
 
+            // read before applyStage() overwrites it — schedule() needs the
+            // stage the lead is leaving to tell whether this crosses a desk
+            $fromStage = $lead->stage;
+
             $this->applyStage($lead, $stage, $extra);
             $this->activities->outcome($lead, $this->actorId());
 
-            $outcome = $this->schedule($lead, $stage, $nextAt, $nextType, $nextRemarks, $todo->id);
+            $outcome = $this->schedule($lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks, $todo->id);
 
             $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
 
@@ -213,6 +217,10 @@ class LeadFollowUpService
             // leaving, and this row has to precede the history row below
             $this->activities->stageChanging($lead, $this->actorId(), $stage, $remark);
 
+            // read before applyStage() overwrites it — schedule() needs the
+            // stage the lead is leaving to tell whether this crosses a desk
+            $fromStage = $lead->stage;
+
             $this->applyStage($lead, $stage, $extra);
             $this->activities->outcome($lead, $this->actorId());
 
@@ -221,7 +229,7 @@ class LeadFollowUpService
             // history at all
             $this->recordStageChange($lead, $stage, $remark);
 
-            $outcome = $this->schedule($lead, $stage, $nextAt, $nextType, $nextRemarks);
+            $outcome = $this->schedule($lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks);
 
             $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
 
@@ -485,13 +493,14 @@ class LeadFollowUpService
     }
 
     /**
-     * Cancel what is pending, hand over if this is the handover stage, and
+     * Cancel what is pending, hand over if this move crosses a desk, and
      * write the task the user asked for.
      *
      * @return array{handed_over_to: ?string}
      */
     private function schedule(
         Lead $lead,
+        string $fromStage,
         string $stage,
         ?Carbon $when,
         ?string $type,
@@ -521,9 +530,33 @@ class LeadFollowUpService
                 ->update(['status' => 'cancelled']);
         }
 
-        // handover — scheduling a site visit moves the lead to the desk that
-        // stage belongs to, when whoever holds it is not already on it
-        if ($stage === CrmTaxonomy::handoverStage()) {
+        /*
+         | Handover — not one named stage any more, and not any role change
+         | either. `lead_stages.owner_role` already says who works each
+         | stage, and the desk only ever moves one direction: telecaller to
+         | salesperson. `fresh` to `site_visit_scheduled` crosses it, and so
+         | does `not_connected` straight to `site_visit_done` — a call logged
+         | as "already visited" that used to leave the lead on the telecaller
+         | forever, because the old check only recognised the one stage named
+         | in `crm.handover_stage`.
+         |
+         | Moving between two telecaller stages (`fresh` to `connected`) or
+         | two salesperson stages (`in_discussion` to `booking_done`) is not a
+         | handover — the lead stays exactly where it was, with no round robin
+         | re-run. Nor is landing on a terminal stage, or moving a stage the
+         | admin has routed backwards onto the telecaller desk: its owner_role
+         | is `null` or `telecaller`, neither of which this checks for, so the
+         | lead stays with whoever was already holding it — see
+         | CrmTaxonomy::ownerRoleFor().
+         |
+         | `crm.handover_stage` itself is untouched and still read directly by
+         | LeadAssignmentService::stagesPastHandover() and routingWarning(),
+         | which measure positions in the pipeline rather than role changes.
+         */
+        $fromRole = CrmTaxonomy::ownerRoleFor($fromStage);
+        $toRole = CrmTaxonomy::ownerRoleFor($stage);
+
+        if ($fromRole === 'telecaller' && $toRole === 'salesperson') {
             $outcome['handed_over_to'] = $this->handover($lead, $stage);
         }
 

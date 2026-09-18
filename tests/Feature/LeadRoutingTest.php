@@ -22,9 +22,9 @@ use Tests\TestCase;
 /**
  * A new lead is routed by the stage it is saved at, never by who added it.
  *
- *   fresh, not_connected   → telecaller
- *   any other open stage   → salesperson (the creator, if they are one)
- *   a terminal stage       → whoever added it
+ *   fresh, connected, not_connected → telecaller
+ *   any other open stage            → salesperson (the creator, if they are one)
+ *   a terminal stage                → whoever added it
  *
  * The same LeadAssignmentService answers for lead creation and for the handover,
  * the mapping is the admin's to change on the Stages screen, and a change that
@@ -134,7 +134,7 @@ class LeadRoutingTest extends TestCase
                 $lead = $this->add($creator, 'walk_in', $stage);
 
                 $expected = match (true) {
-                    in_array($stage, ['fresh', 'not_connected'], true) => $this->tia,
+                    in_array($stage, ['fresh', 'connected', 'not_connected'], true) => $this->tia,
                     CrmTaxonomy::isTerminal($stage) => $creator,
                     $creator->role === 'salesperson' => $creator,
                     default => null,   // the round robin's pick
@@ -439,7 +439,7 @@ class LeadRoutingTest extends TestCase
     {
         $this->assertSame([
             'fresh' => 'telecaller',
-            'connected' => 'salesperson',
+            'connected' => 'telecaller',
             'not_connected' => 'telecaller',
             'details_shared' => 'salesperson',
             'site_visit_scheduled' => 'salesperson',
@@ -536,7 +536,7 @@ class LeadRoutingTest extends TestCase
             ->put("/pipeline/stages/{$stage->id}", ['label' => $stage->label, 'color' => $stage->color, 'owner_role' => 'admin'])
             ->assertSessionHasErrors('owner_role');
 
-        $this->assertSame('salesperson', $stage->fresh()->owner_role);
+        $this->assertSame('telecaller', $stage->fresh()->owner_role);
     }
 
     /* ================================================================

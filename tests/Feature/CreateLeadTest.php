@@ -253,7 +253,7 @@ class CreateLeadTest extends TestCase
     {
         $this->actingAs($this->salesperson)
             ->post('/leads', $this->payload([
-                'stage' => 'connected',
+                'stage' => 'details_shared',
                 'assigned_to' => $this->admin->id,
                 'assigned_role' => 'telecaller',
             ]))
