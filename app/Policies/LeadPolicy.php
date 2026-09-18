@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Models\Lead;
+use App\Models\Project;
 use App\Models\User;
 
 /**
@@ -36,7 +37,11 @@ class LeadPolicy
     /** Ownership, said for one row. The scope says it for a query. */
     public function view(User $user, Lead $lead): bool
     {
-        return $user->can_('see_all_leads') || $lead->assigned_to === $user->id;
+        if ($user->can_('see_all_leads')) {
+            return true;
+        }
+
+        return $lead->assigned_to === $user->id && $this->onOwnProject($user, $lead);
     }
 
     public function create(User $user): bool
@@ -52,5 +57,33 @@ class LeadPolicy
     public function delete(User $user, Lead $lead): bool
     {
         return $user->can_('delete_leads') && $this->view($user, $lead);
+    }
+
+    /**
+     * The manual "reassign to" action — gated on being able to see the lead
+     * at all, not on `edit_leads`.
+     *
+     * Every role that can see a lead can hand it to someone else, including a
+     * telecaller, who holds `edit_leads = false` by default. Reassignment is
+     * not an edit of the lead's own fields; it is how the desk that has to
+     * work a lead next gets to say so, which is a capability every role
+     * needs regardless of whether they are trusted to change what the lead
+     * says.
+     */
+    public function reassign(User $user, Lead $lead): bool
+    {
+        return $this->view($user, $lead);
+    }
+
+    /**
+     * Project boundary, said for one row — see Lead::scopeVisibleTo() for the
+     * same rule as a query. Telecallers are a single company-wide desk, never
+     * tied to a project (see LeadAssignmentService), so only a salesperson's
+     * own project membership can make a lead they already own unreachable.
+     */
+    private function onOwnProject(User $user, Lead $lead): bool
+    {
+        return ! $user->isSalesperson()
+            || Project::whereKey($lead->project_id)->whereHas('salespeople', fn ($q) => $q->whereKey($user->id))->exists();
     }
 }

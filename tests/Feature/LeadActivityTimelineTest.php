@@ -77,7 +77,7 @@ class LeadActivityTimelineTest extends TestCase
 
         $response = $this->actingAs($this->admin)->getJson("/leads/{$lead->id}")->assertOk();
 
-        $this->assertSame(['lead', 'timeline'], array_keys($response->json()));
+        $this->assertSame(['lead', 'timeline', 'reassignCandidates'], array_keys($response->json()));
 
         $response->assertJsonStructure([
             'lead' => [

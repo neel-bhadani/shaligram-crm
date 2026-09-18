@@ -2,33 +2,40 @@
 
 namespace App\Models;
 
+use App\Support\CrmTaxonomy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use App\Support\CrmTaxonomy;
 
 class Lead extends Model
 {
     use SoftDeletes;
+
     protected $guarded = [];
+
     protected $casts = [
         'stage_changed_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'booking_date' => 'date',
     ];
+
     protected $appends = ['full_name', 'days_in_stage'];
+
     /* ---------------- relationships ---------------- */
     public function project()
     {
         return $this->belongsTo(Project::class);
     }
+
     public function owner()
     {
         return $this->belongsTo(User::class, 'assigned_to');
     }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
     /**
      * The firm or broker this lead came through, when it came through one.
      *
@@ -40,20 +47,24 @@ class Lead extends Model
     {
         return $this->belongsTo(ChannelPartner::class);
     }
+
     public function todos()
     {
         return $this->hasMany(Todo::class);
     }
+
     public function pendingTodo()
     {
         return $this->hasOne(Todo::class)->where('status', 'pending');
     }
+
     public function completedTodos()
     {
         return $this->hasMany(Todo::class)
             ->where('status', 'completed')
             ->oldest('completed_at');
     }
+
     /* ---------------- accessors ---------------- */
     /**
      * Built from the parts that are actually there, not from a template with
@@ -69,6 +80,7 @@ class Lead extends Model
 
         return implode(' ', array_map(fn ($part) => trim((string) $part), $parts));
     }
+
     /**
      * Null means "no answer", never "zero days": a terminal lead has stopped
      * moving, and a constrained select that leaves `stage_changed_at` and
@@ -82,8 +94,10 @@ class Lead extends Model
             return null;
         }
         $since = $this->stage_changed_at ?? $this->created_at;
+
         return $since ? (int) $since->diffInDays(now()) : null;
     }
+
     /**
      * Who brought this lead, whichever of the two columns knows.
      *
@@ -106,13 +120,16 @@ class Lead extends Model
             return null;
         }
         $label = $this->channelPartner?->display_label ?? $this->broker_name;
+
         return $label !== null && $label !== '' ? $label : null;
     }
+
     public function isTerminal(): bool
     {
         return CrmTaxonomy::isTerminal($this->stage);
     }
-/* ---------------- scopes ---------------- */
+
+    /* ---------------- scopes ---------------- */
     /**
      * The only thing protecting lead privacy.
      * Every lead query in the application must call this.
@@ -124,15 +141,32 @@ class Lead extends Model
      * manager given the toggle now sees the same rows, and everyone else is
      * scoped to what they own exactly as before.
      *
+     * Ownership is not the whole rule for a salesperson: they are tied to
+     * project(s) via `project_user`, and a lead they hold outside those
+     * projects — only reachable through the "no salesperson staffed" fallback
+     * in LeadAssignmentService — is not theirs to see until it is reassigned.
+     * Telecallers carry no such tie; they are a single company-wide desk, so
+     * ownership alone still answers it for them, exactly as before.
+     *
      * Because this is a data boundary and not a UI one, it is the check that
-     * has to be right even when every screen above it is wrong.
+     * has to be right even when every screen above it is wrong. See
+     * LeadPolicy::view() for the same rule said again for a single row.
      */
     public function scopeVisibleTo($query, User $user)
     {
-        return $user->can_('see_all_leads')
-            ? $query
-            : $query->where('assigned_to', $user->id);
+        if ($user->can_('see_all_leads')) {
+            return $query;
+        }
+
+        $query->where('assigned_to', $user->id);
+
+        if ($user->isSalesperson()) {
+            $query->whereHas('project.salespeople', fn ($q) => $q->whereKey($user->id));
+        }
+
+        return $query;
     }
+
     public function scopeOpen($query)
     {
         /*

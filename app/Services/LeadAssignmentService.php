@@ -27,8 +27,8 @@ use Illuminate\Support\Facades\DB;
  *   The "holder" is the person adding it — or, for an import, the user the
  *   integration is configured to give leads to.
  *
- *   LeadFollowUpService::handover(), moving one. The holder is whoever owns the
- *   lead now.
+ *   LeadFollowUpService::handover(), moving one — either direction. The holder
+ *   is whoever owns the lead now.
  *
  * A holder already doing the job keeps the lead: a salesperson who adds a
  * walk-in after the site visit is the salesperson who will work it. Otherwise
