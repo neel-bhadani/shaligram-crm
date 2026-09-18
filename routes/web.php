@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AutomationController;
 use App\Http\Controllers\AutomationRuleController;
+use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ChannelPartnerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\IntegrationController;
@@ -69,6 +70,17 @@ Route::middleware(['auth'])->group(function () {
      */
     Route::post('/follow-ups/check-conflict', [TodoController::class, 'checkConflict'])
         ->name('follow-ups.check-conflict');
+
+    /* ---------------- calendar ---------------- */
+
+    /*
+     | Every signed-in role can open the calendar: it is the same list the
+     | To-do page shows, arranged by day. The privacy boundary is inside the
+     | controller, Todo::forUser() and hasLead(), so an admin reads the
+     | office's follow-ups and a telecaller reads only the ones assigned to
+     | them — exactly as on the To-do page.
+     */
+    Route::get('/calendar', [CalendarController::class, 'index'])->name('calendar.index');
 
     /* ---------------- reports ---------------- */
 
