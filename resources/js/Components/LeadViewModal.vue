@@ -77,6 +77,15 @@ const tint = e => {
 
   return { color: c, backgroundColor: c + '18' }
 }
+
+// Display only: a jump straight from Fresh/Not connected to a salesperson
+// stage reads as if the call that got it there never happened. This shows
+// "Connected" as an implied badge in between — the stored stage, the
+// database row and the handover logic never see it.
+const HANDOVER_LANDING_STAGES = ['details_shared', 'site_visit_scheduled', 'site_visit_done', 'in_discussion']
+
+const impliedStage = (from, to) =>
+  ['fresh', 'not_connected'].includes(from) && HANDOVER_LANDING_STAGES.includes(to) ? 'connected' : null
 </script>
 
 <template>
@@ -148,6 +157,10 @@ const tint = e => {
                   <template v-if="e.from_stage">
                     <StageBadge :stage="e.from_stage" />
                     <span class="text-xs font-normal text-slate-400" aria-label="to">→</span>
+                    <template v-if="impliedStage(e.from_stage, e.to_stage)">
+                      <StageBadge :stage="impliedStage(e.from_stage, e.to_stage)" />
+                      <span class="text-xs font-normal text-slate-400" aria-label="to">→</span>
+                    </template>
                   </template>
                   <StageBadge :stage="e.to_stage" />
                 </template>
