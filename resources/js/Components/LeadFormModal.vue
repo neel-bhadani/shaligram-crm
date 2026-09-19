@@ -60,6 +60,24 @@ const stageOptions  = computed(() => pickable(props.options.stages, props.option
 const sourceOptions = computed(() => pickable(props.options.sources, props.options.activeSources, props.lead?.source))
 
 /*
+ | The Project dropdown's options: the project(s) this user may file a lead
+ | against, plus — when editing — whichever project the lead is already on.
+ |
+ | The list is scoped per user now (a salesperson sees only the project(s)
+ | they are tied to — see LeadController::visibleProjects()), and an existing
+ | lead's own project can be one they are no longer tied to. Without this, an
+ | edit that never touches Project would show a select with a value nothing
+ | in the list matches.
+ */
+const projectOptions = computed(() => {
+  const own = props.lead?.project
+
+  return own && !props.options.projects.some(p => p.id === own.id)
+    ? [...props.options.projects, own]
+    : props.options.projects
+})
+
+/*
  | What a NEW lead starts on. Walk-in and Fresh while those are still in use —
  | they are the overwhelmingly common answer and were the hardcoded defaults —
  | and otherwise the first option the dropdown is actually offering. A default
@@ -345,7 +363,7 @@ const submit = () => {
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
       <FormField label="Project" required :error="form.errors.project_id">
         <select v-model="form.project_id">
-          <option v-for="p in options.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option v-for="p in projectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </FormField>
       <FormField label="Source" required :error="form.errors.source">

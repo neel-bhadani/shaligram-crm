@@ -25,6 +25,10 @@ const sourceFilterOptions = computed(() => filterable(props.options.sources, pro
 
 const role = computed(() => usePage().props.auth.user.role)
 const canEdit = computed(() => role.value !== 'telecaller')
+// server-resolved, not a role check — see LeadController::options(): a
+// telecaller granted `add_leads` gets the button, same as everywhere else
+// this permission is read
+const canAdd = computed(() => props.options.can.add)
 const isAdmin = computed(() => role.value === 'admin')
 
 /* ---------------- filters, kept in the session ---------------- */
@@ -174,7 +178,7 @@ const ageClass = d => d === null ? 'text-slate-400'
 
   <AppLayout title="Leads" subtitle="All enquiries across projects">
     <template #actions>
-      <button v-if="canEdit" class="btn w-full sm:w-auto" @click="openAdd">Add lead</button>
+      <button v-if="canAdd" class="btn w-full sm:w-auto" @click="openAdd">Add lead</button>
     </template>
 
     <div class="card overflow-hidden">
