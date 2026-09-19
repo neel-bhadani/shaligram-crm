@@ -34,7 +34,7 @@ const stageOptions = computed(() =>
  | "a blank call record" and never "whatever the last save happened to be".
  */
 const blank = {
-  remarks: '', stage: 'connected',
+  remarks: '', stage: 'connected', project_id: '',
   follow_up_type: 'call', follow_up_at: '', follow_up_remarks: '',
   reason: '', booked_unit: '', booking_date: '',
 }
@@ -80,15 +80,35 @@ const handsOver = computed(() =>
   visitPreset.value && props.todo?.lead?.assigned_role !== props.options.handoverRole)
 
 /*
+ | The project selector below this stage field — see LeadFollowUpService::
+ | complete()'s $project. Switching it here, in the same save, is what closes
+ | the gap the standalone "Switch project" action leaves open: without this,
+ | setting "Site visit scheduled" saves first and hands the lead to a
+ | salesperson on the OLD project before anyone can reach a separate action.
+ */
+const switchingProject = computed(() =>
+  !!form.project_id && Number(form.project_id) !== props.todo?.lead?.project_id)
+
+// every active project except the one the lead is already on — nothing to
+// switch to otherwise, same list SwitchProjectModal offers
+const projectChoices = computed(() =>
+  (props.options?.projects ?? []).filter(p => p.id !== props.todo?.lead?.project_id))
+
+/*
  | Otherwise the next follow-up lands on whoever owns the lead, and the task
  | being closed is excluded — it is pending right now and is about to be
  | completed by this very save, so a clash with it is a clash with nothing.
+ |
+ | A project switch re-derives the owner exactly like a handover does — see
+ | handoverForNewProject() — so it is skipped here for the same reason
+ | handsOver is: the round robin has not run yet, and checking the OLD
+ | owner's diary would warn about the wrong person's day.
  */
 const { conflict, clear: clearConflict } = useFollowUpConflict({
   user: () => props.todo?.lead?.assigned_to,
   at: () => (showNext.value ? form.follow_up_at : ''),
   exclude: () => props.todo?.id ?? null,
-  skip: () => handsOver.value,
+  skip: () => handsOver.value || switchingProject.value,
 })
 
 watch(() => props.show, v => {
@@ -104,6 +124,8 @@ watch(() => props.show, v => {
   refreshMinAt()
   // start from the lead's current stage, except fresh which always moves on
   form.stage = props.todo?.lead?.stage === 'fresh' ? 'connected' : props.todo?.lead?.stage
+  // start on the lead's current project — untouched, this submits as "no switch"
+  form.project_id = props.todo?.lead?.project_id ?? ''
 })
 
 watch(showReason, v => { if (!v) form.reason = '' })
@@ -156,6 +178,18 @@ const submit = () => form.post(route('todos.complete', props.todo.id), {
     <FormField class="mt-4" label="New stage" required :error="form.errors.stage">
       <select v-model="form.stage">
         <option v-for="o in stageOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
+      </select>
+    </FormField>
+
+    <!-- defaults to the lead's own project and submits as "no switch" if left
+         alone; changing it moves the lead there before the stage above is
+         applied — see LeadFollowUpService::complete() -->
+    <FormField class="mt-4" label="Project"
+               :hint="switchingProject ? 'The lead moves to this project first, then to the new stage above — reassigned to whoever owns that stage on the new project.' : ''"
+               :error="form.errors.project_id">
+      <select v-model="form.project_id">
+        <option :value="todo?.lead?.project_id">{{ todo?.lead?.project?.name ?? 'Current project' }}</option>
+        <option v-for="p in projectChoices" :key="p.id" :value="p.id">{{ p.name }}</option>
       </select>
     </FormField>
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesDateRange;
 use App\Http\Controllers\Concerns\ResolvesFilters;
 use App\Http\Requests\LeadReassignRequest;
 use App\Http\Requests\LeadRequest;
+use App\Http\Requests\LeadSwitchProjectRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
 use App\Models\Project;
@@ -20,6 +21,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -389,6 +391,38 @@ class LeadController extends Controller
         return back()->with('success', "Lead reassigned to {$to->display_name}.");
     }
 
+    /**
+     * Move a lead to a different project — the Follow-up page's "Switch
+     * project" action. LeadSwitchProjectRequest has already checked the
+     * target project is a real change and does not clash with an existing
+     * lead there; LeadFollowUpService::switchProject() does the rest — moves
+     * the lead itself, re-runs the stage-to-role assignment against the new
+     * project, and moves the pending to-do if the owner changes.
+     */
+    public function switchProject(LeadSwitchProjectRequest $request, Lead $lead)
+    {
+        $to = Project::findOrFail($request->validated('project_id'));
+
+        try {
+            $outcome = $this->service->switchProject($lead, $to);
+        } catch (UniqueConstraintViolationException $e) {
+            // the narrow gap between LeadSwitchProjectRequest's check and the
+            // save — see duplicateMobile() for the same race on the add-lead
+            // form
+            throw ValidationException::withMessages([
+                'project_id' => 'This number already has a lead on that project.',
+            ]);
+        }
+
+        $notice = "Lead switched to {$outcome['switched_to']}.";
+
+        if ($outcome['reassigned_to']) {
+            $notice .= " Reassigned to {$outcome['reassigned_to']}.";
+        }
+
+        return back()->with('success', $notice);
+    }
+
     public function destroy(Lead $lead)
     {
         // was route middleware saying `role:admin`; it is a permission now, so
@@ -502,8 +536,38 @@ class LeadController extends Controller
         ]);
     }
 
+    /**
+     * The active projects a NEW or edited lead may be filed against.
+     *
+     * The same project boundary Lead::scopeVisibleTo() and
+     * LeadPolicy::onOwnProject() already apply: `see_all_leads` sees
+     * everything, same as admin, and a salesperson without it is narrowed to
+     * the project(s) they are tied to via `project_user` — the same
+     * relationship the Reassign candidate list and the visibility scope both
+     * read. Telecallers carry no such tie, so they are never narrowed either;
+     * in practice they never reach this list at all, since `add_leads` is off
+     * for them by default.
+     *
+     * @return Collection<int, array{id: int, name: string}>
+     */
+    private function visibleProjects(User $user)
+    {
+        $query = $user->isSalesperson() && ! $user->can_('see_all_leads')
+            ? $user->projects()
+            : Project::query();
+
+        return $query->active()
+            ->orderBy('projects.name')
+            ->get(['projects.id', 'projects.name'])
+            ->map(fn (Project $p) => ['id' => $p->id, 'name' => $p->name])
+            ->values();
+    }
+
     private function options($user): array
     {
+        // the projects the add/edit-lead dropdown offers — see visibleProjects()
+        $projects = $this->visibleProjects($user);
+
         return [
             /*
               | Every stage for the LABELS, the active keys for the CONTROLS.
@@ -523,8 +587,12 @@ class LeadController extends Controller
              | else. By stage because the owner depends on the stage picked.
              |
              | Per project as well, because a salesperson is chosen from the
-             | project's own team: project id => stage => user id, for the
-             | same active projects the form's dropdown offers.
+             | project's own team: project id => stage => user id, over EVERY
+             | active project rather than only the ones the dropdown below
+             | offers this user — a salesperson may hold a lead on a project
+             | they are not tied to (see LeadAssignmentService::ownerFor()'s
+             | "holder already doing the job" fallback), so the preview has to
+             | cover it too, even though the dropdown itself does not.
              |
              | Read-only and advisory. It is LeadAssignmentService's answer
              | without taking a turn from the round robin; store() asks the
@@ -541,7 +609,7 @@ class LeadController extends Controller
             'sources' => CrmTaxonomy::allSources(),
             'activeSources' => CrmTaxonomy::activeSourceKeys(),
             'reasons' => config('crm.lost_reasons'),
-            'projects' => Project::active()->get(['id', 'name']),
+            'projects' => $projects,
             /*
              | The picker that replaced the free-text broker field.
              |

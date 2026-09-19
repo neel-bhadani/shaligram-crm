@@ -76,6 +76,29 @@ class LeadPolicy
     }
 
     /**
+     * The "switch project" action on the Follow-up page — moves a lead to a
+     * different project without losing it or duplicating it.
+     *
+     * Gated exactly like reassign(): being able to see the lead is enough,
+     * not `edit_leads`, so every role that can see a lead can switch its
+     * project regardless of whether they are trusted to change what the
+     * lead's own fields say.
+     *
+     * Unlike reassign(), there is no further project boundary to check here.
+     * onOwnProject() bounds which leads a salesperson can reach at all, and
+     * that already ran inside view() above — but reassign() narrows WHO a
+     * lead can be moved TO by that same rule (LeadReassignRequest), because
+     * its target is a person tied to a project. This action's target is the
+     * project itself, chosen from every active one, with no such person to
+     * narrow — the client's explicit call, and deliberately not the same
+     * boundary reassign()'s candidate list applies.
+     */
+    public function switchProject(User $user, Lead $lead): bool
+    {
+        return $this->view($user, $lead);
+    }
+
+    /**
      * Project boundary, said for one row — see Lead::scopeVisibleTo() for the
      * same rule as a query. Telecallers are a single company-wide desk, never
      * tied to a project (see LeadAssignmentService), so only a salesperson's

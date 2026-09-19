@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Lead;
+use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\Automation\RuleEngine;
@@ -159,13 +160,27 @@ class LeadFollowUpService
     }
 
     /**
-     * Complete a task, move the stage, save the next task the user picked.
-     * All of it in one transaction: if the new task fails to save,
-     * the stage change rolls back too, so a lead can never end up
+     * Complete a task, move the stage, save the next task the user picked —
+     * and, optionally, switch the lead's project in the same action.
+     *
+     * All of it in one transaction: if the new task fails to save, the stage
+     * change and the project switch roll back too, so a lead can never end up
      * with no open task and disappear from everyone's list.
      *
-     * @return array{handed_over_to: ?string} what was decided without the user
-     *                                        asking — see noticeFor()
+     * $project is the follow-up page's answer to the case a plain "Switch
+     * project" afterwards is always too late for: a telecaller on the call
+     * hears the customer wants a different project AND is ready for a site
+     * visit, in the same breath. Applied before the stage, so a handover the
+     * stage change causes already sees the NEW project — see schedule() and
+     * handoverForNewProject() — rather than crossing a desk on the project the
+     * lead is about to leave. Null, or equal to the lead's own project id,
+     * means what it always meant: no project change, ordinary completion.
+     *
+     * @return array{handed_over_to: ?string, switched_to?: string} what was
+     *                                                              decided without the user asking
+     *                                                              — see noticeFor(). `switched_to`
+     *                                                              is present only when $project
+     *                                                              caused an actual switch.
      */
     public function complete(
         Todo $todo,
@@ -174,11 +189,22 @@ class LeadFollowUpService
         ?Carbon $nextAt = null,
         ?string $nextType = null,
         ?string $nextRemarks = null,
-        array $extra = []
+        array $extra = [],
+        ?Project $project = null
     ): array {
-        return $this->operation(function () use ($todo, $stage, $remarks, $nextAt, $nextType, $nextRemarks, $extra) {
+        return $this->operation(function () use ($todo, $stage, $remarks, $nextAt, $nextType, $nextRemarks, $extra, $project) {
 
             $lead = Lead::whereKey($todo->lead_id)->lockForUpdate()->firstOrFail();
+
+            $switchingProject = $project && $project->id !== $lead->project_id;
+
+            if ($switchingProject) {
+                // before project_id moves: the lead still holds the project it
+                // is leaving, and this row has to precede the follow-up's own
+                // head row below — see LeadFollowUpService::switchProject()
+                $this->activities->projectSwitched($lead, $this->actorId(), $lead->project_id, $project->id);
+                $lead->project_id = $project->id;
+            }
 
             // before the to-do closes and the stage moves: the lead still
             // holds the stage it is leaving
@@ -196,10 +222,19 @@ class LeadFollowUpService
             // stage the lead is leaving to tell whether this crosses a desk
             $fromStage = $lead->stage;
 
+            // one save: the project id set above, if any, and the stage
+            // together — a project switch mid-call is one row change, not two
             $this->applyStage($lead, $stage, $extra);
             $this->activities->outcome($lead, $this->actorId());
 
-            $outcome = $this->schedule($lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks, $todo->id);
+            $outcome = $this->schedule(
+                $lead, $fromStage, $stage, $nextAt, $nextType, $nextRemarks, $todo->id,
+                projectSwitched: $switchingProject,
+            );
+
+            if ($switchingProject) {
+                $outcome['switched_to'] = $project->name;
+            }
 
             $this->queueTrigger('stage_changed', $lead, ['stage' => $stage]);
 
@@ -375,11 +410,17 @@ class LeadFollowUpService
      */
     public function noticeFor(array $outcome): ?string
     {
-        if ($outcome['handed_over_to'] ?? null) {
-            return "Lead handed over to {$outcome['handed_over_to']}.";
+        $parts = [];
+
+        if ($outcome['switched_to'] ?? null) {
+            $parts[] = "Project switched to {$outcome['switched_to']}.";
         }
 
-        return null;
+        if ($outcome['handed_over_to'] ?? null) {
+            $parts[] = "Lead handed over to {$outcome['handed_over_to']}.";
+        }
+
+        return $parts === [] ? null : implode(' ', $parts);
     }
 
     /* ---------------------------------------------------------- */
@@ -519,7 +560,8 @@ class LeadFollowUpService
         ?Carbon $when,
         ?string $type,
         ?string $remarks,
-        ?int $fromTodo = null
+        ?int $fromTodo = null,
+        bool $projectSwitched = false
     ): array {
         $outcome = ['handed_over_to' => null];
         $terminal = CrmTaxonomy::isTerminal($stage);
@@ -564,11 +606,25 @@ class LeadFollowUpService
          | LeadAssignmentService::stagesPastHandover() and routingWarning(),
          | which measure positions in the pipeline rather than role changes.
          */
-        $fromRole = CrmTaxonomy::ownerRoleFor($fromStage);
-        $toRole = CrmTaxonomy::ownerRoleFor($stage);
+        if ($projectSwitched) {
+            /*
+             | The project just moved under this lead in the same action —
+             | re-derive who owns $stage on the NEW project unconditionally,
+             | not only when $stage happens to cross a desk. A stage that
+             | stays within the same role (site_visit_scheduled to
+             | site_visit_done, both salesperson-owned) crosses no desk by
+             | the ordinary rule below, but the salesperson who held it is
+             | still the OLD project's — see
+             | LeadAssignmentService::ownerForProjectSwitch().
+             */
+            $outcome['handed_over_to'] = $this->handoverForNewProject($lead, $stage);
+        } else {
+            $fromRole = CrmTaxonomy::ownerRoleFor($fromStage);
+            $toRole = CrmTaxonomy::ownerRoleFor($stage);
 
-        if ($fromRole !== null && $toRole !== null && $fromRole !== $toRole) {
-            $outcome['handed_over_to'] = $this->handover($lead, $stage);
+            if ($fromRole !== null && $toRole !== null && $fromRole !== $toRole) {
+                $outcome['handed_over_to'] = $this->handover($lead, $stage);
+            }
         }
 
         if ($terminal || ! $when) {
@@ -696,6 +752,43 @@ class LeadFollowUpService
     }
 
     /**
+     * handover()'s counterpart for a stage completed in the same action as a
+     * project switch — see complete() and schedule()'s `$projectSwitched`.
+     *
+     * ownerForProjectSwitch() rather than ownerFor(): the whole reason to run
+     * this instead of the ordinary handover() is that the project changed, so
+     * the "holder already fits the role, keep them" shortcut ownerFor() takes
+     * is exactly wrong here even when $stage's role has not changed — the
+     * holder fits the ROLE but is still the OLD project's person. See
+     * LeadAssignmentService::ownerForProjectSwitch().
+     *
+     * A terminal $stage falls through unchanged: roleFor() answers null,
+     * ownerForProjectSwitch() hands the holder straight back, same as a
+     * terminal stage reached by an ordinary handover.
+     *
+     * @return string|null the name the lead went to, or null if it stayed put
+     */
+    private function handoverForNewProject(Lead $lead, string $stage): ?string
+    {
+        $holder = $lead->assigned_to ? User::find($lead->assigned_to) : null;
+        $next = $holder ? $this->assignment->ownerForProjectSwitch($stage, $holder, $lead->project_id) : null;
+
+        if (! $next || $next->id === $lead->assigned_to) {
+            return null;
+        }
+
+        $this->handoverDepth++;
+
+        try {
+            $this->assign($lead, $next);
+        } finally {
+            $this->handoverDepth--;
+        }
+
+        return $next->display_name;
+    }
+
+    /**
      * Move a lead to a stage and to a named person, together, in one action.
      *
      * Everything schedule() does for a plain stage change happens here too —
@@ -741,6 +834,59 @@ class LeadFollowUpService
             $this->assign($lead, $to);
 
             return ['handed_over_to' => null];
+        });
+    }
+
+    /**
+     * Move a lead to a different project — the Follow-up page's "Switch
+     * project" action. The SAME lead row: only `project_id` changes here, and
+     * `stage` is untouched, so a lead mid-pipeline on one project stays at
+     * exactly the same point in the pipeline on the other.
+     *
+     * Whoever should hold a lead at this stage, on the NEW project, is worked
+     * out fresh — see LeadAssignmentService::ownerForProjectSwitch() for why
+     * that is not ownerFor(). The reassignment this causes, if any, is nested
+     * under handoverDepth so it writes as a child of the "Project switched"
+     * entry rather than a head of its own, the same nesting a stage-crossing
+     * handover gets under its stage change — see handover().
+     *
+     * assign() already moves the pending to-do to the new owner and stamps
+     * `assigned_role` from the new owner's own role, so neither is repeated
+     * here.
+     *
+     * @return array{switched_to: string, reassigned_to: ?string}
+     */
+    public function switchProject(Lead $lead, Project $to): array
+    {
+        return $this->operation(function () use ($lead, $to) {
+            $lead = Lead::whereKey($lead->id)->lockForUpdate()->firstOrFail();
+
+            // before project_id moves: the lead still holds the project it is
+            // leaving, and this row has to precede the reassignment child below
+            $this->activities->projectSwitched($lead, $this->actorId(), $lead->project_id, $to->id);
+
+            $lead->project_id = $to->id;
+            $lead->last_activity_at = now();
+            $lead->save();
+
+            $holder = $lead->assigned_to ? User::find($lead->assigned_to) : null;
+            $next = $holder ? $this->assignment->ownerForProjectSwitch($lead->stage, $holder, $to->id) : null;
+
+            $reassignedTo = null;
+
+            if ($next && $next->id !== $lead->assigned_to) {
+                $this->handoverDepth++;
+
+                try {
+                    $this->assign($lead, $next);
+                } finally {
+                    $this->handoverDepth--;
+                }
+
+                $reassignedTo = $next->display_name;
+            }
+
+            return ['switched_to' => $to->name, 'reassigned_to' => $reassignedTo];
         });
     }
 }

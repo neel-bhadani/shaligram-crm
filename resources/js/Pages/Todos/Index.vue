@@ -6,6 +6,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import StageBadge from '@/Components/StageBadge.vue'
 import CompleteTaskModal from '@/Components/CompleteTaskModal.vue'
 import TodoFormModal from '@/Components/TodoFormModal.vue'
+import SwitchProjectModal from '@/Components/SwitchProjectModal.vue'
 import CallButtons from '@/Components/CallButtons.vue'
 import AssignedTo from '@/Components/AssignedTo.vue'
 import FilterChips from '@/Components/FilterChips.vue'
@@ -195,6 +196,10 @@ const editing = ref(null)
 const openComplete = t => { active.value = t; completeOpen.value = true }
 const openAdd = () => { editing.value = null; formOpen.value = true }
 const openEdit = t => { editing.value = t; formOpen.value = true }
+
+const switchOpen = ref(false)
+const switching = ref(null)
+const openSwitchProject = t => { switching.value = t; switchOpen.value = true }
 
 /* helpers */
 const fmt = v => v ? new Date(v).toLocaleString('en-IN',
@@ -482,6 +487,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
                   <template v-if="t.status === 'pending'">
                     <button class="btn px-3 py-1 text-xs" @click="openComplete(t)">Update</button>
                     <button class="btn-xs" @click="openEdit(t)">Edit</button>
+                    <button v-if="t.lead" class="btn-xs" @click="openSwitchProject(t)">Switch project</button>
                   </template>
                   <CallButtons v-if="t.lead?.mobile_number" compact :mobile="t.lead.mobile_number" />
                 </div>
@@ -604,9 +610,10 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
           <div v-if="t.lead?.mobile_number || t.status === 'pending'"
                class="mt-3 space-y-2 border-t border-slate-100 pt-3">
             <CallButtons v-if="t.lead?.mobile_number" :mobile="t.lead.mobile_number" />
-            <div v-if="t.status === 'pending'" class="flex gap-2">
+            <div v-if="t.status === 'pending'" class="flex flex-wrap gap-2">
               <button class="btn flex-1 py-1.5 text-xs" @click="openComplete(t)">Update</button>
               <button class="btn-xs flex-1" @click="openEdit(t)">Edit</button>
+              <button v-if="t.lead" class="btn-xs flex-1" @click="openSwitchProject(t)">Switch project</button>
             </div>
           </div>
         </div>
@@ -626,5 +633,6 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
 
     <CompleteTaskModal :show="completeOpen" :todo="active" :options="options" @close="completeOpen = false" />
     <TodoFormModal :show="formOpen" :todo="editing" :options="options" @close="formOpen = false" />
+    <SwitchProjectModal :show="switchOpen" :todo="switching" :options="options" @close="switchOpen = false" />
   </AppLayout>
 </template>

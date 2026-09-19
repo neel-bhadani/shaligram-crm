@@ -144,6 +144,22 @@ class LeadActivityRecorder
         );
     }
 
+    /**
+     * A lead moved to a different project by hand — the Follow-up page's
+     * "Switch project" action. Called before `project_id` is written, so the
+     * lead still holds the project it is leaving, the same ordering
+     * `stageChanging()` uses for a stage.
+     *
+     * Written before assign() runs, so a reassignment this causes writes its
+     * `handed_over` row straight after this one and nests under it exactly as
+     * a stage-crossing handover nests under its stage change — see
+     * LeadFollowUpService::switchProject().
+     */
+    public function projectSwitched(Lead $lead, ?int $userId, int $from, int $to): void
+    {
+        $this->write($lead, $userId, LeadActivity::ProjectSwitched, 'project_id', $from, $to);
+    }
+
     private function write(
         Lead|int $lead,
         ?int $userId,

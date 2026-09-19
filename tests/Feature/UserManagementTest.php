@@ -267,7 +267,15 @@ class UserManagementTest extends TestCase
 
         $this->actingAs($tele)->post('/leads', $this->leadPayload())->assertForbidden();
 
+        // the Leads page hides the Add lead button from this same flag —
+        // see resources/js/Pages/Leads/Index.vue's `canAdd`
+        $this->actingAs($tele)->get('/leads')
+            ->assertInertia(fn ($page) => $page->where('options.can.add', false));
+
         $tele->update(['permissions' => ['add_leads' => true]]);
+
+        $this->actingAs($tele->fresh())->get('/leads')
+            ->assertInertia(fn ($page) => $page->where('options.can.add', true));
 
         $this->actingAs($tele->fresh())->post('/leads', $this->leadPayload())
             ->assertRedirect()->assertSessionHasNoErrors();

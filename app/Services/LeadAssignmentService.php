@@ -100,6 +100,35 @@ class LeadAssignmentService
     }
 
     /**
+     * Who a lead at `$stage` should belong to after its PROJECT changes.
+     *
+     * Deliberately not ownerFor(): that method keeps the current holder
+     * whenever their role already fits the stage, which is right for a
+     * creation or a handover but wrong here — a switch's whole point is to
+     * put the lead on the new project's own desk, and the holder almost
+     * always already has the right role (assigned_role tracks it), so
+     * ownerFor() would hand them straight back without ever looking at the
+     * new project's team.
+     *
+     * pick() is the same call ownerFor() makes once the holder is ruled out —
+     * the project-scoped salesperson round robin, or the single telecaller
+     * pool — so this is that same desk logic, just never short-circuited by
+     * who already holds it. Falls back to the holder only when nobody is on
+     * the new project's desk at all, the same fallback ownerFor() itself
+     * applies.
+     */
+    public function ownerForProjectSwitch(string $stage, User $holder, int $projectId): User
+    {
+        $role = $this->roleFor($stage);
+
+        if ($role === null) {
+            return $holder;
+        }
+
+        return $this->pick($role, $projectId, claim: true) ?? $holder;
+    }
+
+    /**
      * For each project and every stage a new lead can be added at, the id of
      * the user it would land on if `$creator` added it now. Read-only: no
      * round robin moves and no alert is raised.

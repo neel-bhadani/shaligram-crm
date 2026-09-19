@@ -257,6 +257,15 @@ class LeadTimeline
                 ],
                 'remark' => $head->remark,
             ],
+            LeadActivity::ProjectSwitched => [
+                'kind' => 'project_switch',
+                'title' => 'Project switched',
+                'change' => [
+                    'field' => 'Project',
+                    'from' => $this->value('project_id', $head->from_value),
+                    'to' => $this->value('project_id', $head->to_value),
+                ],
+            ],
             // an orphaned child, see group()
             default => [
                 'kind' => 'edit',

@@ -41,6 +41,9 @@ class LeadActivity extends Model
     /** The lead changed hands on its own. `from_value` → `to_value` are user ids. */
     public const Reassigned = 'reassigned';
 
+    /** A lead's project changed by hand. `field` is `project_id`, `from_value` → `to_value` are project ids. */
+    public const ProjectSwitched = 'project_switched';
+
     /* ---------------- children: part of the head before them ---------------- */
 
     /** The follow-up the action booked next. Same columns as FollowUpScheduled. */
