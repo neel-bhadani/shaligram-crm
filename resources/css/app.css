@@ -160,20 +160,31 @@
 
 @layer components {
 
+    /*
+     | min-height: var(--control-h) on every button, same as every input,
+     | select and textarea above — 38px on desktop, 44px (the smallest thing a
+     | thumb hits reliably) on phones and small tablets. `.btn` and `.btn-xs`
+     | share the variable with `.btn-ghost` and `.btn-danger` so a Cancel/Save
+     | pair, or a row of xs actions, never comes apart into two heights.
+     */
     .btn {
         @apply inline-flex items-center justify-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60;
+        min-height: var(--control-h);
     }
 
     .btn-ghost {
         @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50;
+        min-height: var(--control-h);
     }
 
     .btn-danger {
         @apply inline-flex items-center justify-center rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-60;
+        min-height: var(--control-h);
     }
 
     .btn-xs {
         @apply rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-teal-600 hover:text-teal-700;
+        min-height: var(--control-h);
     }
 
     .card {

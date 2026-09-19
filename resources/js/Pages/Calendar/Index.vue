@@ -327,19 +327,27 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
                :class="cell.isToday
                  ? 'bg-teal-50/70 ring-1 ring-inset ring-teal-700'
                  : cell.inMonth ? 'bg-white' : 'bg-slate-50/60'">
-            <div class="flex items-center justify-between gap-1">
-              <button
-                type="button"
-                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                :class="cell.isToday ? 'bg-teal-700 text-white' : cell.inMonth ? 'text-slate-700' : 'text-slate-400'"
-                :title="cell.isToday ? 'Today' : undefined"
-                @click="openDay(cell)"
-              >{{ cell.day }}</button>
+            <button
+              type="button"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+              :class="cell.isToday ? 'bg-teal-700 text-white' : cell.inMonth ? 'text-slate-700' : 'text-slate-400'"
+              :title="cell.isToday ? 'Today' : undefined"
+              @click="openDay(cell)"
+            >{{ cell.day }}</button>
 
-              <!-- count badge, the mobile answer to a crowded cell -->
-              <span v-if="cell.events.length"
-                    class="rounded-full bg-slate-200 px-1.5 text-[10px] font-bold tabular-nums text-slate-700 md:hidden"
-                    @click="openDay(cell)">{{ cell.events.length }}</span>
+            <!--
+              Mobile indicator: state-colored dots below the date number, never
+              beside it, so the digit stays unambiguous at any phone width. Tap
+              opens the day panel for the exact list and counts.
+            -->
+            <div v-if="cell.events.length"
+                 class="mt-1 flex items-center gap-0.5 md:hidden"
+                 @click="openDay(cell)">
+              <span v-for="e in cell.events.slice(0, 4)" :key="e.id"
+                    class="h-1.5 w-1.5 shrink-0 rounded-full" :class="DOT_CLASS[e.state] ?? DOT_CLASS.upcoming" />
+              <span v-if="cell.events.length > 4" class="text-[9px] font-bold leading-none text-slate-400">
+                +{{ cell.events.length - 4 }}
+              </span>
             </div>
 
             <!-- event rows, desktop/tablet only; a phone opens the day panel -->

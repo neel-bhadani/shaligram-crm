@@ -14,7 +14,7 @@
  | trip, a session write and a re-query to redraw the same numbers in a
  | different shape.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import ChartCard from '@/Components/ChartCard.vue'
 
 const props = defineProps({
@@ -33,6 +33,42 @@ const props = defineProps({
 })
 
 const shape = ref('bar')
+
+/*
+ | Where the doughnut's legend goes, decided by the width of the card it is in
+ | rather than the width of the window — see Dashboard.vue's sourceChart,
+ | which this mirrors. 600px is the line: below it the plot is too narrow to
+ | give a quarter of itself away to a column of labels, so they go underneath;
+ | above it there is room for both side by side.
+ */
+const LEGEND_BESIDE_ABOVE = 600
+
+const card = ref(null)
+const roomy = ref(true)
+
+let observer
+let timer
+
+onMounted(() => {
+  if (!card.value) return
+
+  roomy.value = card.value.offsetWidth >= LEGEND_BESIDE_ABOVE
+
+  observer = new ResizeObserver(([entry]) => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      roomy.value = entry.contentRect.width >= LEGEND_BESIDE_ABOVE
+    }, 120)
+  })
+
+  observer.observe(card.value)
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  observer?.disconnect()
+  observer = null
+})
 
 /*
  | A fixed palette walked in order, so a group is the same colour every time the
@@ -102,7 +138,7 @@ const config = computed(() => shape.value === 'bar'
         maintainAspectRatio: false,
         cutout: '58%',
         plugins: {
-          legend: { position: 'right', labels: { ...tick, boxWidth: 10, padding: 10 } },
+          legend: { position: roomy.value ? 'right' : 'bottom', labels: { ...tick, boxWidth: 10, padding: 10 } },
           tooltip: {
             callbacks: {
               /*
@@ -125,7 +161,7 @@ const config = computed(() => shape.value === 'bar'
 </script>
 
 <template>
-  <div class="relative">
+  <div ref="card" class="relative">
     <!--
       The toggle sits over ChartCard's header rather than inside it. ChartCard
       takes no slot and no styling argument on purpose — that is what keeps

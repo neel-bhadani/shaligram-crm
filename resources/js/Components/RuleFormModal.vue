@@ -438,8 +438,9 @@ const err = key => form.errors[key]
           <template v-else>
             <p class="info-box">{{ testResult.summary }}</p>
 
-            <div v-if="testResult.sample?.length" class="mt-3 overflow-x-auto">
-              <table class="w-full text-left text-xs">
+            <div v-if="testResult.sample?.length" class="mt-3">
+              <!-- table on desktop, cards on mobile: the same pattern as the other pages -->
+              <table class="hidden w-full text-left text-xs lg:table">
                 <thead class="text-[10px] uppercase tracking-wide text-slate-400">
                   <tr>
                     <th class="py-1.5 pr-3 font-semibold">Lead</th>
@@ -459,6 +460,15 @@ const err = key => form.errors[key]
                   </tr>
                 </tbody>
               </table>
+
+              <div class="divide-y divide-slate-100 lg:hidden">
+                <div v-for="lead in testResult.sample" :key="lead.id" class="py-2">
+                  <p class="text-xs font-medium text-slate-700">{{ lead.name }}</p>
+                  <p class="mt-0.5 text-xs text-slate-500">{{ lead.stage }} · {{ lead.source }}</p>
+                  <p class="mt-0.5 text-xs text-slate-500">{{ lead.project }} · {{ lead.owner ?? '—' }}</p>
+                </div>
+              </div>
+
               <p v-if="testResult.count > testResult.sample.length" class="mt-2 text-xs text-slate-400">
                 Showing the first {{ testResult.sample.length }} of {{ testResult.count }}.
               </p>

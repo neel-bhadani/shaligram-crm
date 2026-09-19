@@ -150,20 +150,27 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
       </dl>
 
       <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
+
+      <div v-if="allowEdit && canReassign" class="mt-6 border-t border-slate-100 pt-5">
+        <h4 class="text-xs font-semibold text-slate-500">Reassign</h4>
+        <p class="mt-0.5 text-xs text-slate-400">Move this lead to a different stage and owner.</p>
+        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <select v-model="reassignStage" class="w-full sm:!w-auto sm:!py-1.5 sm:text-xs" aria-label="Reassign stage">
+            <option v-for="s in reassignStageOptions" :key="s.key" :value="s.key">{{ s.label }}</option>
+          </select>
+          <select v-model="reassignTo" class="w-full sm:!w-auto sm:!py-1.5 sm:text-xs" aria-label="Reassign to">
+            <option value="" disabled>Reassign to…</option>
+            <option v-for="c in reassignRoleCandidates" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+          <button type="button" class="btn-ghost w-full sm:w-auto sm:!py-1.5 sm:text-xs"
+                  :disabled="!reassignTo || reassigning" @click="reassign">
+            {{ reassigning ? 'Reassigning…' : 'Reassign' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <template #footer>
-      <div v-if="allowEdit && canReassign" class="flex flex-1 flex-wrap items-center gap-1.5 sm:flex-none">
-        <select v-model="reassignStage" class="!w-auto !py-1.5 text-xs" aria-label="Reassign stage">
-          <option v-for="s in reassignStageOptions" :key="s.key" :value="s.key">{{ s.label }}</option>
-        </select>
-        <select v-model="reassignTo" class="!w-auto !py-1.5 text-xs" aria-label="Reassign to">
-          <option value="" disabled>Reassign to…</option>
-          <option v-for="c in reassignRoleCandidates" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select>
-        <button type="button" class="btn-ghost !py-1.5 text-xs" :disabled="!reassignTo || reassigning"
-                @click="reassign">{{ reassigning ? 'Reassigning…' : 'Reassign' }}</button>
-      </div>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Close</button>
       <button v-if="allowFollowUp && lead?.pending_todo" class="btn flex-1 sm:flex-none"
               @click="emit('followup', lead)">Update follow-up</button>

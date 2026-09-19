@@ -655,8 +655,9 @@ const whenShort = iso => iso
         </p>
       </div>
 
-      <div v-else class="card overflow-x-auto">
-        <table class="w-full text-left text-xs">
+      <div v-else class="card overflow-hidden">
+        <!-- table on desktop, cards on mobile: the same pattern as the other pages -->
+        <table class="hidden w-full text-left text-xs lg:table">
           <thead class="border-b border-slate-100 text-[10px] uppercase tracking-wide text-slate-400">
             <tr>
               <th class="px-4 py-2.5 font-semibold">When</th>
@@ -685,6 +686,22 @@ const whenShort = iso => iso
             </tr>
           </tbody>
         </table>
+
+        <div class="divide-y divide-slate-100 lg:hidden">
+          <div v-for="log in activity" :key="log.id" class="px-4 py-3"
+               :class="log.bad ? 'bg-amber-50/40' : ''">
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase
+                           tracking-wide" :class="resultChip(log.result)">
+                {{ log.result.replace('_', ' ') }}
+              </span>
+              <span class="text-xs text-slate-400">{{ when(log.fired_at) }}</span>
+            </div>
+            <p class="text-xs font-medium text-slate-700">{{ log.rule }}</p>
+            <p class="mt-0.5 text-xs text-slate-500">{{ log.lead ?? '—' }} · {{ actionWord(log.action) }}</p>
+            <p v-if="log.error" class="mt-0.5 break-words text-xs text-slate-500">{{ log.error }}</p>
+          </div>
+        </div>
       </div>
     </div>
 

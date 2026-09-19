@@ -58,8 +58,8 @@ onUnmounted(() => {
     -->
     <div
       v-if="open"
-      class="absolute top-6 z-[70] w-72 rounded-lg border border-slate-200 bg-white p-3 text-left
-             shadow-xl"
+      class="absolute top-6 z-[70] w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-slate-200
+             bg-white p-3 text-left shadow-xl"
       :class="align === 'right' ? 'right-0' : 'left-0'"
     >
       <p v-if="title" class="mb-1 text-xs font-semibold text-slate-900">{{ title }}</p>

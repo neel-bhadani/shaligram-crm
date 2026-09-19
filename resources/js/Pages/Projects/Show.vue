@@ -223,7 +223,8 @@ const when = iso => iso
             Nothing to break down yet.
           </div>
 
-          <table v-else class="mt-4 w-full text-sm">
+          <!-- table on desktop, cards on mobile: the same pattern as the other pages -->
+          <table v-else class="mt-4 hidden w-full text-sm lg:table">
             <thead>
               <tr class="text-left text-xs text-slate-400">
                 <th class="pb-1.5 font-semibold">Source</th>
@@ -239,6 +240,15 @@ const when = iso => iso
               </tr>
             </tbody>
           </table>
+
+          <div v-if="bySource.length" class="mt-4 divide-y divide-slate-100 lg:hidden">
+            <div v-for="s in bySource" :key="s.key" class="flex items-center justify-between gap-3 py-1.5">
+              <span class="text-sm text-slate-700">{{ s.label }}</span>
+              <span class="flex-none text-xs tabular-nums text-slate-400">
+                <span class="text-slate-700">{{ s.total }}</span> · {{ pct(s.share) }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
