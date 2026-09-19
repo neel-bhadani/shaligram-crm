@@ -266,6 +266,20 @@ class LeadTimeline
                     'to' => $this->value('project_id', $head->to_value),
                 ],
             ],
+            LeadActivity::FollowUpRescheduled => [
+                'kind' => 'follow_up_rescheduled',
+                'title' => $this->typeLabel($head->field).' rescheduled',
+                'change' => [
+                    'field' => 'Scheduled for',
+                    'from' => $this->when($head->from_value),
+                    'to' => $this->when($head->to_value),
+                ],
+            ],
+            LeadActivity::FollowUpCancelled => [
+                'kind' => 'follow_up_cancelled',
+                'title' => $this->typeLabel($head->field).' cancelled',
+                'details' => [['label' => 'Was due', 'value' => $this->when($head->from_value)]],
+            ],
             // an orphaned child, see group()
             default => [
                 'kind' => 'edit',

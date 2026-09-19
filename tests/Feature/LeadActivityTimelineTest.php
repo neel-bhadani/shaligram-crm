@@ -394,6 +394,117 @@ class LeadActivityTimelineTest extends TestCase
         $this->assertTrue($timeline[1]['system']);
     }
 
+    /* ---------------- editing a follow-up after the fact ---------------- */
+
+    /**
+     * The bug this guards against: rescheduling used to update the to-do's
+     * `scheduled_at` with no activity row at all, which left the ORIGINAL
+     * "Lead created" entry — still showing the date it was written with, and
+     * still attributed to whoever created the lead — as the only trace of a
+     * follow-up someone else had since moved.
+     */
+    public function test_rescheduling_a_follow_up_is_its_own_entry_and_leaves_the_original_untouched(): void
+    {
+        $lead = $this->createLead();
+        $todo = Todo::where('lead_id', $lead->id)->where('status', 'pending')->firstOrFail();
+
+        // Ann created the lead and booked this follow-up; Tara — who holds
+        // the task — is the one moving it now
+        $this->actingAs($this->tele)
+            ->put("/todos/{$todo->id}", [
+                'lead_id' => $lead->id,
+                'type' => $todo->type,
+                'scheduled_at' => '2026-09-20 15:00',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $timeline = $this->timeline($lead);
+
+        $this->assertCount(2, $timeline);
+
+        // the original entry, byte for byte: still Ann's, still the date it
+        // was written with
+        $this->assertSame('created', $timeline[0]['kind']);
+        $this->assertSame('Ann User', $timeline[0]['actor']);
+        $this->assertSame('Call · 13 Sep 2026, 11:00 AM', $this->details($timeline[0])['Next follow-up']);
+
+        // the reschedule, as its own entry, attributed to whoever actually
+        // moved it
+        $this->assertSame('follow_up_rescheduled', $timeline[1]['kind']);
+        $this->assertSame('Call rescheduled', $timeline[1]['title']);
+        $this->assertSame('Tara User', $timeline[1]['actor']);
+        $this->assertSame([
+            'field' => 'Scheduled for',
+            'from' => '13 Sep 2026, 11:00 AM',
+            'to' => '20 Sep 2026, 3:00 PM',
+        ], $timeline[1]['change']);
+
+        $this->assertSame('2026-09-20 15:00', $todo->fresh()->scheduled_at->format('Y-m-d H:i'));
+    }
+
+    /** Editing the type or the remarks without moving the date is not a reschedule. */
+    public function test_editing_a_follow_up_without_moving_its_date_adds_no_entry(): void
+    {
+        $lead = $this->createLead();
+        $todo = Todo::where('lead_id', $lead->id)->where('status', 'pending')->firstOrFail();
+
+        $this->actingAs($this->tele)
+            ->put("/todos/{$todo->id}", [
+                'lead_id' => $lead->id,
+                'type' => $todo->type,
+                'scheduled_at' => $todo->scheduled_at->format('Y-m-d H:i'),
+                'remarks' => 'Call after lunch.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertCount(1, $this->timeline($lead));
+        $this->assertSame('Call after lunch.', $todo->fresh()->remarks);
+    }
+
+    public function test_cancelling_a_follow_up_is_its_own_entry(): void
+    {
+        $lead = $this->createLead();
+        $todo = Todo::where('lead_id', $lead->id)->where('status', 'pending')->firstOrFail();
+
+        $this->actingAs($this->admin)
+            ->delete("/todos/{$todo->id}")
+            ->assertSessionHasNoErrors();
+
+        $timeline = $this->timeline($lead);
+
+        $this->assertCount(2, $timeline);
+        $this->assertSame('follow_up_cancelled', $timeline[1]['kind']);
+        $this->assertSame('Call cancelled', $timeline[1]['title']);
+        $this->assertSame('Ann User', $timeline[1]['actor']);
+        $this->assertSame('13 Sep 2026, 11:00 AM', $this->details($timeline[1])['Was due']);
+        $this->assertSame('cancelled', $todo->fresh()->status);
+    }
+
+    /** The Follow-ups page's Add-to-do form, for a lead holding no pending task. */
+    public function test_adding_a_follow_up_by_hand_is_its_own_entry(): void
+    {
+        $lead = $this->createLead();
+        Todo::where('lead_id', $lead->id)->delete();
+
+        $this->actingAs($this->admin)
+            ->post('/todos', [
+                'lead_id' => $lead->id,
+                'type' => 'site_visit',
+                'scheduled_at' => '2026-09-20 15:00',
+                'remarks' => 'Bring the sample flat keys.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $timeline = $this->timeline($lead);
+
+        $this->assertCount(2, $timeline);
+        $this->assertSame('follow_up_scheduled', $timeline[1]['kind']);
+        $this->assertSame('Site visit scheduled', $timeline[1]['title']);
+        $this->assertSame('Ann User', $timeline[1]['actor']);
+        $this->assertSame('20 Sep 2026, 3:00 PM', $this->details($timeline[1])['Due']);
+        $this->assertSame('Bring the sample flat keys.', $timeline[1]['remark']);
+    }
+
     /* ---------------- messages ---------------- */
 
     public function test_opened_whatsapp_messages_appear_and_queued_ones_do_not(): void

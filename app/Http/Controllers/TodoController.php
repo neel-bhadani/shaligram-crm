@@ -10,12 +10,14 @@ use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\LeadActivityRecorder;
 use App\Services\LeadFollowUpService;
 use App\Support\CrmTaxonomy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -31,7 +33,10 @@ class TodoController extends Controller
     /** How many clashing follow-ups checkConflict() reads to pick the nearest. */
     private const CLASH_SCAN = 50;
 
-    public function __construct(private LeadFollowUpService $service) {}
+    public function __construct(
+        private LeadFollowUpService $service,
+        private LeadActivityRecorder $activities,
+    ) {}
 
     public function index(Request $request)
     {
@@ -439,15 +444,19 @@ class TodoController extends Controller
             403
         );
 
-        Todo::create([
-            'lead_id' => $lead->id,
-            'assigned_to' => $lead->assigned_to,
-            'created_by' => $request->user()->id,
-            'scheduled_at' => $request->scheduled_at,
-            'type' => $request->type,
-            'status' => 'pending',
-            'remarks' => $request->remarks,
-        ]);
+        DB::transaction(function () use ($request, $lead) {
+            $todo = Todo::create([
+                'lead_id' => $lead->id,
+                'assigned_to' => $lead->assigned_to,
+                'created_by' => $request->user()->id,
+                'scheduled_at' => $request->scheduled_at,
+                'type' => $request->type,
+                'status' => 'pending',
+                'remarks' => $request->remarks,
+            ]);
+
+            $this->activities->followUp($todo, $request->user()->id, onItsOwn: true);
+        });
 
         return back()->with('success', 'Follow-up added.');
     }
@@ -461,7 +470,25 @@ class TodoController extends Controller
             403
         );
 
-        $todo->update($request->only('scheduled_at', 'type', 'remarks'));
+        DB::transaction(function () use ($request, $todo) {
+            // read before update() overwrites it — the entry below has to
+            // name the date this follow-up is actually moving FROM, not the
+            // date it is about to land on
+            $from = $todo->scheduled_at;
+
+            $todo->update($request->only('scheduled_at', 'type', 'remarks'));
+
+            /*
+             | Its own entry, only when the date/time actually moved. A save
+             | that only touched the type or the remarks is not a reschedule,
+             | and stamping one on it would print the same date twice —
+             | "rescheduled 20 Sep -> 20 Sep" — for an edit that never
+             | changed when the follow-up is due.
+             */
+            if ($todo->wasChanged('scheduled_at')) {
+                $this->activities->followUpRescheduled($todo, $request->user()->id, $from, $todo->scheduled_at);
+            }
+        });
 
         return back()->with('success', 'Follow-up rescheduled.');
     }
@@ -470,7 +497,11 @@ class TodoController extends Controller
     {
         abort_unless($request->user()->isAdmin(), 403);
 
-        $todo->update(['status' => 'cancelled']);
+        DB::transaction(function () use ($request, $todo) {
+            $this->activities->followUpCancelled($todo, $request->user()->id);
+
+            $todo->update(['status' => 'cancelled']);
+        });
 
         return back()->with('success', 'Follow-up cancelled.');
     }

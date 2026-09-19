@@ -44,6 +44,12 @@ class LeadActivity extends Model
     /** A lead's project changed by hand. `field` is `project_id`, `from_value` → `to_value` are project ids. */
     public const ProjectSwitched = 'project_switched';
 
+    /** A pending follow-up's date/time changed after it was booked, by hand, possibly by someone other than whoever booked it. `field` is its type, `from_value` → `to_value` are the old and new datetimes. */
+    public const FollowUpRescheduled = 'follow_up_rescheduled';
+
+    /** A pending follow-up was called off before it happened. `field` is its type, `from_value` is the datetime it was due. */
+    public const FollowUpCancelled = 'follow_up_cancelled';
+
     /* ---------------- children: part of the head before them ---------------- */
 
     /** The follow-up the action booked next. Same columns as FollowUpScheduled. */
