@@ -164,7 +164,7 @@ onMounted(() => { if (props.adding) openAdd() })
 
     <div class="card overflow-hidden">
 
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <input v-model="f.search" type="search" placeholder="Search name, contact, phone or email"
                class="w-full md:!w-72" />
 
@@ -192,8 +192,8 @@ onMounted(() => { if (props.adding) openAdd() })
 
       <!-- what the list is currently pinned to, and the way back out of it -->
       <div v-if="pinnedFirm"
-           class="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-teal-50/60 px-4 py-2.5
-                  text-xs text-teal-900">
+           class="flex flex-wrap items-center gap-2 border-b border-slate-100 dark:border-slate-700/60 bg-teal-50/60 px-4 py-2.5
+                  text-xs text-teal-900 dark:text-teal-200">
         Showing the brokers filed under
         <span class="font-semibold">{{ pinnedFirm.name }}</span>.
         <button class="font-semibold underline underline-offset-2" @click="clearParent">
@@ -201,8 +201,8 @@ onMounted(() => { if (props.adding) openAdd() })
         </button>
       </div>
 
-      <div v-if="!partners.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
-        <p class="mb-1 font-semibold text-slate-700">No channel partners match</p>
+      <div v-if="!partners.data.length" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No channel partners match</p>
         Try clearing the filters. New partners appear here once somebody adds one —
         from the button above, or while logging a broker lead.
       </div>
@@ -210,7 +210,7 @@ onMounted(() => { if (props.adding) openAdd() })
       <!-- table on desktop, cards on mobile: the same pattern as Users and To-do -->
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="px-4 py-2.5 font-semibold">Name</th>
             <th class="px-4 py-2.5 font-semibold">Type</th>
             <th class="px-4 py-2.5 font-semibold">Parent firm</th>
@@ -224,13 +224,13 @@ onMounted(() => { if (props.adding) openAdd() })
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in partners.data" :key="p.id" class="border-b border-slate-100"
+          <tr v-for="p in partners.data" :key="p.id" class="border-b border-slate-100 dark:border-slate-700/60"
               :class="p.is_active ? '' : 'bg-slate-50/60'">
             <td class="px-4 py-3">
-              <div class="font-semibold" :class="p.is_active ? '' : 'text-slate-500'">{{ p.name }}</div>
+              <div class="font-semibold" :class="p.is_active ? '' : 'text-slate-500 dark:text-slate-400'">{{ p.name }}</div>
               <!-- a firm says what it holds, and the count is the way into it -->
               <button v-if="p.type === 'firm' && p.brokers_count"
-                      class="text-xs text-teal-800 underline-offset-2 hover:underline"
+                      class="text-xs text-teal-800 dark:text-teal-300 underline-offset-2 hover:underline"
                       @click="showBrokersOf(p)">
                 {{ p.brokers_count }} broker{{ p.brokers_count === 1 ? '' : 's' }}
               </button>
@@ -250,8 +250,8 @@ onMounted(() => { if (props.adding) openAdd() })
             <td class="px-4 py-3">
               <span class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :class="p.is_active
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : 'bg-slate-200 text-slate-600'">
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
                 {{ p.is_active ? 'Active' : 'Inactive' }}
               </span>
             </td>
@@ -281,7 +281,7 @@ onMounted(() => { if (props.adding) openAdd() })
         </tbody>
       </table>
 
-      <div v-if="partners.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="partners.data.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="p in partners.data" :key="p.id" class="p-4"
              :class="p.is_active ? '' : 'bg-slate-50/60'">
           <div class="mb-2 flex items-start justify-between gap-3">
@@ -294,7 +294,7 @@ onMounted(() => { if (props.adding) openAdd() })
               </div>
             </div>
             <span class="flex-none rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'">
+                  :class="p.is_active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
               {{ p.is_active ? 'Active' : 'Inactive' }}
             </span>
           </div>
@@ -309,7 +309,7 @@ onMounted(() => { if (props.adding) openAdd() })
             <template v-if="p.type === 'firm'">
               <dt class="text-slate-400">Brokers</dt>
               <dd class="text-right">
-                <button v-if="p.brokers_count" class="text-teal-800 underline underline-offset-2"
+                <button v-if="p.brokers_count" class="text-teal-800 dark:text-teal-300 underline underline-offset-2"
                         @click="showBrokersOf(p)">{{ p.brokers_count }}</button>
                 <span v-else>0</span>
               </dd>
@@ -320,7 +320,7 @@ onMounted(() => { if (props.adding) openAdd() })
             <dd class="text-right font-semibold tabular-nums">{{ p.bookings_count }}</dd>
           </dl>
 
-          <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+          <div class="mt-3 flex gap-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <button class="btn-xs flex-1" @click="openEdit(p)">Edit</button>
             <button class="btn-xs flex-1" @click="openMerge(p)">Merge</button>
             <button v-if="isAdmin" class="btn-xs flex-1 disabled:cursor-not-allowed disabled:opacity-40"
@@ -330,12 +330,12 @@ onMounted(() => { if (props.adding) openAdd() })
         </div>
       </div>
 
-      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ partners.total }} partner{{ partners.total === 1 ? '' : 's' }}</span>
         <div class="flex flex-wrap gap-1">
           <Link v-for="link in partners.links" :key="link.label" :href="link.url ?? ''"
                 class="rounded-md border px-2.5 py-1 text-xs"
-                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white',
+                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
                          !link.url ? 'pointer-events-none opacity-40' : '']"
                 preserve-scroll v-html="link.label" />
         </div>

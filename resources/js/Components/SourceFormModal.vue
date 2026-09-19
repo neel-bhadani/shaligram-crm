@@ -90,7 +90,7 @@ const submit = () => {
           ? 'Fixed. Every lead from this source is stored against this word.'
           : 'Made from the name. It cannot be changed afterwards.'"
       >
-        <div class="rounded-lg bg-slate-50 px-3 py-2 font-mono text-sm text-slate-500">
+        <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2 font-mono text-sm text-slate-500 dark:text-slate-400">
           {{ editing ? source.key : keyPreview }}
         </div>
       </FormField>
@@ -122,7 +122,7 @@ const submit = () => {
       </FormField>
 
       <p v-if="editing && source.rules.length && form.is_active === false"
-         class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+         class="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
         {{ source.rules.length === 1 ? 'An automation rule uses' : 'Automation rules use' }}
         this source: {{ source.rules.join(', ') }}.
         {{ source.rules.length === 1 ? 'It' : 'They' }} will stop matching new leads while the source is off.

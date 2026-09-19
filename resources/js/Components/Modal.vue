@@ -78,12 +78,12 @@ watch(() => props.show, v => { if (v) lockScroll() })
         <!-- header and footer stay fixed, only the body scrolls,
              so the submit button is always reachable on a phone -->
         <div
-          class="flex max-h-[94vh] w-full flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-xl"
+          class="flex max-h-[94vh] w-full flex-col rounded-t-2xl bg-white dark:bg-slate-800 shadow-2xl sm:max-h-[90vh] sm:rounded-xl"
           :class="maxWidth"
         >
-          <div class="flex flex-none items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div class="flex flex-none items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/60 px-5 py-4">
             <h3 class="min-w-0 break-words text-lg font-semibold tracking-tight">{{ title }}</h3>
-            <button class="flex-none px-2 text-2xl leading-none text-slate-400 hover:text-slate-600"
+            <button class="flex-none px-2 text-2xl leading-none text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                     @click="emit('close')">&times;</button>
           </div>
 
@@ -92,7 +92,7 @@ watch(() => props.show, v => { if (v) lockScroll() })
           </div>
 
           <div v-if="$slots.footer"
-               class="sticky bottom-0 flex flex-none justify-end gap-2 border-t border-slate-100 bg-white px-5 py-3.5">
+               class="sticky bottom-0 flex flex-none justify-end gap-2 border-t border-slate-100 dark:border-slate-700/60 bg-white dark:bg-slate-800 px-5 py-3.5">
             <slot name="footer" />
           </div>
         </div>

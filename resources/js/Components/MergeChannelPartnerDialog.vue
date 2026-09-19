@@ -66,9 +66,9 @@ const submit = () => form.post(route('channel-partners.merge', props.partner.id)
 
 <template>
   <Modal :show="show" title="Merge channel partner" max-width="max-w-lg" @close="emit('close')">
-    <p class="text-sm text-slate-600">
+    <p class="text-sm text-slate-600 dark:text-slate-300">
       Everything filed against
-      <span class="font-semibold text-slate-800">{{ partner?.display_label }}</span>
+      <span class="font-semibold text-slate-800 dark:text-slate-200">{{ partner?.display_label }}</span>
       moves to the partner you choose, and this one is then deleted.
     </p>
 

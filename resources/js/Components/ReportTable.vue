@@ -90,16 +90,16 @@ const totalOf = column => {
     <!-- desktop -->
     <table class="hidden w-full text-sm lg:table">
       <thead>
-        <tr class="bg-slate-50 text-left text-xs text-slate-500">
+        <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
           <th v-for="c in columns" :key="c.key"
               class="px-4 py-2.5 font-semibold"
               :class="numeric(c) ? 'text-right' : 'text-left'"
               :aria-sort="key === c.key ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'">
-            <button class="inline-flex items-center gap-1 hover:text-slate-800"
+            <button class="inline-flex items-center gap-1 hover:text-slate-800 dark:hover:text-slate-100"
                     :title="c.note || `Sort by ${c.label}`"
                     @click="toggle(c)">
               {{ c.label }}
-              <span class="text-[10px]" :class="key === c.key ? 'text-teal-700' : 'text-slate-300'">
+              <span class="text-[10px]" :class="key === c.key ? 'text-teal-700 dark:text-teal-300' : 'text-slate-300'">
                 {{ key === c.key && dir === 'asc' ? '▲' : '▼' }}
               </span>
             </button>
@@ -108,7 +108,7 @@ const totalOf = column => {
       </thead>
       <tbody>
         <tr v-for="row in sorted" :key="row.key"
-            class="border-t border-slate-100"
+            class="border-t border-slate-100 dark:border-slate-700/60"
             :class="href(row) ? 'cursor-pointer hover:bg-teal-50/60' : ''"
             @click="href(row) && $inertia.visit(href(row))">
           <td v-for="c in columns" :key="c.key"
@@ -121,9 +121,9 @@ const totalOf = column => {
               row nobody can reach with a keyboard or open in a new tab.
             -->
             <Link v-if="c.key === 'label' && href(row)" :href="href(row)"
-                  class="text-teal-800 underline-offset-2 hover:underline"
+                  class="text-teal-800 dark:text-teal-300 underline-offset-2 hover:underline"
                   @click.stop>{{ row.label }}</Link>
-            <span v-else :class="c.key === 'label' && !href(row) ? 'text-slate-500' : ''">
+            <span v-else :class="c.key === 'label' && !href(row) ? 'text-slate-500 dark:text-slate-400' : ''">
               {{ fmt(row, c) }}
             </span>
           </td>
@@ -137,7 +137,7 @@ const totalOf = column => {
         cannot survive.
       -->
       <tfoot>
-        <tr class="border-t-2 border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+        <tr class="border-t-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-xs font-semibold text-slate-600 dark:text-slate-300">
           <td v-for="c in columns" :key="c.key" class="px-4 py-2.5"
               :class="numeric(c) ? 'text-right tabular-nums' : ''">
             {{ c.key === 'label' ? 'Total' : (totalOf(c) ?? '') }}
@@ -147,11 +147,11 @@ const totalOf = column => {
     </table>
 
     <!-- mobile: the same rows as cards, the same order the sort put them in -->
-    <div class="divide-y divide-slate-100 lg:hidden">
-      <div class="flex flex-wrap gap-x-3 gap-y-1 bg-slate-50 px-4 py-2.5 text-xs text-slate-500">
+    <div class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
+      <div class="flex flex-wrap gap-x-3 gap-y-1 bg-slate-50 dark:bg-slate-900/60 px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
         <span class="font-semibold">Sort by</span>
         <button v-for="c in columns" :key="c.key"
-                class="font-medium" :class="key === c.key ? 'text-teal-700' : 'hover:text-slate-700'"
+                class="font-medium" :class="key === c.key ? 'text-teal-700 dark:text-teal-300' : 'hover:text-slate-700 dark:hover:text-slate-200'"
                 @click="toggle(c)">
           {{ c.label }}{{ key === c.key ? (dir === 'asc' ? ' ▲' : ' ▼') : '' }}
         </button>
@@ -161,16 +161,16 @@ const totalOf = column => {
                  :href="href(row) || undefined"
                  class="block px-4 py-3">
         <div class="flex items-baseline justify-between gap-3">
-          <span class="font-semibold" :class="href(row) ? 'text-teal-800' : 'text-slate-600'">
+          <span class="font-semibold" :class="href(row) ? 'text-teal-800 dark:text-teal-300' : 'text-slate-600 dark:text-slate-300'">
             {{ row.label }}
           </span>
           <span class="text-lg font-bold tabular-nums">{{ row.total }}</span>
         </div>
-        <dl class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500">
+        <dl class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
           <div v-for="c in columns.filter(c => c.key !== 'label' && c.key !== 'total')"
                :key="c.key" class="flex gap-1">
             <dt>{{ c.label }}</dt>
-            <dd class="font-medium tabular-nums text-slate-700">{{ fmt(row, c) }}</dd>
+            <dd class="font-medium tabular-nums text-slate-700 dark:text-slate-300">{{ fmt(row, c) }}</dd>
           </div>
         </dl>
       </component>

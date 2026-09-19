@@ -105,7 +105,7 @@ const conversion = p => p.leads_count > 0
 
     <div class="card overflow-hidden">
 
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <input v-model="f.search" type="search" placeholder="Search by name"
                class="w-full md:!w-72" />
 
@@ -125,12 +125,12 @@ const conversion = p => p.leads_count > 0
       -->
       <div v-if="!projects.data.length" class="px-5 py-14 text-center">
         <template v-if="f.search || f.status">
-          <p class="mb-1 text-sm font-semibold text-slate-700">No projects match</p>
-          <p class="text-sm text-slate-500">Try clearing the filters.</p>
+          <p class="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">No projects match</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Try clearing the filters.</p>
         </template>
         <template v-else>
-          <p class="mb-1 text-base font-semibold text-slate-800">No projects yet</p>
-          <p class="mx-auto max-w-lg text-sm leading-relaxed text-slate-500">
+          <p class="mb-1 text-base font-semibold text-slate-800 dark:text-slate-200">No projects yet</p>
+          <p class="mx-auto max-w-lg text-sm leading-relaxed text-slate-500 dark:text-slate-400">
             A project is a development you are selling. Every lead is filed against one, so at
             least one has to exist before anybody can add a lead.
           </p>
@@ -141,7 +141,7 @@ const conversion = p => p.leads_count > 0
       <!-- table on desktop, cards on mobile: the same pattern as Users and To-do -->
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="px-4 py-2.5 font-semibold">Name</th>
             <th class="px-4 py-2.5 font-semibold">Location</th>
             <th class="px-4 py-2.5 font-semibold">Type</th>
@@ -153,26 +153,26 @@ const conversion = p => p.leads_count > 0
           </tr>
         </thead>
         <tbody>
-          <tr v-for="p in projects.data" :key="p.id" class="border-b border-slate-100"
+          <tr v-for="p in projects.data" :key="p.id" class="border-b border-slate-100 dark:border-slate-700/60"
               :class="p.is_active ? '' : 'bg-slate-50/60'">
             <td class="px-4 py-3">
               <Link :href="route('projects.show', p.id)"
                     class="font-semibold hover:text-teal-700 hover:underline"
-                    :class="p.is_active ? '' : 'text-slate-500'">{{ p.name }}</Link>
+                    :class="p.is_active ? '' : 'text-slate-500 dark:text-slate-400'">{{ p.name }}</Link>
             </td>
-            <td class="px-4 py-3 text-slate-500">{{ p.location ?? '—' }}</td>
+            <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ p.location ?? '—' }}</td>
             <td class="px-4 py-3">{{ p.type_label }}</td>
             <td class="px-4 py-3">
               <span class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :class="p.is_active
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : 'bg-slate-200 text-slate-600'">
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
                 {{ p.is_active ? 'Selling now' : 'Inactive' }}
               </span>
             </td>
             <td class="px-4 py-3 tabular-nums">{{ p.leads_count }}</td>
             <td class="px-4 py-3 tabular-nums">{{ p.bookings_count }}</td>
-            <td class="px-4 py-3 tabular-nums text-slate-500">{{ conversion(p) }}</td>
+            <td class="px-4 py-3 tabular-nums text-slate-500 dark:text-slate-400">{{ conversion(p) }}</td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-1.5">
                 <Link :href="route('projects.show', p.id)" class="btn-xs">View</Link>
@@ -189,7 +189,7 @@ const conversion = p => p.leads_count > 0
         </tbody>
       </table>
 
-      <div v-if="projects.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="projects.data.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="p in projects.data" :key="p.id" class="p-4"
              :class="p.is_active ? '' : 'bg-slate-50/60'">
           <div class="mb-2 flex items-start justify-between gap-3">
@@ -200,7 +200,7 @@ const conversion = p => p.leads_count > 0
               <div class="truncate text-xs text-slate-400">{{ p.location ?? 'No location' }}</div>
             </div>
             <span class="flex-none rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="p.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'">
+                  :class="p.is_active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
               {{ p.is_active ? 'Selling' : 'Inactive' }}
             </span>
           </div>
@@ -216,7 +216,7 @@ const conversion = p => p.leads_count > 0
             <dd class="text-right tabular-nums">{{ conversion(p) }}</dd>
           </dl>
 
-          <div class="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <div class="mt-3 flex flex-wrap gap-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <Link :href="route('projects.show', p.id)" class="btn-xs flex-1 text-center">View</Link>
             <button class="btn-xs flex-1" @click="openEdit(p)">Edit</button>
             <button class="btn-xs flex-1" @click="toggleActive(p)">
@@ -229,12 +229,12 @@ const conversion = p => p.leads_count > 0
         </div>
       </div>
 
-      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ projects.total }} project{{ projects.total === 1 ? '' : 's' }}</span>
         <div class="flex flex-wrap gap-1">
           <Link v-for="link in projects.links" :key="link.label" :href="link.url ?? ''"
                 class="rounded-md border px-2.5 py-1 text-xs"
-                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white',
+                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
                          !link.url ? 'pointer-events-none opacity-40' : '']"
                 preserve-scroll v-html="link.label" />
         </div>

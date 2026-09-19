@@ -44,17 +44,17 @@ watch(confirmed, v => { if (v) target.value = '' })
 </script>
 
 <template>
-  <div class="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
-    <div class="text-xs font-semibold uppercase tracking-wide text-amber-900">
+  <div class="rounded-lg border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 p-4">
+    <div class="text-xs font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
       This user's work
     </div>
 
-    <p class="mt-1.5 text-sm text-amber-900">
+    <p class="mt-1.5 text-sm text-amber-900 dark:text-amber-200">
       {{ user.display_name }} holds {{ line }}. Decide where {{ workload.leads ? 'they' : 'it' }}
       go{{ workload.leads ? '' : 'es' }} before this account is {{ verb }}.
     </p>
 
-    <label class="mt-3 block text-xs font-semibold text-slate-600">Reassign to</label>
+    <label class="mt-3 block text-xs font-semibold text-slate-600 dark:text-slate-300">Reassign to</label>
     <select v-model="target" class="mt-1.5">
       <option value="">Select a person…</option>
       <option v-for="c in candidates" :key="c.id" :value="c.id">{{ c.name }}</option>
@@ -65,14 +65,14 @@ watch(confirmed, v => { if (v) target.value = '' })
       rule, and an admin staring at "Select a person…" with nothing under it
       deserves to know why rather than assume the page is broken.
     -->
-    <p v-if="!candidates.length" class="mt-1.5 text-xs text-amber-900">
+    <p v-if="!candidates.length" class="mt-1.5 text-xs text-amber-900 dark:text-amber-200">
       Nobody else active does this job, so leaving the leads unassigned is the only option here.
     </p>
 
-    <div class="mt-3 border-t border-amber-200 pt-3">
+    <div class="mt-3 border-t border-amber-200 dark:border-amber-500/30 pt-3">
       <label class="flex cursor-pointer items-start gap-2.5">
-        <input v-model="confirmed" type="checkbox" class="mt-0.5 h-4 w-4 flex-none rounded border-slate-300" />
-        <span class="text-xs leading-relaxed text-amber-900">
+        <input v-model="confirmed" type="checkbox" class="mt-0.5 h-4 w-4 flex-none rounded border-slate-300 dark:border-slate-600" />
+        <span class="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
           Leave the leads unassigned. They will appear on nobody's list until somebody is
           given them.
           <template v-if="workload.todos">
@@ -84,6 +84,6 @@ watch(confirmed, v => { if (v) target.value = '' })
       </label>
     </div>
 
-    <p v-if="error" class="mt-2 text-xs font-medium text-rose-700">{{ error }}</p>
+    <p v-if="error" class="mt-2 text-xs font-medium text-rose-700 dark:text-rose-300">{{ error }}</p>
   </div>
 </template>

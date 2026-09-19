@@ -111,17 +111,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="relative w-full sm:w-auto">
-    <div class="flex w-full overflow-hidden rounded-lg border border-slate-200 bg-white sm:w-auto">
+    <div class="flex w-full overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 sm:w-auto">
       <button
         v-for="r in presets" :key="r.key"
-        class="flex-1 whitespace-nowrap border-r border-slate-200 px-2.5 py-2 text-xs sm:px-3 sm:text-sm"
-        :class="range.key === r.key ? 'bg-slate-900 text-white' : 'text-slate-500'"
+        class="flex-1 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 px-2.5 py-2 text-xs sm:px-3 sm:text-sm"
+        :class="range.key === r.key ? 'bg-slate-900 text-white' : 'text-slate-500 dark:text-slate-400'"
         @click="setRange(r.key)"
       >{{ r.label }}</button>
 
       <button
         class="flex-1 whitespace-nowrap px-2.5 py-2 text-xs sm:px-3 sm:text-sm"
-        :class="isCustom ? 'bg-slate-900 text-white' : 'text-slate-500'"
+        :class="isCustom ? 'bg-slate-900 text-white' : 'text-slate-500 dark:text-slate-400'"
         aria-haspopup="dialog"
         :aria-expanded="pickerOpen"
         @click="pickerOpen ? closePicker() : openPicker()"
@@ -138,23 +138,23 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     -->
     <div
       v-if="pickerOpen"
-      class="fixed inset-x-3 bottom-3 z-40 rounded-xl border border-slate-200 bg-white p-4 shadow-xl
+      class="fixed inset-x-3 bottom-3 z-40 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 shadow-xl
              sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-full sm:mt-2 sm:w-72"
       role="dialog" aria-label="Custom date range"
     >
       <div class="grid grid-cols-2 gap-3">
         <label class="block">
-          <span class="mb-1 block text-xs font-semibold text-slate-500">From</span>
+          <span class="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">From</span>
           <input v-model="draft.from" type="date" :max="range.today" class="w-full text-sm" />
         </label>
         <label class="block">
-          <span class="mb-1 block text-xs font-semibold text-slate-500">To</span>
+          <span class="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">To</span>
           <input v-model="draft.to" type="date" :min="draft.from" :max="range.today"
                  class="w-full text-sm" />
         </label>
       </div>
 
-      <p v-if="pickerError" class="mt-2.5 text-xs font-medium text-rose-700" role="alert">
+      <p v-if="pickerError" class="mt-2.5 text-xs font-medium text-rose-700 dark:text-rose-300" role="alert">
         {{ pickerError }}
       </p>
 

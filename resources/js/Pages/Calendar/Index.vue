@@ -138,10 +138,10 @@ const timeLabel = (e) => {
 /* the same four states the server names, in the app's own palette: danger
    for overdue, warning for today, success for done, neutral for ahead */
 const STATE_CLASS = {
-  overdue: 'bg-rose-100 text-rose-700',
-  pending: 'bg-amber-100 text-amber-800',
-  upcoming: 'bg-slate-100 text-slate-600',
-  completed: 'bg-emerald-100 text-emerald-700 line-through',
+  overdue: 'bg-rose-100 dark:bg-rose-500/15 text-rose-700 dark:text-rose-300',
+  pending: 'bg-amber-100 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300',
+  upcoming: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+  completed: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 line-through',
 }
 
 const DOT_CLASS = {
@@ -238,28 +238,28 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
       narrow them, so a month of Vanam's pending calls is a different answer to
       the same question.
     -->
-    <div class="mb-4 grid grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-3">
-      <div class="border-b border-slate-100 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-        <div class="text-2xl font-bold tracking-tight tabular-nums text-slate-900">{{ summary.today }}</div>
-        <div class="mt-0.5 text-xs text-slate-500">Today's follow-ups</div>
+    <div class="mb-4 grid grid-cols-1 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 sm:grid-cols-3">
+      <div class="border-b border-slate-100 dark:border-slate-700/60 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+        <div class="text-2xl font-bold tracking-tight tabular-nums text-slate-900 dark:text-slate-100">{{ summary.today }}</div>
+        <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Today's follow-ups</div>
         <div class="mt-1.5 text-[11px] text-slate-400">Due today</div>
       </div>
-      <div class="border-b border-slate-100 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-        <div class="text-2xl font-bold tracking-tight tabular-nums text-slate-900">{{ summary.upcoming }}</div>
-        <div class="mt-0.5 text-xs text-slate-500">Upcoming follow-ups</div>
+      <div class="border-b border-slate-100 dark:border-slate-700/60 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+        <div class="text-2xl font-bold tracking-tight tabular-nums text-slate-900 dark:text-slate-100">{{ summary.upcoming }}</div>
+        <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Upcoming follow-ups</div>
         <div class="mt-1.5 text-[11px] text-slate-400">Scheduled ahead of today</div>
       </div>
-      <div class="border-b border-slate-100 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+      <div class="border-b border-slate-100 dark:border-slate-700/60 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
         <div class="text-2xl font-bold tracking-tight tabular-nums"
-             :class="summary.overdue ? 'text-rose-700' : 'text-slate-900'">{{ summary.overdue }}</div>
-        <div class="mt-0.5 text-xs text-slate-500">Overdue follow-ups</div>
+             :class="summary.overdue ? 'text-rose-700 dark:text-rose-300' : 'text-slate-900 dark:text-slate-100'">{{ summary.overdue }}</div>
+        <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Overdue follow-ups</div>
         <div class="mt-1.5 text-[11px] text-slate-400">Waiting longer</div>
       </div>
     </div>
 
     <div class="card overflow-hidden">
       <!-- filters -->
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <select v-model="f.status" class="w-full md:!w-40" aria-label="Status" @change="push">
           <option value="">Status · All</option>
           <option value="pending">Pending</option>
@@ -286,7 +286,7 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
       </div>
 
       <!-- month navigation -->
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-3 sm:px-4">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/60 px-3 py-3 sm:px-4">
         <div class="flex gap-2">
           <button class="btn-ghost px-3" :aria-label="`Previous month`" @click="visit({ month: shifted(-1), ...f })">
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -304,7 +304,7 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
           </button>
         </div>
 
-        <h2 class="order-first w-full text-center text-base font-semibold text-slate-900 sm:order-none sm:w-auto">
+        <h2 class="order-first w-full text-center text-base font-semibold text-slate-900 dark:text-slate-100 sm:order-none sm:w-auto">
           {{ monthLabel }}
         </h2>
 
@@ -312,33 +312,33 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
       </div>
 
       <!-- weekday header -->
-      <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
+      <div class="grid grid-cols-7 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-900/60">
         <div v-for="d in DAYS" :key="d"
-             class="py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+             class="py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           {{ d }}
         </div>
       </div>
 
       <!-- the grid -->
-      <div class="border-l border-t border-slate-100 px-2 pt-2 sm:px-3">
+      <div class="border-l border-t border-slate-100 dark:border-slate-700/60 px-2 pt-2 sm:px-3">
         <div v-for="(week, wi) in grid" :key="wi" class="grid grid-cols-7">
           <div v-for="cell in week" :key="cell.date"
-               class="flex min-h-[72px] flex-col border-b border-r border-slate-100 p-1 md:min-h-[108px] md:p-1.5"
+               class="flex min-h-[72px] flex-col border-b border-r border-slate-100 dark:border-slate-700/60 p-1 md:min-h-[108px] md:p-1.5"
                :class="cell.isToday
-                 ? 'bg-teal-50/70 ring-1 ring-inset ring-teal-700'
-                 : cell.inMonth ? 'bg-white' : 'bg-slate-50/60'">
+                 ? 'bg-teal-50/70 dark:bg-teal-500/10 ring-1 ring-inset ring-teal-700 dark:ring-teal-500'
+                 : cell.inMonth ? 'bg-white dark:bg-slate-800' : 'bg-slate-50/60 dark:bg-slate-900/40'">
             <div class="flex items-center justify-between gap-1">
               <button
                 type="button"
                 class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                :class="cell.isToday ? 'bg-teal-700 text-white' : cell.inMonth ? 'text-slate-700' : 'text-slate-400'"
+                :class="cell.isToday ? 'bg-teal-700 text-white' : cell.inMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'"
                 :title="cell.isToday ? 'Today' : undefined"
                 @click="openDay(cell)"
               >{{ cell.day }}</button>
 
               <!-- count badge, the mobile answer to a crowded cell -->
               <span v-if="cell.events.length"
-                    class="rounded-full bg-slate-200 px-1.5 text-[10px] font-bold tabular-nums text-slate-700 md:hidden"
+                    class="rounded-full bg-slate-200 dark:bg-slate-600 px-1.5 text-[10px] font-bold tabular-nums text-slate-700 dark:text-slate-300 md:hidden"
                     @click="openDay(cell)">{{ cell.events.length }}</span>
             </div>
 
@@ -358,7 +358,7 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
 
               <button v-if="cell.events.length > MAX_ROWS"
                       type="button"
-                      class="rounded bg-white px-1.5 py-0.5 text-left text-[11px] font-semibold text-teal-700 hover:bg-teal-50"
+                      class="rounded bg-white dark:bg-slate-800 px-1.5 py-0.5 text-left text-[11px] font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-500/10"
                       @click="openDay(cell)"
               >+{{ cell.events.length - MAX_ROWS }} more</button>
             </div>
@@ -367,13 +367,13 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
       </div>
 
       <!-- empty / message -->
-      <div v-if="!hasEvents" class="px-5 py-14 text-center text-sm text-slate-500">
+      <div v-if="!hasEvents" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
         <template v-if="hasFilters">
-          <p class="mb-1 font-semibold text-slate-700">No follow-ups match</p>
+          <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No follow-ups match</p>
           Try clearing the filters.
         </template>
         <template v-else>
-          <p class="mb-1 font-semibold text-slate-700">No follow-ups scheduled.</p>
+          <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No follow-ups scheduled.</p>
           Follow-ups due in {{ monthLabel }} will appear here.
         </template>
       </div>
@@ -386,16 +386,16 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
 
     <!-- the day panel: every follow-up on one date -->
     <Modal :show="dayOpen" :title="dayTitle" @close="dayOpen = false">
-      <div v-if="!dayEvents.length" class="py-8 text-center text-sm text-slate-500">
-        <p class="mb-1 font-semibold text-slate-700">No follow-ups scheduled.</p>
+      <div v-if="!dayEvents.length" class="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No follow-ups scheduled.</p>
         Nothing is due on this day.
       </div>
 
-      <ol v-else class="divide-y divide-slate-100">
+      <ol v-else class="divide-y divide-slate-100 dark:divide-slate-700/60">
         <li v-for="e in dayEvents" :key="e.id" class="flex items-start gap-3 py-2.5">
-          <span class="mt-0.5 w-16 shrink-0 text-xs font-semibold text-slate-500">{{ timeLabel(e) }}</span>
+          <span class="mt-0.5 w-16 shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{{ timeLabel(e) }}</span>
           <div class="min-w-0 flex-1">
-            <button type="button" class="text-left text-sm font-semibold text-slate-900 hover:text-teal-700"
+            <button type="button" class="text-left text-sm font-semibold text-slate-900 dark:text-slate-100 hover:text-teal-700"
                     @click="openLead(e)">
               {{ e.lead.name }}
             </button>
@@ -408,7 +408,7 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
               <span>{{ options.types[e.type] ?? e.type }}</span>
               <span v-if="e.lead.stage" class="inline-block"><StageBadge :stage="e.lead.stage" /></span>
             </div>
-            <p v-if="e.remark" class="mt-1 break-words text-xs text-slate-500">{{ e.remark }}</p>
+            <p v-if="e.remark" class="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{{ e.remark }}</p>
           </div>
         </li>
       </ol>

@@ -64,21 +64,21 @@ defineProps({
       -->
       <div class="flex h-[26px] items-baseline justify-between gap-2">
         <span class="text-[26px] font-bold leading-none tracking-tight tabular-nums"
-              :class="tone === 'bad' ? 'text-rose-700' : tone === 'good' ? 'text-emerald-700' : 'text-slate-900'">
+              :class="tone === 'bad' ? 'text-rose-700 dark:text-rose-300' : tone === 'good' ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-slate-100'">
           {{ value }}
         </span>
 
         <!-- the change against the period before this one -->
         <span v-if="delta"
               class="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums"
-              :class="deltaUp ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'"
+              :class="deltaUp ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300'"
               :title="`${delta} against the period before this one`">
           {{ delta }}
         </span>
 
         <span v-else-if="flag"
-              class="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5
-                     text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+              class="shrink-0 whitespace-nowrap rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5
+                     text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
               title="This figure is not moved by the date range">
           {{ flag }}
         </span>

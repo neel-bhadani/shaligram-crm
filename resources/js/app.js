@@ -7,6 +7,9 @@ import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import Toaster from '@/Components/Toaster.vue';
 import { toast, flashToasts } from '@/composables/useToast';
+import { watchSystemPreference } from '@/composables/useTheme';
+
+watchSystemPreference();
 
 const appName = import.meta.env.VITE_APP_NAME || 'Shaligram CRM';
 

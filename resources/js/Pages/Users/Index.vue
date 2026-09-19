@@ -86,11 +86,11 @@ const permissionNote = u => {
  | colour and its own words rather than reading as "Inactive".
  */
 const statusBadge = u => ({
-  pending:  { label: 'Pending approval', cls: 'bg-amber-100 text-amber-900 ring-1 ring-amber-300' },
-  rejected: { label: 'Rejected', cls: 'bg-rose-50 text-rose-700' },
+  pending:  { label: 'Pending approval', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200 ring-1 ring-amber-300' },
+  rejected: { label: 'Rejected', cls: 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300' },
 }[u.approval_status] ?? (u.is_active
-  ? { label: 'Active', cls: 'bg-emerald-50 text-emerald-800' }
-  : { label: 'Inactive', cls: 'bg-slate-200 text-slate-600' }))
+  ? { label: 'Active', cls: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' }
+  : { label: 'Inactive', cls: 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300' }))
 
 // waiting rows are warm so they stand out; switched-off ones recede
 const rowTint = u =>
@@ -131,18 +131,18 @@ const showPending = () => {
       been read and forgotten.
     -->
     <div v-if="options.pendingCount && f.status !== 'pending'"
-         class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200
-                bg-amber-50 px-4 py-3 text-sm text-amber-900">
+         class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 dark:border-amber-500/30
+                bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
       <span>
         <b>{{ options.pendingCount }}</b>
         account request{{ options.pendingCount === 1 ? ' is' : 's are' }} waiting for approval.
       </span>
-      <button class="btn-xs !border-amber-300 !text-amber-900" @click="showPending">Show them</button>
+      <button class="btn-xs !border-amber-300 dark:border-amber-500/40 !text-amber-900 dark:text-amber-200" @click="showPending">Show them</button>
     </div>
 
     <div class="card overflow-hidden">
 
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <input v-model="f.search" type="search" placeholder="Search name, email or mobile"
                class="w-full md:!w-72" />
 
@@ -162,15 +162,15 @@ const showPending = () => {
         <button class="btn-ghost w-full md:w-auto" @click="clearFilters">Clear</button>
       </div>
 
-      <div v-if="!users.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
-        <p class="mb-1 font-semibold text-slate-700">No users match</p>
+      <div v-if="!users.data.length" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No users match</p>
         Try clearing the filters.
       </div>
 
       <!-- table on desktop, cards on mobile: the same pattern as To-do -->
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="px-4 py-2.5 font-semibold">Name</th>
             <th class="px-4 py-2.5 font-semibold">Contact</th>
             <th class="px-4 py-2.5 font-semibold">Role</th>
@@ -182,10 +182,10 @@ const showPending = () => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="u in users.data" :key="u.id" class="border-b border-slate-100"
+          <tr v-for="u in users.data" :key="u.id" class="border-b border-slate-100 dark:border-slate-700/60"
               :class="rowTint(u)">
             <td class="px-4 py-3">
-              <div class="font-semibold" :class="u.is_active || u.approval_status === 'pending' ? '' : 'text-slate-500'">
+              <div class="font-semibold" :class="u.is_active || u.approval_status === 'pending' ? '' : 'text-slate-500 dark:text-slate-400'">
                 {{ u.display_name }}
               </div>
               <div v-if="isSelf(u)" class="text-xs text-slate-400">You</div>
@@ -206,12 +206,12 @@ const showPending = () => {
             <!-- the two numbers a handover would have to move -->
             <td class="px-4 py-3 tabular-nums">{{ u.open_leads_count }}</td>
             <td class="px-4 py-3 tabular-nums">{{ u.pending_todos_count }}</td>
-            <td class="px-4 py-3 text-xs text-slate-500">{{ permissionNote(u) }}</td>
+            <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{{ permissionNote(u) }}</td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-1.5">
                 <button v-if="canApprove(u)" class="btn-xs !border-teal-600 !bg-teal-700 !text-white hover:!bg-teal-800"
                         :disabled="answering === u.id" @click="answer(u, 'approve')">Approve</button>
-                <button v-if="canReject(u)" class="btn-xs hover:!border-rose-600 hover:!text-rose-700"
+                <button v-if="canReject(u)" class="btn-xs hover:!border-rose-600 hover:!text-rose-700 dark:text-rose-300"
                         :disabled="answering === u.id" @click="answer(u, 'reject')">Reject</button>
                 <button class="btn-xs" @click="openEdit(u)">Edit</button>
                 <button class="btn-xs disabled:cursor-not-allowed disabled:opacity-40"
@@ -223,7 +223,7 @@ const showPending = () => {
         </tbody>
       </table>
 
-      <div v-if="users.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="users.data.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="u in users.data" :key="u.id" class="p-4"
              :class="rowTint(u)">
           <div class="mb-2 flex items-start justify-between gap-3">
@@ -253,14 +253,14 @@ const showPending = () => {
             </template>
           </dl>
 
-          <div v-if="canApprove(u)" class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+          <div v-if="canApprove(u)" class="mt-3 flex gap-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <button class="btn-xs flex-1 !border-teal-600 !bg-teal-700 !text-white"
                     :disabled="answering === u.id" @click="answer(u, 'approve')">Approve</button>
             <button v-if="canReject(u)" class="btn-xs flex-1"
                     :disabled="answering === u.id" @click="answer(u, 'reject')">Reject</button>
           </div>
 
-          <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+          <div class="mt-3 flex gap-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <button class="btn-xs flex-1" @click="openEdit(u)">Edit</button>
             <button class="btn-xs flex-1 disabled:cursor-not-allowed disabled:opacity-40"
                     :disabled="!!lockReason(u)" :title="lockReason(u)"
@@ -269,12 +269,12 @@ const showPending = () => {
         </div>
       </div>
 
-      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ users.total }} user{{ users.total === 1 ? '' : 's' }}</span>
         <div class="flex flex-wrap gap-1">
           <Link v-for="link in users.links" :key="link.label" :href="link.url ?? ''"
                 class="rounded-md border px-2.5 py-1 text-xs"
-                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white',
+                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
                          !link.url ? 'pointer-events-none opacity-40' : '']"
                 preserve-scroll v-html="link.label" />
         </div>

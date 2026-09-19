@@ -145,12 +145,12 @@ const submit = () => {
 
     <!-- two tabs rather than one very long form; the permissions set is its
          own decision and reads better away from the name and the password -->
-    <div class="mb-5 flex gap-1 border-b border-slate-100">
+    <div class="mb-5 flex gap-1 border-b border-slate-100 dark:border-slate-700/60">
       <button v-for="t in [['details', 'Details'], ['permissions', 'Permissions']]" :key="t[0]"
               class="border-b-2 px-3 py-2 text-sm font-medium"
               :class="tab === t[0]
-                ? 'border-teal-700 font-semibold text-slate-900'
-                : 'border-transparent text-slate-500 hover:text-slate-700'"
+                ? 'border-teal-700 font-semibold text-slate-900 dark:text-slate-100'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
               @click="tab = t[0]">{{ t[1] }}</button>
     </div>
 
@@ -206,9 +206,9 @@ const submit = () => {
 
       <FormField class="mt-4" label="Status" :error="form.errors.is_active">
         <label class="flex items-center gap-2.5 text-sm"
-               :class="lockedReason ? 'cursor-not-allowed text-slate-400' : 'text-slate-700'">
+               :class="lockedReason ? 'cursor-not-allowed text-slate-400' : 'text-slate-700 dark:text-slate-300'">
           <input v-model="form.is_active" type="checkbox" :disabled="!!lockedReason"
-                 class="h-4 w-4 rounded border-slate-300" />
+                 class="h-4 w-4 rounded border-slate-300 dark:border-slate-600" />
           Active — can sign in
         </label>
         <p v-if="lockedReason" class="mt-1.5 text-xs text-slate-400">{{ lockedReason }}</p>
@@ -241,19 +241,19 @@ const submit = () => {
         sales manager who should see the whole pipeline.
       </p>
 
-      <div class="divide-y divide-slate-100">
+      <div class="divide-y divide-slate-100 dark:divide-slate-700/60">
         <label v-for="(meta, key) in options.permissions" :key="key"
                class="flex cursor-pointer items-start gap-3 py-3">
           <input v-model="form.permissions[key]" type="checkbox"
-                 class="mt-0.5 h-4 w-4 flex-none rounded border-slate-300" />
+                 class="mt-0.5 h-4 w-4 flex-none rounded border-slate-300 dark:border-slate-600" />
           <span class="min-w-0">
-            <span class="block text-sm font-medium text-slate-800">{{ meta.label }}</span>
+            <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">{{ meta.label }}</span>
             <span class="block text-xs text-slate-400">{{ meta.hint }}</span>
           </span>
         </label>
       </div>
 
-      <p v-if="form.errors.permissions" class="mt-2 text-xs text-rose-600">{{ form.errors.permissions }}</p>
+      <p v-if="form.errors.permissions" class="mt-2 text-xs text-rose-600 dark:text-rose-400">{{ form.errors.permissions }}</p>
     </template>
 
     <template #footer>

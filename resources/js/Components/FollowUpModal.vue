@@ -51,7 +51,7 @@ const when = row => row.at ? (row.earlier ? stamp(row.at) : clock(row.at)) : 'â€
 
 <template>
   <Modal :show="show" title="Your follow-ups today" max-width="max-w-lg" @close="$emit('close')">
-    <p class="text-sm font-semibold text-slate-700">{{ countLine }}</p>
+    <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">{{ countLine }}</p>
 
     <div class="mt-4 space-y-5">
       <section v-for="(group, i) in groups" :key="group.name ?? i">
@@ -65,8 +65,8 @@ const when = row => row.at ? (row.earlier ? stamp(row.at) : clock(row.at)) : 'â€
           few and the footer of the list accounts for the rest.
         -->
         <h4 v-if="group.name"
-            class="mb-2 flex items-baseline justify-between gap-2 border-b border-slate-100 pb-1.5">
-          <span class="truncate text-sm font-semibold text-slate-700">{{ group.name }}</span>
+            class="mb-2 flex items-baseline justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-1.5">
+          <span class="truncate text-sm font-semibold text-slate-700 dark:text-slate-300">{{ group.name }}</span>
           <span class="flex-none text-xs text-slate-400">{{ group.count }}</span>
         </h4>
 
@@ -81,19 +81,19 @@ const when = row => row.at ? (row.earlier ? stamp(row.at) : clock(row.at)) : 'â€
           at text-xs with tabular figures. 6.5rem would have clipped it by a
           pixel on exactly one month of the year.
         -->
-        <ul class="divide-y divide-slate-100">
+        <ul class="divide-y divide-slate-100 dark:divide-slate-700/60">
           <li v-for="row in group.rows" :key="row.id"
               class="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-1 py-2.5">
-            <span class="truncate text-sm font-medium text-slate-800">
+            <span class="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
               {{ row.name ?? 'Lead deleted' }}
             </span>
 
-            <span class="whitespace-nowrap text-right text-xs tabular-nums text-slate-500">
+            <span class="whitespace-nowrap text-right text-xs tabular-nums text-slate-500 dark:text-slate-400">
               {{ when(row) }}
             </span>
 
             <span class="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span class="w-20 shrink-0 text-xs tabular-nums text-slate-500">{{ row.mobile ?? 'â€”' }}</span>
+              <span class="w-20 shrink-0 text-xs tabular-nums text-slate-500 dark:text-slate-400">{{ row.mobile ?? 'â€”' }}</span>
               <StageBadge v-if="row.stage" :stage="row.stage" />
             </span>
           </li>

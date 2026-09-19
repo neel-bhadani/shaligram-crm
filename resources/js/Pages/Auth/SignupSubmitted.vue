@@ -15,13 +15,13 @@ defineProps({ account: Object })
 <template>
   <Head title="Request sent" />
 
-  <div class="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
+  <div class="flex min-h-screen items-center justify-center bg-slate-100 dark:bg-slate-700 px-6 py-10">
     <div class="card w-full max-w-md p-7 sm:p-9">
       <div class="mb-6 flex items-center gap-2.5 font-bold">
         <span class="block h-6 w-6 rounded border-2 border-teal-600"></span> Shaligram CRM
       </div>
 
-      <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 text-teal-700">
+      <div class="mb-5 flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M20 6 9 17l-5-5" />
@@ -32,16 +32,16 @@ defineProps({ account: Object })
         {{ account?.name ? `Thanks, ${account.name}` : 'Request sent' }}
       </h1>
 
-      <p class="mb-4 text-sm leading-relaxed text-slate-600">
+      <p class="mb-4 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
         Your account request has been sent to an administrator.
-        <b class="text-slate-800">You will be able to sign in once they approve it.</b>
+        <b class="text-slate-800 dark:text-slate-200">You will be able to sign in once they approve it.</b>
       </p>
 
-      <p v-if="account?.email" class="mb-6 text-sm leading-relaxed text-slate-600">
-        When you are approved, sign in with <b class="text-slate-800">{{ account.email }}</b>
+      <p v-if="account?.email" class="mb-6 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+        When you are approved, sign in with <b class="text-slate-800 dark:text-slate-200">{{ account.email }}</b>
         or your mobile number and the password you just chose.
       </p>
-      <p v-else class="mb-6 text-sm leading-relaxed text-slate-600">
+      <p v-else class="mb-6 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
         When you are approved, sign in with your email or mobile number and the password you chose.
       </p>
 

@@ -1,11 +1,39 @@
 @import 'tailwindcss';
 
 /*
+ | Class-scoped rather than the media-query default, because the toggle in the
+ | sidebar has to be able to override the OS preference and have that override
+ | stick — a `prefers-color-scheme` variant answers only to the OS and cannot
+ | be told anything by JavaScript. `.dark` on <html> is set by the inline
+ | script in app.blade.php (before first paint) and by useTheme.js afterwards,
+ | and every `dark:` utility below and in every component reads through it.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
  | Global control styles.
  | Defined once so every input, select and textarea in the app matches —
  | scoping them to a wrapper class is what makes modal forms look broken.
+ |
+ | The four tokens below are the reason a dark <select> and a dark <input>
+ | cannot disagree: one pair of light values, one pair of dark ones, and every
+ | rule that follows reads the variable rather than a literal colour.
  */
 @layer base {
+
+    :root {
+        --control-bg: #fff;
+        --control-border: #e2e8f0;
+        --control-text: #0f172a;
+        --control-placeholder: #94a3b8;
+    }
+
+    html.dark {
+        --control-bg: #1e293b;
+        --control-border: #334155;
+        --control-text: #e2e8f0;
+        --control-placeholder: #64748b;
+    }
 
     /*
      | The page header is sticky, so anything jumped to by an anchor or by
@@ -60,12 +88,12 @@
         max-width: 100%;
         min-height: var(--control-h);
         padding: 0.55rem 0.7rem;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--control-border);
         border-radius: 0.5rem;
-        background-color: #fff;
+        background-color: var(--control-bg);
         font-size: 0.875rem;
         line-height: 1.4;
-        color: #0f172a;
+        color: var(--control-text);
     }
 
     select {
@@ -90,6 +118,11 @@
         background-repeat: no-repeat;
         background-position: right 0.75rem center;
         background-size: 1rem;
+    }
+
+    /* the chevron above, redrawn in a stroke that reads against a dark control */
+    html.dark select {
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     }
 
     /*
@@ -124,6 +157,19 @@
         cursor: pointer;
     }
 
+    /*
+     | The picker glyph is baked in by the browser as a dark icon meant for a
+     | light field; on a dark field it would all but disappear. color-scheme
+     | is what fixes the calendar POPUP itself (headings, weekday grid,
+     | today's ring) since that is native UI this stylesheet cannot reach —
+     | the invert here is only for the glyph sitting inside the control.
+     */
+    html.dark input[type='date']::-webkit-calendar-picker-indicator,
+    html.dark input[type='time']::-webkit-calendar-picker-indicator,
+    html.dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
+        filter: invert(0.8);
+    }
+
     textarea {
         resize: vertical;
         min-height: 74px;
@@ -137,9 +183,31 @@
         box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
     }
 
+    html.dark input:focus,
+    html.dark select:focus,
+    html.dark textarea:focus {
+        border-color: #2dd4bf;
+        box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.2);
+    }
+
     input::placeholder,
     textarea::placeholder {
-        color: #94a3b8;
+        color: var(--control-placeholder);
+    }
+
+    /*
+     | Tells the browser which palette its OWN chrome should use on this page —
+     | the native date/time popup, the default scrollbar, autofill, spell-check
+     | underlines — none of which a stylesheet can restyle directly. `light
+     | dark` on :root would let the OS decide either way regardless of the
+     | toggle; naming exactly one keeps native UI in step with `.dark` instead.
+     */
+    :root {
+        color-scheme: light;
+    }
+
+    html.dark {
+        color-scheme: dark;
     }
 
     /*
@@ -165,7 +233,7 @@
     }
 
     .btn-ghost {
-        @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50;
+        @apply inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
     }
 
     .btn-danger {
@@ -173,11 +241,11 @@
     }
 
     .btn-xs {
-        @apply rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-teal-600 hover:text-teal-700;
+        @apply rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:border-teal-600 hover:text-teal-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-teal-500 dark:hover:text-teal-400;
     }
 
     .card {
-        @apply rounded-xl border border-slate-200 bg-white;
+        @apply rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800;
     }
 
     /*
@@ -192,7 +260,7 @@
      | the point of the borders is to separate the tiles rather than to be seen.
      */
     .tile {
-        @apply flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white;
+        @apply flex min-w-0 flex-col rounded-xl border border-slate-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-800;
     }
 
     /*
@@ -207,15 +275,15 @@
      | make a grid of eleven tiles feel like it is breathing.
      */
     .tile-lift {
-        @apply transition duration-150 ease-out hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md;
+        @apply transition duration-150 ease-out hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md dark:hover:border-slate-500;
     }
 
     .info-box {
-        @apply rounded-lg border border-teal-200 bg-teal-50 px-3.5 py-3 text-xs leading-relaxed text-teal-900;
+        @apply rounded-lg border border-teal-200 bg-teal-50 px-3.5 py-3 text-xs leading-relaxed text-teal-900 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-200;
     }
 
     .warn-box {
-        @apply rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900;
+        @apply rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200;
     }
 
     /*

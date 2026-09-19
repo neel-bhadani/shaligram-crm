@@ -390,8 +390,8 @@ const submit = () => {
       </div>
 
       <!-- what the lead has said since before this feature, still saying it -->
-      <p v-if="legacyBroker" class="mt-1.5 text-xs text-slate-500">
-        Currently recorded as <span class="font-medium text-slate-700">{{ legacyBroker }}</span>.
+      <p v-if="legacyBroker" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+        Currently recorded as <span class="font-medium text-slate-700 dark:text-slate-300">{{ legacyBroker }}</span>.
       </p>
 
       <!--
@@ -430,8 +430,8 @@ const submit = () => {
 
     <!-- the first follow-up: nothing schedules one on its own any more -->
     <template v-if="showFollowUp">
-      <div class="mt-6 border-t border-slate-200 pt-5">
-        <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div class="mt-6 border-t border-slate-200 dark:border-slate-700 pt-5">
+        <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           {{ lead ? 'Next follow-up' : 'First follow-up' }}
         </div>
 

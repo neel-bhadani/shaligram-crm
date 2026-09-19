@@ -41,8 +41,8 @@ const submit = () => form.delete(route('users.destroy', props.user.id), {
 
 <template>
   <Modal :show="show" title="Delete user" max-width="max-w-lg" @close="emit('close')">
-    <p class="text-sm text-slate-600">
-      <span class="font-semibold text-slate-800">{{ user?.display_name }}</span>
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      <span class="font-semibold text-slate-800 dark:text-slate-200">{{ user?.display_name }}</span>
       will no longer be able to sign in.
     </p>
 
@@ -67,13 +67,13 @@ const submit = () => form.delete(route('users.destroy', props.user.id), {
       verb="deleted"
     />
 
-    <p v-else class="mt-3 text-sm text-slate-500">
+    <p v-else class="mt-3 text-sm text-slate-500 dark:text-slate-400">
       They hold no open leads and no pending follow-ups, so there is nothing to hand over.
     </p>
 
     <!-- the two refusals the server can still come back with: deleting
          yourself, and deleting the last active admin -->
-    <p v-if="form.errors.user" class="mt-3 text-sm font-medium text-rose-700">{{ form.errors.user }}</p>
+    <p v-if="form.errors.user" class="mt-3 text-sm font-medium text-rose-700 dark:text-rose-300">{{ form.errors.user }}</p>
 
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Cancel</button>

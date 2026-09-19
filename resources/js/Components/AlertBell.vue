@@ -75,9 +75,9 @@ const when = iso => {
   <div ref="root" class="relative">
     <button
       type="button"
-      class="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200
-             text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-      :class="open ? 'border-slate-300 bg-slate-50 text-slate-700' : ''"
+      class="relative flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700
+             text-slate-500 dark:text-slate-400 transition hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+      :class="open ? 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 text-slate-700 dark:text-slate-300' : ''"
       :aria-label="unread ? `${unread} unread alerts` : 'Alerts'"
       :aria-expanded="open"
       @click.stop="open = !open"
@@ -98,15 +98,15 @@ const when = iso => {
 
     <div
       v-if="open"
-      class="absolute right-0 top-11 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200
-             bg-white shadow-xl sm:w-96"
+      class="absolute right-0 top-11 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700
+             bg-white dark:bg-slate-800 shadow-xl sm:w-96"
     >
-      <div class="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-        <div class="text-sm font-semibold text-slate-900">
+      <div class="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 px-4 py-3">
+        <div class="text-sm font-semibold text-slate-900 dark:text-slate-100">
           Alerts
-          <span v-if="unread" class="ml-1 text-xs font-normal text-slate-500">{{ unread }} unread</span>
+          <span v-if="unread" class="ml-1 text-xs font-normal text-slate-500 dark:text-slate-400">{{ unread }} unread</span>
         </div>
-        <button v-if="unread" class="text-xs font-medium text-teal-700 hover:underline" @click="markAllRead">
+        <button v-if="unread" class="text-xs font-medium text-teal-700 dark:text-teal-300 hover:underline" @click="markAllRead">
           Mark all read
         </button>
       </div>
@@ -117,8 +117,8 @@ const when = iso => {
         would have been in it.
       -->
       <div v-if="!recent.length" class="px-4 py-6 text-center">
-        <p class="text-sm font-medium text-slate-700">Nothing to tell you</p>
-        <p class="mx-auto mt-1 max-w-64 text-xs leading-relaxed text-slate-500">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Nothing to tell you</p>
+        <p class="mx-auto mt-1 max-w-64 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
           Alerts appear here when a follow-up goes overdue, a lead stops moving, or an
           automation rule wants you to know something. They are not tasks — reading one
           changes nothing about the lead.
@@ -129,14 +129,14 @@ const when = iso => {
         <button
           v-for="alert in recent" :key="alert.id"
           class="flex w-full items-start gap-2.5 border-b border-slate-50 px-4 py-3 text-left
-                 transition last:border-0 hover:bg-slate-50"
+                 transition last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700"
           :class="alert.read ? 'opacity-60' : ''"
           @click="openAlert(alert)"
         >
           <span class="mt-1.5 h-2 w-2 flex-none rounded-full" :class="dot(alert.severity)" />
           <span class="min-w-0 flex-1">
-            <span class="block text-xs font-semibold leading-snug text-slate-900">{{ alert.title }}</span>
-            <span v-if="alert.body" class="mt-0.5 block truncate text-xs text-slate-500">{{ alert.body }}</span>
+            <span class="block text-xs font-semibold leading-snug text-slate-900 dark:text-slate-100">{{ alert.title }}</span>
+            <span v-if="alert.body" class="mt-0.5 block truncate text-xs text-slate-500 dark:text-slate-400">{{ alert.body }}</span>
             <span class="mt-0.5 block text-[10px] uppercase tracking-wide text-slate-400">
               {{ when(alert.created_at) }}
             </span>
@@ -146,8 +146,8 @@ const when = iso => {
 
       <Link
         :href="route('alerts.index')"
-        class="block border-t border-slate-100 px-4 py-2.5 text-center text-xs font-medium text-teal-700
-               hover:bg-slate-50"
+        class="block border-t border-slate-100 dark:border-slate-700/60 px-4 py-2.5 text-center text-xs font-medium text-teal-700 dark:text-teal-300
+               hover:bg-slate-50 dark:hover:bg-slate-700"
         @click="open = false"
       >See all alerts</Link>
     </div>

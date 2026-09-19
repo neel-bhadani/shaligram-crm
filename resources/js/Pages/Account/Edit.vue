@@ -41,7 +41,7 @@ const submit = () => form.put(route('account.update'), {
     <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
 
       <form class="card p-5 sm:p-6" @submit.prevent="submit">
-        <h2 class="mb-4 text-sm font-semibold text-slate-900">Details</h2>
+        <h2 class="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Details</h2>
 
         <div class="grid gap-4 sm:grid-cols-2">
           <FormField label="First name" required :error="form.errors.first_name">
@@ -62,7 +62,7 @@ const submit = () => form.put(route('account.update'), {
           </FormField>
         </div>
 
-        <h2 class="mb-1 mt-7 border-t border-slate-100 pt-5 text-sm font-semibold text-slate-900">
+        <h2 class="mb-1 mt-7 border-t border-slate-100 dark:border-slate-700/60 pt-5 text-sm font-semibold text-slate-900 dark:text-slate-100">
           Change password
         </h2>
         <p class="mb-4 text-xs text-slate-400">Leave these blank to keep your current password.</p>
@@ -80,7 +80,7 @@ const submit = () => form.put(route('account.update'), {
           </FormField>
         </div>
 
-        <div class="mt-6 flex justify-end border-t border-slate-100 pt-5">
+        <div class="mt-6 flex justify-end border-t border-slate-100 dark:border-slate-700/60 pt-5">
           <button type="submit" class="btn w-full sm:w-auto" :disabled="form.processing">
             {{ form.processing ? 'Saving…' : 'Save changes' }}
           </button>
@@ -89,19 +89,19 @@ const submit = () => form.put(route('account.update'), {
 
       <!-- read-only: the admin's side of the account -->
       <aside class="card p-5 sm:p-6">
-        <h2 class="mb-4 text-sm font-semibold text-slate-900">Your access</h2>
+        <h2 class="mb-4 text-sm font-semibold text-slate-900 dark:text-slate-100">Your access</h2>
 
         <dl class="mb-4 text-sm">
-          <dt class="text-xs font-semibold text-slate-500">Role</dt>
-          <dd class="mt-0.5 text-slate-800">{{ access.role }}</dd>
+          <dt class="text-xs font-semibold text-slate-500 dark:text-slate-400">Role</dt>
+          <dd class="mt-0.5 text-slate-800 dark:text-slate-200">{{ access.role }}</dd>
         </dl>
 
-        <div class="mb-1 text-xs font-semibold text-slate-500">Permissions</div>
-        <ul class="mb-5 divide-y divide-slate-100 text-sm">
+        <div class="mb-1 text-xs font-semibold text-slate-500 dark:text-slate-400">Permissions</div>
+        <ul class="mb-5 divide-y divide-slate-100 dark:divide-slate-700/60 text-sm">
           <li v-for="p in access.permissions" :key="p.label" class="flex items-center justify-between gap-3 py-2">
-            <span :class="p.on ? 'text-slate-800' : 'text-slate-400'">{{ p.label }}</span>
+            <span :class="p.on ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400'">{{ p.label }}</span>
             <span class="flex-none rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="p.on ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-500'">
+                  :class="p.on ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'">
               {{ p.on ? 'Yes' : 'No' }}
             </span>
           </li>

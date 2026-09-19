@@ -13,7 +13,7 @@ const emit = defineEmits(['close', 'confirm'])
 
 <template>
   <Modal :show="show" :title="title" max-width="max-w-md" @close="emit('close')">
-    <p class="text-sm text-slate-600">{{ message }}</p>
+    <p class="text-sm text-slate-600 dark:text-slate-300">{{ message }}</p>
 
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Cancel</button>

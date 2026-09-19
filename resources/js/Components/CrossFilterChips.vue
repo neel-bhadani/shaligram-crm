@@ -1,4 +1,9 @@
 <script setup>
+import { useTheme } from '@/composables/useTheme'
+import { chipOutlineStyle } from '@/lib/dynamicChipColor'
+
+const { isDark } = useTheme()
+
 /*
  | What the page is currently filtered to, and the way back out of it.
  |
@@ -39,10 +44,8 @@ defineEmits(['remove', 'clear'])
     <span
       v-for="chip in chips" :key="chip.key"
       class="inline-flex items-center gap-1.5 rounded-full border py-1 pl-2.5 pr-1 text-xs font-semibold"
-      :style="chip.color
-        ? { color: chip.color, borderColor: chip.color + '55', backgroundColor: chip.color + '14' }
-        : null"
-      :class="chip.color ? '' : 'border-slate-200 bg-white text-slate-600'"
+      :style="chip.color ? chipOutlineStyle(chip.color, isDark) : null"
+      :class="chip.color ? '' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300'"
     >
       <span class="font-normal opacity-70">{{ chip.label }}</span>{{ chip.text }}
 
@@ -57,7 +60,7 @@ defineEmits(['remove', 'clear'])
     </span>
 
     <button type="button"
-            class="rounded-full px-2 py-1 text-xs font-semibold text-slate-500 underline-offset-2
+            class="rounded-full px-2 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 underline-offset-2
                    transition hover:text-teal-700 hover:underline"
             @click="$emit('clear')">Clear all</button>
   </div>

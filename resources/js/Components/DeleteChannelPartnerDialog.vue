@@ -44,15 +44,15 @@ const submit = () => form.delete(route('channel-partners.destroy', props.partner
 
 <template>
   <Modal :show="show" title="Delete channel partner" max-width="max-w-lg" @close="emit('close')">
-    <p class="text-sm text-slate-600">
-      <span class="font-semibold text-slate-800">{{ partner?.display_label }}</span>
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      <span class="font-semibold text-slate-800 dark:text-slate-200">{{ partner?.display_label }}</span>
       will no longer appear on the lead form or in this list.
     </p>
 
     <!-- the number this dialog exists to put on screen -->
-    <p class="mt-3 text-sm text-slate-600">
+    <p class="mt-3 text-sm text-slate-600 dark:text-slate-300">
       <template v-if="leads">
-        <span class="font-semibold text-slate-800">{{ leads }}</span>
+        <span class="font-semibold text-slate-800 dark:text-slate-200">{{ leads }}</span>
         lead{{ leads === 1 ? '' : 's' }} came through this partner.
       </template>
       <template v-else>
@@ -75,7 +75,7 @@ const submit = () => form.delete(route('channel-partners.destroy', props.partner
     </div>
 
     <!-- the same refusal coming back from the server, if the button is bypassed -->
-    <p v-if="form.errors.partner" class="mt-3 text-sm font-medium text-rose-700">
+    <p v-if="form.errors.partner" class="mt-3 text-sm font-medium text-rose-700 dark:text-rose-300">
       {{ form.errors.partner }}
     </p>
 

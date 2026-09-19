@@ -139,12 +139,12 @@ const columns = computed(() => [
       range is involved.
     -->
     <div class="card mb-4 overflow-hidden">
-      <div class="flex gap-1 overflow-x-auto border-b border-slate-100 px-2 sm:px-4">
+      <div class="flex gap-1 overflow-x-auto border-b border-slate-100 dark:border-slate-700/60 px-2 sm:px-4">
         <button v-for="t in tabs" :key="t.key"
                 class="whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium"
                 :class="filters.status === t.key
-                  ? 'border-teal-700 font-semibold text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'"
+                  ? 'border-teal-700 font-semibold text-slate-900 dark:text-slate-100'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
                 :aria-current="filters.status === t.key ? 'page' : undefined"
                 @click="setStatus(t.key)">
           {{ t.label }}
@@ -164,7 +164,7 @@ const columns = computed(() => [
       picker rather than the figures, and a reader who is not told that cannot
       tell a deliberate exception from a filter that failed to apply.
     -->
-    <p v-if="!isCompleted" class="mb-4 -mt-2 text-xs text-slate-500">
+    <p v-if="!isCompleted" class="mb-4 -mt-2 text-xs text-slate-500 dark:text-slate-400">
       <span class="font-semibold">{{ status }}</span> counts where a follow-up stands right now,
       measured against today rather than against the dates above — those apply to Completed.
     </p>

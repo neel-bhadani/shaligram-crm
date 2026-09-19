@@ -322,12 +322,12 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
     <div class="card overflow-hidden">
 
       <!-- tabs -->
-      <div class="flex gap-1 overflow-x-auto border-b border-slate-100 px-2 sm:px-4">
+      <div class="flex gap-1 overflow-x-auto border-b border-slate-100 dark:border-slate-700/60 px-2 sm:px-4">
         <button v-for="t in tabs" :key="t.key"
                 class="whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium"
                 :class="tab === t.key
-                  ? 'border-teal-700 font-semibold text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'"
+                  ? 'border-teal-700 font-semibold text-slate-900 dark:text-slate-100'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'"
                 @click="setTab(t.key)">
           {{ t.label }}
           <span class="ml-1 text-xs text-slate-400">{{ counts[t.key] }}</span>
@@ -341,7 +341,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
         No type dropdown: the chips below are the type filter now, and having
         both would be two controls for one piece of state.
       -->
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <input v-model="f.search" type="search" placeholder="Search lead name or mobile"
                class="w-full md:!w-64" />
         <select v-if="isAdmin" v-model="f.assigned_to" class="w-full md:!w-44"
@@ -380,7 +380,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
 
         <!-- w-full so the complaint gets a line of its own rather than
              elbowing a control off the row it belongs to -->
-        <p v-if="showDateFilter && dateError" class="w-full text-xs font-medium text-rose-700" role="alert">
+        <p v-if="showDateFilter && dateError" class="w-full text-xs font-medium text-rose-700 dark:text-rose-300" role="alert">
           {{ dateError }}
         </p>
 
@@ -404,13 +404,13 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
         filtered one is empty because nothing matched — and only the second has
         anything the user can do about it. Same wording as the Users page.
       -->
-      <div v-if="!todos.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
+      <div v-if="!todos.data.length" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
         <template v-if="hasFilters">
-          <p class="mb-1 font-semibold text-slate-700">No follow-ups match</p>
+          <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No follow-ups match</p>
           Try clearing the filters.
         </template>
         <template v-else>
-          <p class="mb-1 font-semibold text-slate-700">
+          <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">
             {{ tab === 'overdue' ? 'Nothing waiting'
                : tab === 'today' ? 'No calls due today'
                : tab === 'upcoming' ? 'Nothing scheduled ahead' : 'No completed follow-ups yet' }}
@@ -422,7 +422,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
       <!-- rows: table on desktop, cards on mobile -->
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="w-10 px-2 py-2.5"><span class="sr-only">Expand activity</span></th>
             <th class="px-4 py-2.5 font-semibold">Lead</th>
             <th class="px-4 py-2.5 font-semibold">Type</th>
@@ -438,13 +438,13 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
         </thead>
         <tbody>
           <template v-for="t in todos.data" :key="t.id">
-            <tr class="border-b border-l-4 border-slate-100"
+            <tr class="border-b border-l-4 border-slate-100 dark:border-slate-700/60"
                 :class="isOverdue(t) ? 'border-l-rose-600 bg-rose-50/40' : 'border-l-transparent'">
               <!-- the one thing on this row that toggles the activity panel -->
               <td class="px-2 py-3">
                 <button v-if="expandable(t)" type="button"
-                        class="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-base leading-none text-slate-500 transition
-                               hover:border-slate-300 hover:text-slate-700
+                        class="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-base leading-none text-slate-500 dark:text-slate-400 transition
+                               hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200
                                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                         :aria-expanded="isRowExpanded(t) ? 'true' : 'false'"
                         :aria-controls="`todo-activity-${t.id}`"
@@ -463,7 +463,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
 
               <template v-if="tab === 'completed'">
                 <td class="px-4 py-3"><StageBadge :stage="t.outcome_stage" /></td>
-                <td class="max-w-[260px] px-4 py-3 text-slate-600">{{ t.remarks || '—' }}</td>
+                <td class="max-w-[260px] px-4 py-3 text-slate-600 dark:text-slate-300">{{ t.remarks || '—' }}</td>
                 <td class="px-4 py-3">
                   {{ fmt(t.completed_at) }}
                   <div class="text-xs text-slate-400">{{ t.completer?.display_name ?? '—' }}</div>
@@ -471,7 +471,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
               </template>
               <template v-else>
                 <td v-if="isAdmin" class="px-4 py-3"><AssignedTo :user="t.owner" /></td>
-                <td class="px-4 py-3" :class="isOverdue(t) ? 'font-semibold text-rose-700' : 'text-slate-500'">
+                <td class="px-4 py-3" :class="isOverdue(t) ? 'font-semibold text-rose-700 dark:text-rose-300' : 'text-slate-500 dark:text-slate-400'">
                   {{ relative(t.scheduled_at) }}
                 </td>
               </template>
@@ -515,7 +515,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
                     <!-- min-h-0 + overflow-hidden lets the 0fr row actually clip -->
                     <div class="min-h-0 overflow-hidden">
                       <div class="bg-slate-50/70 py-4 pl-11 pr-5">
-                        <p v-if="hasFailedFor(t)" class="text-sm text-slate-500">Unable to load activity.</p>
+                        <p v-if="hasFailedFor(t)" class="text-sm text-slate-500 dark:text-slate-400">Unable to load activity.</p>
                         <LeadActivityTimeline v-else inset
                                               :timeline="timelineFor(t)"
                                               :stage-colors="options.stageColors"
@@ -530,14 +530,14 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
         </tbody>
       </table>
 
-      <div v-if="todos.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="todos.data.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="t in todos.data" :key="t.id" class="border-l-4 p-4"
              :class="isOverdue(t) ? 'border-l-rose-600 bg-rose-50/40' : 'border-l-transparent'">
           <div class="mb-2 flex items-start justify-between gap-3">
             <div class="flex min-w-0 items-start gap-2">
               <button v-if="expandable(t)" type="button"
-                      class="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md border border-slate-200 bg-white text-lg leading-none text-slate-500 transition
-                             hover:border-slate-300 hover:text-slate-700
+                      class="mt-0.5 flex h-8 w-8 flex-none items-center justify-center rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-lg leading-none text-slate-500 dark:text-slate-400 transition
+                             hover:border-slate-300 dark:hover:border-slate-500 hover:text-slate-700 dark:hover:text-slate-200
                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                       :aria-expanded="isRowExpanded(t) ? 'true' : 'false'"
                       :aria-controls="`todo-activity-${t.id}`"
@@ -558,7 +558,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
             <dt class="text-slate-400">Scheduled</dt><dd class="text-right">{{ fmt(t.scheduled_at) }}</dd>
             <template v-if="t.status === 'pending'">
               <dt class="text-slate-400">Due</dt>
-              <dd class="text-right" :class="isOverdue(t) ? 'font-semibold text-rose-700' : ''">
+              <dd class="text-right" :class="isOverdue(t) ? 'font-semibold text-rose-700 dark:text-rose-300' : ''">
                 {{ relative(t.scheduled_at) }}
               </dd>
             </template>
@@ -572,7 +572,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
             </template>
           </dl>
 
-          <p v-if="t.remarks" class="mt-2 text-xs text-slate-500">{{ t.remarks }}</p>
+          <p v-if="t.remarks" class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ t.remarks }}</p>
 
           <!-- the same inline activity panel as the desktop row, animated the
                same way: grid row 0fr -> 1fr plus a fade, motion-safe for users
@@ -587,7 +587,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
                  :id="`todo-activity-${t.id}`" class="mt-3 grid grid-rows-[1fr]">
               <div class="min-h-0 overflow-hidden">
                 <div class="rounded-lg bg-slate-50/70 px-3 py-3">
-                  <p v-if="hasFailedFor(t)" class="text-sm text-slate-500">Unable to load activity.</p>
+                  <p v-if="hasFailedFor(t)" class="text-sm text-slate-500 dark:text-slate-400">Unable to load activity.</p>
                   <LeadActivityTimeline v-else inset
                                         :timeline="timelineFor(t)"
                                         :stage-colors="options.stageColors"
@@ -602,7 +602,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
             standing in front of the customer, and the dialler is the point.
           -->
           <div v-if="t.lead?.mobile_number || t.status === 'pending'"
-               class="mt-3 space-y-2 border-t border-slate-100 pt-3">
+               class="mt-3 space-y-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <CallButtons v-if="t.lead?.mobile_number" :mobile="t.lead.mobile_number" />
             <div v-if="t.status === 'pending'" class="flex gap-2">
               <button class="btn flex-1 py-1.5 text-xs" @click="openComplete(t)">Update</button>
@@ -612,12 +612,12 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
         </div>
       </div>
 
-      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ todos.total }} follow-up{{ todos.total === 1 ? '' : 's' }}</span>
         <div class="flex flex-wrap gap-1">
           <Link v-for="link in todos.links" :key="link.label" :href="link.url ?? ''"
                 class="rounded-md border px-2.5 py-1 text-xs"
-                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white',
+                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
                          !link.url ? 'pointer-events-none opacity-40' : '']"
                 preserve-scroll v-html="link.label" />
         </div>

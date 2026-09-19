@@ -2,6 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import StageBadge from './StageBadge.vue'
 import { relativeTime } from '@/lib/relativeTime.js'
+import { useTheme } from '@/composables/useTheme'
+import { chipStyle } from '@/lib/dynamicChipColor'
+
+const { isDark } = useTheme()
 
 /*
  | The Activity section of the lead view, as its own component.
@@ -61,7 +65,7 @@ const color = s => props.stageColors[s] ?? '#8A94A0'
 const tint = e => {
   const c = e.to_stage ? color(e.to_stage) : '#64748B'
 
-  return { color: c, backgroundColor: c + '18' }
+  return chipStyle(c, isDark.value)
 }
 
 // Display only: a jump straight from Fresh/Not connected to a salesperson
@@ -75,17 +79,17 @@ const impliedStage = (from, to) =>
 </script>
 
 <template>
-  <div :class="inset ? '' : 'mt-6 border-t border-slate-100 pt-5'">
+  <div :class="inset ? '' : 'mt-6 border-t border-slate-100 dark:border-slate-700/60 pt-5'">
     <div class="mb-3 flex items-center justify-between gap-2">
-      <h4 class="text-xs font-semibold text-slate-500">Activity</h4>
+      <h4 class="text-xs font-semibold text-slate-500 dark:text-slate-400">Activity</h4>
       <button v-if="!loading && timeline.length > RECENT" type="button"
-              class="text-xs font-semibold text-slate-500 hover:text-slate-800"
+              class="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100"
               @click="showAll = !showAll">
         {{ showAll ? `Show latest ${RECENT}` : `Show all ${timeline.length}` }}
       </button>
     </div>
 
-    <p v-if="loading" class="text-sm text-slate-500">Loading…</p>
+    <p v-if="loading" class="text-sm text-slate-500 dark:text-slate-400">Loading…</p>
 
     <p v-else-if="!timeline.length" class="text-sm text-slate-400">Nothing recorded yet.</p>
 
@@ -96,7 +100,7 @@ const impliedStage = (from, to) =>
     <ol>
       <li v-for="(e, i) in visible" :key="e.key" class="relative flex gap-3 pb-4">
         <span v-if="i < visible.length - 1"
-              class="absolute left-3 top-7 bottom-1 w-px bg-slate-200"></span>
+              class="absolute left-3 top-7 bottom-1 w-px bg-slate-200 dark:bg-slate-600"></span>
 
         <span class="flex h-6 w-6 flex-none items-center justify-center rounded-full" :style="tint(e)">
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -121,17 +125,17 @@ const impliedStage = (from, to) =>
             </template>
           </div>
 
-          <div v-if="e.change" class="mt-0.5 break-words text-xs text-slate-600">
+          <div v-if="e.change" class="mt-0.5 break-words text-xs text-slate-600 dark:text-slate-300">
             <span class="text-slate-400 line-through">{{ e.change.from ?? '—' }}</span>
             <span class="px-1 text-slate-400">→</span>
             <span>{{ e.change.to ?? '—' }}</span>
           </div>
 
-          <p v-if="e.remark" class="mt-0.5 whitespace-pre-line break-words text-xs text-slate-500">{{ e.remark }}</p>
+          <p v-if="e.remark" class="mt-0.5 whitespace-pre-line break-words text-xs text-slate-500 dark:text-slate-400">{{ e.remark }}</p>
 
-          <ul v-if="e.details.length" class="mt-1 space-y-0.5 text-xs text-slate-600">
+          <ul v-if="e.details.length" class="mt-1 space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
             <li v-for="(d, j) in e.details" :key="j" class="break-words">
-              <span class="font-semibold text-slate-500">{{ d.label }}:</span>
+              <span class="font-semibold text-slate-500 dark:text-slate-400">{{ d.label }}:</span>
               {{ d.value ?? '—' }}
               <span v-if="d.note" class="text-slate-400">— {{ d.note }}</span>
             </li>
@@ -141,7 +145,7 @@ const impliedStage = (from, to) =>
             <time :datetime="e.at" :title="e.at_exact">{{ relativeTime(e.at) }}</time>
             <span>·</span>
             <span v-if="e.system"
-                  class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">
+                  class="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 font-semibold text-amber-700 dark:text-amber-300">
               <svg class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2.5" stroke-linejoin="round" aria-hidden="true">
                 <path :d="ICONS.automation" />

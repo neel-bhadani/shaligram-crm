@@ -650,7 +650,7 @@ const panels = computed(() => [
     note: 'Open follow-ups dated today — not moved by the date range',
     // amber, so a glance tells the two panels apart without reading the headers
     accent: 'border-l-amber-500',
-    timeClass: 'text-slate-500',
+    timeClass: 'text-slate-500 dark:text-slate-400',
     // nothing in this panel is from another day, so the date would add nothing
     time: clock,
     empty: "Nothing due today — you're clear",
@@ -669,7 +669,7 @@ const panels = computed(() => [
     title: 'Waiting longer',
     note: 'Open follow-ups from before today — not moved by the date range',
     accent: 'border-l-rose-500',
-    timeClass: 'font-semibold text-rose-700',
+    timeClass: 'font-semibold text-rose-700 dark:text-rose-300',
     // these are from earlier days, so the day matters as much as the time
     time: fmt,
     empty: 'Nothing waiting — every call has been made on time.',
@@ -874,12 +874,12 @@ onBeforeUnmount(() => { stopBefore(); stopSuccess() })
         -->
         <div v-if="!p.rows.length"
              class="flex h-[22rem] items-center justify-center px-5 text-center text-sm
-                    font-semibold text-slate-700">
+                    font-semibold text-slate-700 dark:text-slate-300">
           {{ p.empty }}
         </div>
 
         <div v-else class="h-[22rem] overflow-y-auto overscroll-contain">
-          <div class="divide-y divide-slate-100">
+          <div class="divide-y divide-slate-100 dark:divide-slate-700/60">
             <!--
               Two lines, and the same shape on every one: the name bold at the
               top left, the time at the top right, the detail underneath, the
@@ -925,7 +925,7 @@ onBeforeUnmount(() => { stopBefore(); stopSuccess() })
                 width, rather than being squeezed to "P…".
               -->
               <div class="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1
-                          text-xs text-slate-500 sm:col-span-1">
+                          text-xs text-slate-500 dark:text-slate-400 sm:col-span-1">
                 <span class="w-20 shrink-0 tabular-nums">{{ leadMobile(t) }}</span>
 
                 <span class="w-[10.25rem] shrink-0">
@@ -957,7 +957,7 @@ onBeforeUnmount(() => { stopBefore(); stopSuccess() })
           </div>
 
           <p v-if="p.total > p.rows.length"
-             class="border-t border-slate-100 px-5 py-3 text-xs text-slate-400">
+             class="border-t border-slate-100 dark:border-slate-700/60 px-5 py-3 text-xs text-slate-400">
             Showing first {{ p.rows.length }} of {{ p.total }} —
             <Link :href="route('todos.index', { tab: p.tab })" class="underline hover:text-teal-700">
               open the Follow-ups page to see all.</Link>

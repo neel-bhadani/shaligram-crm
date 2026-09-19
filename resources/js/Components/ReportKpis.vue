@@ -22,17 +22,17 @@ defineProps({
 </script>
 
 <template>
-  <div class="mb-5 grid grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white
+  <div class="mb-5 grid grid-cols-1 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800
               sm:grid-cols-2 lg:grid-cols-4">
     <div v-for="(k, i) in kpis" :key="i"
-         class="border-b border-slate-100 p-4 last:border-b-0 sm:border-r lg:border-b-0 lg:last:border-r-0">
+         class="border-b border-slate-100 dark:border-slate-700/60 p-4 last:border-b-0 sm:border-r lg:border-b-0 lg:last:border-r-0">
       <div class="truncate text-2xl font-bold tracking-tight"
-           :class="k.tone === 'bad' ? 'text-rose-700' : k.tone === 'good' ? 'text-emerald-700' : ''"
+           :class="k.tone === 'bad' ? 'text-rose-700 dark:text-rose-300' : k.tone === 'good' ? 'text-emerald-700 dark:text-emerald-300' : ''"
            :title="k.v === null || k.v === undefined ? 'No data' : String(k.v)">
         {{ k.v === null || k.v === undefined ? '—' : k.v }}<template
           v-if="k.unit && k.v !== null && k.v !== undefined">{{ k.unit }}</template>
       </div>
-      <div class="mt-0.5 text-xs text-slate-500">{{ k.l }}</div>
+      <div class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{{ k.l }}</div>
       <div class="mt-1.5 text-[11px] text-slate-400">{{ k.d }}</div>
     </div>
   </div>

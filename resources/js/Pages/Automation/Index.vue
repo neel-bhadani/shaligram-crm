@@ -237,12 +237,12 @@ const cancelMessage = message =>
   router.post(route('automation.messages.cancel', message.id), {}, { preserveScroll: true })
 
 const statusChip = status => ({
-  queued: 'border-amber-200 bg-amber-50 text-amber-800',
-  opened: 'border-teal-200 bg-teal-50 text-teal-700',
-  sent: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  failed: 'border-rose-200 bg-rose-50 text-rose-700',
-  cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
-}[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
+  queued: 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300',
+  opened: 'border-teal-200 dark:border-teal-500/30 bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300',
+  sent: 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  failed: 'border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300',
+  cancelled: 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400',
+}[status] ?? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400')
 
 /* the WhatsApp API settings form */
 const waForm = useForm({
@@ -259,13 +259,13 @@ const saveWhatsApp = () => waForm.put(route('automation.whatsapp.update'), {
 /* ================= activity ================= */
 
 const resultChip = result => ({
-  fired: 'border-teal-200 bg-teal-50 text-teal-700',
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  skipped: 'border-slate-200 bg-slate-50 text-slate-500',
-  failed: 'border-rose-200 bg-rose-50 text-rose-700',
-  loop_guard: 'border-amber-200 bg-amber-50 text-amber-800',
-  cooldown: 'border-amber-200 bg-amber-50 text-amber-800',
-}[result] ?? 'border-slate-200 bg-slate-50 text-slate-500')
+  fired: 'border-teal-200 dark:border-teal-500/30 bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300',
+  success: 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  skipped: 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400',
+  failed: 'border-rose-200 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300',
+  loop_guard: 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300',
+  cooldown: 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300',
+}[result] ?? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400')
 
 const actionWord = action => ({
   rule_fired: 'Rule matched',
@@ -291,19 +291,19 @@ const whenShort = iso => iso
     </template>
 
     <!-- ---------------- tabs ---------------- -->
-    <div class="mb-5 flex flex-wrap gap-1 border-b border-slate-200">
+    <div class="mb-5 flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-700">
       <button
         v-for="t in TABS" :key="t.key"
         class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition"
         :class="tab === t.key
-          ? 'border-teal-700 text-teal-800'
-          : 'border-transparent text-slate-500 hover:text-slate-800'"
+          ? 'border-teal-700 text-teal-800 dark:text-teal-300'
+          : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100'"
         @click="tab = t.key"
       >
         {{ t.label }}
         <span
           v-if="badge(t.key)"
-          class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+          class="ml-1 rounded-full bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300"
         >{{ badge(t.key) }}</span>
       </button>
     </div>
@@ -327,13 +327,13 @@ const whenShort = iso => iso
 
       <!-- ---------------- empty state that teaches ---------------- -->
       <div v-if="!rules.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">You have no rules yet</p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="text-base font-semibold text-slate-800 dark:text-slate-200">You have no rules yet</p>
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           A rule watches for one thing happening — a lead arriving, a stage changing, a follow-up
           going overdue — and then does something about it, like giving the lead to a telecaller
           or booking a call for tomorrow.
         </p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           Every rule is written in plain words as you build it, and you can test it against your
           real leads before switching it on. Nothing runs until you say so.
         </p>
@@ -354,24 +354,24 @@ const whenShort = iso => iso
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-sm font-semibold text-slate-900">{{ rule.name }}</h3>
+                  <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ rule.name }}</h3>
                   <span
                     class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                     :class="rule.is_active
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : 'border-slate-200 bg-slate-50 text-slate-500'"
+                      ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400'"
                   >{{ rule.is_active ? 'On' : 'Off' }}</span>
                   <span
                     v-if="rule.is_time_based"
-                    class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
-                           font-semibold uppercase tracking-wide text-slate-500"
+                    class="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 text-[10px]
+                           font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                   >Hourly</span>
                 </div>
 
                 <!-- the same sentence the builder shows, from the same function -->
-                <p class="mt-1.5 text-sm leading-relaxed text-slate-700">{{ phrase(rule) }}</p>
+                <p class="mt-1.5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{{ phrase(rule) }}</p>
 
-                <p v-if="rule.description" class="mt-1.5 text-xs leading-relaxed text-slate-500">
+                <p v-if="rule.description" class="mt-1.5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                   {{ rule.description }}
                 </p>
 
@@ -392,7 +392,7 @@ const whenShort = iso => iso
                 <button class="btn-xs" @click="openRule(rule)">Edit</button>
                 <button
                   class="btn-xs"
-                  :class="rule.is_active ? '' : 'border-teal-600 text-teal-700'"
+                  :class="rule.is_active ? '' : 'border-teal-600 text-teal-700 dark:text-teal-300'"
                   @click="askToggle(rule)"
                 >{{ rule.is_active ? 'Switch off' : 'Switch on' }}</button>
                 <button class="btn-xs hover:border-rose-500 hover:text-rose-600"
@@ -407,13 +407,13 @@ const whenShort = iso => iso
     <!-- ================= TEMPLATES ================= -->
     <div v-show="tab === 'templates'">
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">No messages written yet</p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="text-base font-semibold text-slate-800 dark:text-slate-200">No messages written yet</p>
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           A message is something you write once and send many times — a welcome, a brochure
           follow-up, a thank you after a site visit. The customer's name and project are filled
           in automatically when it is used.
         </p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           Messages are never sent on their own. A rule puts one in the Queue and somebody opens it
           in WhatsApp and sends it.
         </p>
@@ -425,17 +425,17 @@ const whenShort = iso => iso
           <div class="flex flex-wrap items-start justify-between gap-2">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <h3 class="text-sm font-semibold text-slate-900">{{ template.name }}</h3>
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ template.name }}</h3>
                 <span
                   class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                   :class="template.category === 'marketing'
-                    ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : 'border-slate-200 bg-slate-50 text-slate-600'"
+                    ? 'border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300'"
                 >{{ categories[template.category]?.label ?? template.category }}</span>
                 <span
                   v-if="!template.is_active"
-                  class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
-                         font-semibold uppercase tracking-wide text-slate-500"
+                  class="rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 px-1.5 py-0.5 text-[10px]
+                         font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
                 >Off</span>
               </div>
               <p class="mt-1 text-[11px] text-slate-400">{{ template.cost_note }}</p>
@@ -451,9 +451,9 @@ const whenShort = iso => iso
             </div>
           </div>
 
-          <div class="mt-3 flex-1 rounded-xl bg-slate-100 p-2.5">
-            <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs
-                        leading-relaxed text-slate-800 shadow-sm">{{ template.preview }}</div>
+          <div class="mt-3 flex-1 rounded-xl bg-slate-100 dark:bg-slate-700 p-2.5">
+            <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white dark:bg-slate-800 px-3 py-2 text-xs
+                        leading-relaxed text-slate-800 dark:text-slate-200 shadow-sm">{{ template.preview }}</div>
           </div>
 
           <p class="mt-2 text-[11px] text-slate-400">
@@ -487,8 +487,8 @@ const whenShort = iso => iso
       </div>
 
       <div v-if="!queue.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">Nothing waiting to be sent</p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="text-base font-semibold text-slate-800 dark:text-slate-200">Nothing waiting to be sent</p>
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           When a rule with a “Queue a WhatsApp message” action fires, the message appears here
           with the customer's details already filled in. You open it in WhatsApp and send it.
         </p>
@@ -505,13 +505,13 @@ const whenShort = iso => iso
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-semibold text-slate-900">{{ message.lead?.name ?? 'Deleted lead' }}</span>
+                  <span class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ message.lead?.name ?? 'Deleted lead' }}</span>
                   <span class="text-xs text-slate-400">{{ message.to_number }}</span>
                   <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase
                                tracking-wide" :class="statusChip(message.status)">{{ message.status }}</span>
                 </div>
-                <div class="mt-2 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2
-                            text-xs leading-relaxed text-slate-700">{{ message.body }}</div>
+                <div class="mt-2 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 dark:bg-slate-900/60 px-3 py-2
+                            text-xs leading-relaxed text-slate-700 dark:text-slate-300">{{ message.body }}</div>
                 <p class="mt-1.5 text-[11px] text-slate-400">
                   {{ message.template ?? 'No template' }}
                   <template v-if="message.rule"> · queued by “{{ message.rule }}”</template>
@@ -520,7 +520,7 @@ const whenShort = iso => iso
               </div>
 
               <div class="flex flex-none flex-wrap gap-1.5">
-                <button class="btn-xs border-teal-600 text-teal-700" @click="openInWhatsApp(message)">
+                <button class="btn-xs border-teal-600 text-teal-700 dark:text-teal-300" @click="openInWhatsApp(message)">
                   Open in WhatsApp
                 </button>
                 <button class="btn-xs" @click="sendByApi(message)">Send by API</button>
@@ -535,17 +535,17 @@ const whenShort = iso => iso
           <h3 class="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">
             Recently handled
           </h3>
-          <div class="card divide-y divide-slate-100">
+          <div class="card divide-y divide-slate-100 dark:divide-slate-700/60">
             <div v-for="message in history" :key="message.id" class="flex flex-wrap items-center gap-2 px-4 py-2.5">
               <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                     :class="statusChip(message.status)">{{ message.status }}</span>
-              <span class="text-xs font-medium text-slate-700">{{ message.lead?.name ?? 'Deleted lead' }}</span>
+              <span class="text-xs font-medium text-slate-700 dark:text-slate-300">{{ message.lead?.name ?? 'Deleted lead' }}</span>
               <span class="text-[11px] text-slate-400">
                 {{ message.template ?? '—' }}
                 <template v-if="message.user"> · by {{ message.user }}</template>
                 · {{ when(message.sent_at ?? message.created_at) }}
               </span>
-              <span v-if="message.error" class="w-full text-[11px] leading-relaxed text-rose-600">
+              <span v-if="message.error" class="w-full text-[11px] leading-relaxed text-rose-600 dark:text-rose-400">
                 {{ message.error }}
               </span>
             </div>
@@ -556,7 +556,7 @@ const whenShort = iso => iso
       <!-- ---------------- API settings ---------------- -->
       <div class="card mt-6 p-4">
         <div class="mb-1 flex items-center gap-1.5">
-          <h3 class="text-sm font-semibold text-slate-900">Sending by API</h3>
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Sending by API</h3>
           <HelpTip title="Click-to-send vs the API" align="right">
             <strong>Click-to-send</strong> works today and costs nothing. It opens WhatsApp with
             the message already typed and you press send. Because we hand it to WhatsApp, we can
@@ -589,7 +589,7 @@ const whenShort = iso => iso
           </FormField>
         </div>
 
-        <label class="mt-4 flex items-start gap-2 text-sm text-slate-700">
+        <label class="mt-4 flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
           <input v-model="waForm.auto_send" type="checkbox" class="mt-0.5 h-4 w-4"
                  :disabled="!whatsapp.configured" />
           <span>
@@ -611,7 +611,7 @@ const whenShort = iso => iso
 
     <!-- ================= ALERTS ================= -->
     <div v-show="tab === 'alerts'">
-      <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500">
+      <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
         Your own alerts. Everyone has their own — a telecaller is told about their overdue
         follow-ups, you are told when automation holds itself back. Nobody is ever alerted about a
         lead they are not allowed to see.
@@ -624,8 +624,8 @@ const whenShort = iso => iso
       />
 
       <div class="card mt-5 p-4">
-        <h3 class="mb-2 text-sm font-semibold text-slate-900">Alerts you get without any rule</h3>
-        <ul class="space-y-1.5 text-xs leading-relaxed text-slate-600">
+        <h3 class="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">Alerts you get without any rule</h3>
+        <ul class="space-y-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
           <li>· A follow-up more than <strong>{{ thresholds.overdue_days }} days</strong> overdue —
             told to whoever it belongs to.</li>
           <li>· A lead sitting in one stage for more than <strong>{{ thresholds.stuck_days }} days</strong>
@@ -642,14 +642,14 @@ const whenShort = iso => iso
 
     <!-- ================= ACTIVITY ================= -->
     <div v-show="tab === 'activity'">
-      <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500">
+      <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
         Everything automation has done, newest first. This is where to look when a lead turns up
         somewhere unexpected — or when a rule is switched on and nothing seems to be happening.
       </p>
 
       <div v-if="!activity.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">Nothing has run yet</p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
+        <p class="text-base font-semibold text-slate-800 dark:text-slate-200">Nothing has run yet</p>
+        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
           Once you switch a rule on, every single thing it does will be listed here — what it did,
           to which lead, and whether it worked. Including the times it decided not to.
         </p>
@@ -657,7 +657,7 @@ const whenShort = iso => iso
 
       <div v-else class="card overflow-x-auto">
         <table class="w-full text-left text-xs">
-          <thead class="border-b border-slate-100 text-[10px] uppercase tracking-wide text-slate-400">
+          <thead class="border-b border-slate-100 dark:border-slate-700/60 text-[10px] uppercase tracking-wide text-slate-400">
             <tr>
               <th class="px-4 py-2.5 font-semibold">When</th>
               <th class="px-4 py-2.5 font-semibold">Rule</th>
@@ -669,16 +669,16 @@ const whenShort = iso => iso
           <tbody>
             <tr v-for="log in activity" :key="log.id" class="border-b border-slate-50 last:border-0"
                 :class="log.bad ? 'bg-amber-50/40' : ''">
-              <td class="whitespace-nowrap px-4 py-2.5 text-slate-500">{{ when(log.fired_at) }}</td>
-              <td class="px-4 py-2.5 font-medium text-slate-700">{{ log.rule }}</td>
-              <td class="px-4 py-2.5 text-slate-500">{{ log.lead ?? '—' }}</td>
-              <td class="px-4 py-2.5 text-slate-600">{{ actionWord(log.action) }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-slate-500 dark:text-slate-400">{{ when(log.fired_at) }}</td>
+              <td class="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300">{{ log.rule }}</td>
+              <td class="px-4 py-2.5 text-slate-500 dark:text-slate-400">{{ log.lead ?? '—' }}</td>
+              <td class="px-4 py-2.5 text-slate-600 dark:text-slate-300">{{ actionWord(log.action) }}</td>
               <td class="px-4 py-2.5">
                 <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase
                              tracking-wide" :class="resultChip(log.result)">
                   {{ log.result.replace('_', ' ') }}
                 </span>
-                <span v-if="log.error" class="mt-1 block max-w-lg leading-relaxed text-slate-500">
+                <span v-if="log.error" class="mt-1 block max-w-lg leading-relaxed text-slate-500 dark:text-slate-400">
                   {{ log.error }}
                 </span>
               </td>

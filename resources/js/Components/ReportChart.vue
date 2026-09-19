@@ -16,6 +16,9 @@
  */
 import { ref, computed } from 'vue'
 import ChartCard from '@/Components/ChartCard.vue'
+import { useTheme } from '@/composables/useTheme'
+
+const { isDark } = useTheme()
 
 const props = defineProps({
   rows: { type: Array, required: true },
@@ -60,7 +63,12 @@ const total = computed(() => values.value.reduce((a, b) => a + b, 0))
  */
 const empty = computed(() => shape.value === 'doughnut' && total.value === 0)
 
-const tick = { color: '#64748b', font: { size: 11 } }
+// hardcoded rather than left to ChartCard's Chart.defaults, because these
+// override the defaults regardless — a config that set no colour of its own
+// would theme correctly without this, but this one already does, so it has
+// to track isDark itself
+const tick = computed(() => ({ color: isDark.value ? '#94a3b8' : '#64748b', font: { size: 11 } }))
+const gridColor = computed(() => isDark.value ? 'rgba(148, 163, 184, 0.12)' : '#eef2f3')
 
 const config = computed(() => shape.value === 'bar'
   ? {
@@ -80,10 +88,10 @@ const config = computed(() => shape.value === 'bar'
         maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { ...tick, autoSkip: false, maxRotation: 60 }, grid: { display: false } },
+          x: { ticks: { ...tick.value, autoSkip: false, maxRotation: 60 }, grid: { display: false } },
           // a count axis with fractional gridlines is a count axis lying about
           // what it can hold
-          y: { beginAtZero: true, ticks: { ...tick, precision: 0 }, grid: { color: '#eef2f3' } },
+          y: { beginAtZero: true, ticks: { ...tick.value, precision: 0 }, grid: { color: gridColor.value } },
         },
       },
     }
@@ -102,7 +110,7 @@ const config = computed(() => shape.value === 'bar'
         maintainAspectRatio: false,
         cutout: '58%',
         plugins: {
-          legend: { position: 'right', labels: { ...tick, boxWidth: 10, padding: 10 } },
+          legend: { position: 'right', labels: { ...tick.value, boxWidth: 10, padding: 10 } },
           tooltip: {
             callbacks: {
               /*
@@ -132,11 +140,11 @@ const config = computed(() => shape.value === 'bar'
       every card header in the app the same height — so the control is
       positioned against this wrapper instead of being handed in.
     -->
-    <div class="absolute right-4 top-3.5 z-10 flex overflow-hidden rounded-lg border border-slate-200">
+    <div class="absolute right-4 top-3.5 z-10 flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
       <button
         v-for="s in ['bar', 'doughnut']" :key="s"
         class="px-2.5 py-1 text-xs font-medium capitalize transition"
-        :class="shape === s ? 'bg-teal-700 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+        :class="shape === s ? 'bg-teal-700 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
         :aria-pressed="shape === s"
         @click="shape = s"
       >{{ s }}</button>

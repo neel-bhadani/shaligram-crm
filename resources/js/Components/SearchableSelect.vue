@@ -188,7 +188,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
       :value="display"
       :placeholder="selected ? selected.label : placeholder"
       :disabled="disabled"
-      :class="disabled ? 'cursor-not-allowed bg-slate-50 text-slate-400' : ''"
+      :class="disabled ? 'cursor-not-allowed bg-slate-50 dark:bg-slate-900/60 text-slate-400' : ''"
       class="!pr-16"
       @input="query = $event.target.value"
       @focus="openList"
@@ -205,7 +205,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
       <button
         v-if="selected && !disabled"
         type="button"
-        class="pointer-events-auto px-1 text-base leading-none text-slate-400 hover:text-slate-700"
+        class="pointer-events-auto px-1 text-base leading-none text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         aria-label="Clear selection"
         @click.stop="choose(null)"
       >&times;</button>
@@ -224,8 +224,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
     <ul
       v-if="open"
       ref="list"
-      class="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200
-             bg-white py-1 shadow-lg"
+      class="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700
+             bg-white dark:bg-slate-800 py-1 shadow-lg"
       role="listbox"
     >
       <!--
@@ -238,15 +238,15 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
         :data-cursor="cursor === -1"
         role="option"
         :aria-selected="false"
-        class="mb-1 flex cursor-pointer items-center gap-2 border-b border-dashed border-slate-200
+        class="mb-1 flex cursor-pointer items-center gap-2 border-b border-dashed border-slate-200 dark:border-slate-700
                px-3 py-2 text-sm font-semibold"
-        :class="cursor === -1 ? 'bg-teal-50 text-teal-900' : 'text-teal-800'"
+        :class="cursor === -1 ? 'bg-teal-50 dark:bg-teal-500/10 text-teal-900 dark:text-teal-200' : 'text-teal-800 dark:text-teal-300'"
         @mouseenter="cursor = -1"
         @mousedown.prevent="startCreate"
       >
         <span class="text-base leading-none">+</span>
         {{ createLabel }}
-        <span v-if="query.trim()" class="truncate font-normal text-slate-500">“{{ query.trim() }}”</span>
+        <span v-if="query.trim()" class="truncate font-normal text-slate-500 dark:text-slate-400">“{{ query.trim() }}”</span>
       </li>
 
       <li v-if="!matches.length" class="px-3 py-2 text-sm text-slate-400">{{ emptyText }}</li>
@@ -259,7 +259,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
         :aria-selected="String(option.value) === String(modelValue)"
         class="cursor-pointer px-3 py-2 text-sm"
         :class="[
-          i === cursor ? 'bg-teal-50 text-teal-900' : 'text-slate-700',
+          i === cursor ? 'bg-teal-50 dark:bg-teal-500/10 text-teal-900 dark:text-teal-200' : 'text-slate-700 dark:text-slate-300',
           String(option.value) === String(modelValue) ? 'font-semibold' : '',
         ]"
         @mouseenter="cursor = i"

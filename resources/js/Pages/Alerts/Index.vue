@@ -26,7 +26,7 @@ defineProps({
 <template>
   <AppLayout title="Alerts" subtitle="Things worth knowing. Not tasks.">
     <div class="mb-4 flex items-start gap-1.5">
-      <p class="max-w-3xl text-sm leading-relaxed text-slate-500">
+      <p class="max-w-3xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
         Alerts tell you something has happened. They are separate from your Follow-ups on purpose —
         reading one does not change the lead, complete anything, or count as having called.
       </p>

@@ -63,7 +63,7 @@ watch(() => props.active, showActive)
     reason the chips exist, so a chip is either fully readable or scrolled to.
   -->
   <div ref="strip"
-       class="relative flex gap-2 overflow-x-auto border-b border-slate-100 px-3 py-2.5
+       class="relative flex gap-2 overflow-x-auto border-b border-slate-100 dark:border-slate-700/60 px-3 py-2.5
               sm:px-4 md:flex-wrap md:overflow-x-visible">
     <button
       v-for="chip in chips" :key="chip.key || 'all'"
@@ -74,7 +74,7 @@ watch(() => props.active, showActive)
              px-3 py-1.5 text-xs font-semibold transition"
       :class="active === chip.key
         ? (chip.color ? 'border-transparent text-white' : 'border-slate-900 bg-slate-900 text-white')
-        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'"
+        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'"
       :style="active === chip.key && chip.color
         ? { backgroundColor: chip.color, borderColor: chip.color }
         : null"

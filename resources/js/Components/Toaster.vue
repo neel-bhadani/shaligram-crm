@@ -9,7 +9,7 @@ import { toasts, dismissToast, pauseToast, resumeToast } from '@/composables/use
 const styles = {
   success: 'bg-teal-700 text-white',
   error: 'bg-rose-700 text-white',
-  warning: 'bg-amber-400 text-amber-950',
+  warning: 'bg-amber-400 text-amber-950 dark:text-amber-100',
 }
 
 const closeStyles = {

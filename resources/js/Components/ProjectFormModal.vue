@@ -92,7 +92,7 @@ const submit = () => {
         <textarea v-model="form.description" rows="3" class="w-full" maxlength="2000" />
       </FormField>
 
-      <label class="flex items-start gap-2 text-sm text-slate-700">
+      <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
         <input v-model="form.is_active" type="checkbox" class="mt-0.5 h-4 w-4" />
         <span>
           Selling now

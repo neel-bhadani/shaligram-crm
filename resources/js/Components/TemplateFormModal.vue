@@ -184,7 +184,7 @@ const submit = () => {
 
       <div>
         <div class="mb-2 flex items-center gap-1.5">
-          <span class="text-xs font-semibold text-slate-500">Drop in a detail</span>
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Drop in a detail</span>
           <HelpTip title="Placeholders">
             These are filled in with the real customer's details when the message is created.
             Click one to add it where your cursor is. Anything in braces that is not on this
@@ -214,7 +214,7 @@ const submit = () => {
       <!-- ---------------- the preview ---------------- -->
       <div>
         <div class="mb-2 flex items-center gap-1.5">
-          <span class="text-xs font-semibold text-slate-500">What the customer sees</span>
+          <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">What the customer sees</span>
           <HelpTip title="Sample customer">
             Made up from the examples on the buttons above. The real message uses the actual
             lead's name, project and the staff member handling them.
@@ -222,15 +222,15 @@ const submit = () => {
         </div>
 
         <!-- a WhatsApp-ish bubble, so it reads as a message rather than a field -->
-        <div class="rounded-xl bg-slate-100 p-3">
-          <div class="max-w-md whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-sm
-                      leading-relaxed text-slate-800 shadow-sm">
+        <div class="rounded-xl bg-slate-100 dark:bg-slate-700 p-3">
+          <div class="max-w-md whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white dark:bg-slate-800 px-3 py-2 text-sm
+                      leading-relaxed text-slate-800 dark:text-slate-200 shadow-sm">
             {{ preview || 'Your message will appear here as you type it.' }}
           </div>
         </div>
       </div>
 
-      <label class="flex items-center gap-2 text-sm text-slate-700">
+      <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
         <input v-model="form.is_active" type="checkbox" class="h-4 w-4" />
         Available to rules
         <HelpTip title="Switching a message off">

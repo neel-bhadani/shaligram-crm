@@ -194,12 +194,12 @@ const firstError = field => errors.value[field]?.[0]
     Visibly nested: an inset panel with its own heading, so it reads as a
     detour inside the lead form rather than as more lead fields.
   -->
-  <div class="mt-3 rounded-lg border border-teal-200 bg-teal-50/40 p-4">
+  <div class="mt-3 rounded-lg border border-teal-200 dark:border-teal-500/30 bg-teal-50/40 dark:bg-teal-500/10 p-4">
     <div class="mb-3 flex items-baseline justify-between gap-3">
-      <h4 class="text-xs font-semibold uppercase tracking-wide text-teal-900">
+      <h4 class="text-xs font-semibold uppercase tracking-wide text-teal-900 dark:text-teal-200">
         New channel partner
       </h4>
-      <span class="text-xs text-slate-500">The rest of the details are added later</span>
+      <span class="text-xs text-slate-500 dark:text-slate-400">The rest of the details are added later</span>
     </div>
 
     <div class="grid gap-3 sm:grid-cols-2">
@@ -240,18 +240,18 @@ const firstError = field => errors.value[field]?.[0]
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <template v-for="p in similar" :key="p.id">
           <button v-if="p.is_active !== false" type="button"
-                  class="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold
-                         text-amber-900 hover:border-amber-500"
+                  class="rounded-md border border-amber-300 dark:border-amber-500/40 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold
+                         text-amber-900 dark:text-amber-200 hover:border-amber-500"
                   @click="useExisting(p)">
             Use “{{ p.label }}”
           </button>
           <!-- switched off, so it cannot be put on a lead: the lead form's rule
                refuses an inactive partner and offering it would be a dead end -->
-          <span v-else class="rounded-md border border-amber-200 bg-white/60 px-2.5 py-1 text-xs">
+          <span v-else class="rounded-md border border-amber-200 dark:border-amber-500/30 bg-white/60 dark:bg-slate-800/60 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300">
             “{{ p.label }}” — switched off. Ask an admin to reactivate it.
           </span>
         </template>
-        <button type="button" class="text-xs font-medium text-amber-900 underline underline-offset-2"
+        <button type="button" class="text-xs font-medium text-amber-900 dark:text-amber-200 underline underline-offset-2"
                 @click="dismissed = true">
           No, this is a different one
         </button>
@@ -262,8 +262,8 @@ const firstError = field => errors.value[field]?.[0]
     <div v-if="conflict" class="warn-box mt-3">
       <p class="font-semibold">{{ conflict.message }}</p>
       <button v-if="conflict.partner" type="button"
-              class="mt-2 rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold
-                     text-amber-900 hover:border-amber-500"
+              class="mt-2 rounded-md border border-amber-300 dark:border-amber-500/40 bg-white dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold
+                     text-amber-900 dark:text-amber-200 hover:border-amber-500"
               @click="useExisting(conflict.partner)">
         Use “{{ conflict.partner.label }}”
       </button>

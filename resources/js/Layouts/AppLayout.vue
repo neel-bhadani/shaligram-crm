@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AlertBell from '../Components/AlertBell.vue'
+import ThemeToggle from '../Components/ThemeToggle.vue'
 
 defineProps({ title: String, subtitle: String })
 
@@ -255,7 +256,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-100">
+  <div class="min-h-screen bg-slate-100 dark:bg-slate-950">
 
     <!-- scrim behind the mobile drawer -->
     <div v-show="open" class="fixed inset-0 z-30 bg-slate-900/45 lg:hidden" @click="open = false" />
@@ -404,6 +405,16 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
             </button>
           </div>
         </div>
+
+        <!--
+          Its own row below the profile block, separated by a second divider
+          rather than folded into the row above — a switch sharing a line with
+          the sign-out button would read as one more thing that row does,
+          where the whole point is that it is a setting and not an action.
+        -->
+        <div class="mt-3 border-t border-white/10 pt-3">
+          <ThemeToggle />
+        </div>
       </div>
     </aside>
 
@@ -423,12 +434,13 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
       <header
         class="sticky top-0 z-20 flex flex-nowrap items-start justify-between gap-3 border-b
                lg:flex-wrap lg:items-center lg:gap-4
-               border-slate-200 bg-white px-4 py-4 transition-shadow duration-200 sm:px-7"
+               border-slate-200 bg-white px-4 py-4 transition-shadow duration-200 sm:px-7
+               dark:border-slate-800 dark:bg-slate-900"
         :class="{ 'shadow-sm': scrolled, 'max-sm:border-transparent': !scrolled && $slots.actions }"
       >
         <div class="flex min-w-0 flex-1 items-start gap-3 lg:flex-initial lg:items-center">
           <button
-            class="shrink-0 rounded-lg border border-slate-200 p-2 lg:hidden"
+            class="shrink-0 rounded-lg border border-slate-200 p-2 lg:hidden dark:border-slate-700 dark:text-slate-300"
             aria-label="Open menu" @click="open = true"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -436,8 +448,8 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
             </svg>
           </button>
           <div class="min-w-0 flex-1 lg:flex-initial">
-            <h1 class="break-words text-lg font-semibold tracking-tight text-slate-900 lg:truncate">{{ title }}</h1>
-            <p v-if="subtitle" class="break-words text-sm text-slate-500 lg:truncate">{{ subtitle }}</p>
+            <h1 class="break-words text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-100 lg:truncate">{{ title }}</h1>
+            <p v-if="subtitle" class="break-words text-sm text-slate-500 dark:text-slate-400 lg:truncate">{{ subtitle }}</p>
           </div>
         </div>
         <!--
@@ -462,7 +474,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
       -->
       <div v-if="$slots.actions"
            class="flex w-full flex-wrap items-center gap-2 border-b border-slate-200 bg-white
-                  px-4 pb-4 sm:hidden">
+                  px-4 pb-4 sm:hidden dark:border-slate-800 dark:bg-slate-900">
         <slot name="actions" />
       </div>
 

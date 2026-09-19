@@ -38,9 +38,9 @@ defineProps({
 </script>
 
 <template>
-  <div class="flex min-h-[4.75rem] shrink-0 items-start gap-2 border-b border-slate-100 px-4 py-3">
+  <div class="flex min-h-[4.75rem] shrink-0 items-start gap-2 border-b border-slate-100 dark:border-slate-700/60 px-4 py-3">
     <div class="min-w-0 flex-1">
-      <h3 class="truncate text-[13px] font-semibold leading-5 text-slate-900" :title="title">
+      <h3 class="truncate text-[13px] font-semibold leading-5 text-slate-900 dark:text-slate-100" :title="title">
         {{ title }}
         <!-- the count reads second: label first, number after -->
         <span v-if="count !== null"

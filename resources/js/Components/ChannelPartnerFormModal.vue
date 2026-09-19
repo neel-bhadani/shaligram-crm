@@ -177,8 +177,8 @@ const submit = () => {
     </FormField>
 
     <FormField class="mt-4" label="Status" :error="form.errors.is_active">
-      <label class="flex items-center gap-2.5 text-sm text-slate-700">
-        <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+      <label class="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300">
+        <input v-model="form.is_active" type="checkbox" class="h-4 w-4 rounded border-slate-300 dark:border-slate-600" />
         Active — offered on the lead form
       </label>
       <!--

@@ -88,7 +88,7 @@ const permissionNote = u => {
 
     <div class="card overflow-hidden">
 
-      <div class="flex flex-wrap gap-2 border-b border-slate-100 p-3 sm:p-4">
+      <div class="flex flex-wrap gap-2 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:p-4">
         <input v-model="f.search" type="search" placeholder="Search name, email or mobile"
                class="w-full md:!w-72" />
 
@@ -106,15 +106,15 @@ const permissionNote = u => {
         <button class="btn-ghost w-full md:w-auto" @click="clearFilters">Clear</button>
       </div>
 
-      <div v-if="!users.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
-        <p class="mb-1 font-semibold text-slate-700">No users match</p>
+      <div v-if="!users.data.length" class="px-5 py-14 text-center text-sm text-slate-500 dark:text-slate-400">
+        <p class="mb-1 font-semibold text-slate-700 dark:text-slate-300">No users match</p>
         Try clearing the filters.
       </div>
 
       <!-- table on desktop, cards on mobile: the same pattern as To-do -->
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="px-4 py-2.5 font-semibold">Name</th>
             <th class="px-4 py-2.5 font-semibold">Contact</th>
             <th class="px-4 py-2.5 font-semibold">Role</th>
@@ -126,10 +126,10 @@ const permissionNote = u => {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="u in users.data" :key="u.id" class="border-b border-slate-100"
+          <tr v-for="u in users.data" :key="u.id" class="border-b border-slate-100 dark:border-slate-700/60"
               :class="u.is_active ? '' : 'bg-slate-50/60'">
             <td class="px-4 py-3">
-              <div class="font-semibold" :class="u.is_active ? '' : 'text-slate-500'">
+              <div class="font-semibold" :class="u.is_active ? '' : 'text-slate-500 dark:text-slate-400'">
                 {{ u.display_name }}
               </div>
               <div v-if="isSelf(u)" class="text-xs text-slate-400">You</div>
@@ -142,15 +142,15 @@ const permissionNote = u => {
             <td class="px-4 py-3">
               <span class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :class="u.is_active
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : 'bg-slate-200 text-slate-600'">
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
                 {{ u.is_active ? 'Active' : 'Inactive' }}
               </span>
             </td>
             <!-- the two numbers a handover would have to move -->
             <td class="px-4 py-3 tabular-nums">{{ u.open_leads_count }}</td>
             <td class="px-4 py-3 tabular-nums">{{ u.pending_todos_count }}</td>
-            <td class="px-4 py-3 text-xs text-slate-500">{{ permissionNote(u) }}</td>
+            <td class="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{{ permissionNote(u) }}</td>
             <td class="px-4 py-3">
               <div class="flex items-center gap-1.5">
                 <button class="btn-xs" @click="openEdit(u)">Edit</button>
@@ -163,7 +163,7 @@ const permissionNote = u => {
         </tbody>
       </table>
 
-      <div v-if="users.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="users.data.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="u in users.data" :key="u.id" class="p-4"
              :class="u.is_active ? '' : 'bg-slate-50/60'">
           <div class="mb-2 flex items-start justify-between gap-3">
@@ -172,7 +172,7 @@ const permissionNote = u => {
               <div class="truncate text-xs text-slate-400">{{ u.email }}</div>
             </div>
             <span class="flex-none rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="u.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'">
+                  :class="u.is_active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
               {{ u.is_active ? 'Active' : 'Inactive' }}
             </span>
           </div>
@@ -190,7 +190,7 @@ const permissionNote = u => {
             <dd class="text-right">{{ permissionNote(u) }}</dd>
           </dl>
 
-          <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+          <div class="mt-3 flex gap-2 border-t border-slate-100 dark:border-slate-700/60 pt-3">
             <button class="btn-xs flex-1" @click="openEdit(u)">Edit</button>
             <button class="btn-xs flex-1 disabled:cursor-not-allowed disabled:opacity-40"
                     :disabled="!!lockReason(u)" :title="lockReason(u)"
@@ -199,12 +199,12 @@ const permissionNote = u => {
         </div>
       </div>
 
-      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col items-start gap-3 px-4 py-3.5 text-sm text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ users.total }} user{{ users.total === 1 ? '' : 's' }}</span>
         <div class="flex flex-wrap gap-1">
           <Link v-for="link in users.links" :key="link.label" :href="link.url ?? ''"
                 class="rounded-md border px-2.5 py-1 text-xs"
-                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white',
+                :class="[link.active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800',
                          !link.url ? 'pointer-events-none opacity-40' : '']"
                 preserve-scroll v-html="link.label" />
         </div>

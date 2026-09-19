@@ -229,15 +229,15 @@ const err = key => form.errors[key]
       the thing the admin is actually deciding about — the dropdowns below are
       only how you change it.
     -->
-    <div class="mb-5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3.5">
+    <div class="mb-5 rounded-xl border border-teal-200 dark:border-teal-500/30 bg-teal-50 dark:bg-teal-500/10 px-4 py-3.5">
       <div class="mb-1 flex items-center gap-1.5">
-        <span class="text-[10px] font-semibold uppercase tracking-wide text-teal-700">In plain words</span>
+        <span class="text-[10px] font-semibold uppercase tracking-wide text-teal-700 dark:text-teal-300">In plain words</span>
         <HelpTip title="Read this back to yourself">
           This sentence is your rule, written out. If it does not say what you meant, change the
           dropdowns below until it does — then press Test to see which leads it would affect.
         </HelpTip>
       </div>
-      <p class="text-sm font-medium leading-relaxed text-teal-900">{{ preview }}</p>
+      <p class="text-sm font-medium leading-relaxed text-teal-900 dark:text-teal-200">{{ preview }}</p>
     </div>
 
     <div class="space-y-5">
@@ -258,7 +258,7 @@ const err = key => form.errors[key]
       <!-- ---------------- trigger ---------------- -->
       <div class="card p-4">
         <div class="mb-3 flex items-center gap-1.5">
-          <h4 class="text-sm font-semibold text-slate-900">1. Trigger</h4>
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">1. Trigger</h4>
           <HelpTip title="Trigger">
             What has to happen before this rule runs. Every rule has exactly one.
             Some triggers are events — a lead is added, a stage changes — and run straight away.
@@ -301,7 +301,7 @@ const err = key => form.errors[key]
       <!-- ---------------- conditions ---------------- -->
       <div class="card p-4">
         <div class="mb-1 flex items-center gap-1.5">
-          <h4 class="text-sm font-semibold text-slate-900">2. Only when…</h4>
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">2. Only when…</h4>
           <HelpTip title="Conditions">
             Narrows the rule down. Leave this empty and the rule runs every time the trigger
             happens. Add conditions and <strong>all of them</strong> have to be true — there is no
@@ -333,7 +333,7 @@ const err = key => form.errors[key]
 
           <button type="button" class="btn-xs mt-0.5" @click="removeCondition(i)">Remove</button>
 
-          <p v-if="err(`conditions.${i}.value`)" class="w-full text-xs text-rose-600">
+          <p v-if="err(`conditions.${i}.value`)" class="w-full text-xs text-rose-600 dark:text-rose-400">
             {{ err(`conditions.${i}.value`) }}
           </p>
         </div>
@@ -346,7 +346,7 @@ const err = key => form.errors[key]
       <!-- ---------------- actions ---------------- -->
       <div class="card p-4">
         <div class="mb-1 flex items-center gap-1.5">
-          <h4 class="text-sm font-semibold text-slate-900">3. Then do this</h4>
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">3. Then do this</h4>
           <HelpTip title="Actions">
             What the rule does, in the order you put them. They all happen together or not at all,
             so a rule can never half-run and leave a lead in a strange state.
@@ -356,12 +356,12 @@ const err = key => form.errors[key]
         </div>
         <p class="mb-3 text-xs text-slate-400">At least one. They run in this order.</p>
 
-        <p v-if="err('actions')" class="mb-2 text-xs text-rose-600">{{ err('actions') }}</p>
+        <p v-if="err('actions')" class="mb-2 text-xs text-rose-600 dark:text-rose-400">{{ err('actions') }}</p>
 
-        <div v-for="(action, i) in form.actions" :key="i" class="mb-3 rounded-lg border border-slate-200 p-3">
+        <div v-for="(action, i) in form.actions" :key="i" class="mb-3 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
           <div class="mb-3 flex items-center gap-2">
-            <span class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100
-                         text-[10px] font-bold text-slate-500">{{ i + 1 }}</span>
+            <span class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700
+                         text-[10px] font-bold text-slate-500 dark:text-slate-400">{{ i + 1 }}</span>
             <select v-model="action.type" class="flex-1" @change="onActionType(i)">
               <option v-for="[key, meta] in actionList" :key="key" :value="key">{{ meta.label }}</option>
             </select>
@@ -418,7 +418,7 @@ const err = key => form.errors[key]
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div class="flex items-center gap-1.5">
-              <h4 class="text-sm font-semibold text-slate-900">Test it first</h4>
+              <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Test it first</h4>
               <HelpTip title="What Test does">
                 It counts the leads that match right now and shows you the first ten.
                 It does <strong>not</strong> run the rule — nothing is assigned, moved, messaged
@@ -433,7 +433,7 @@ const err = key => form.errors[key]
         </div>
 
         <div v-if="testResult" class="mt-3">
-          <p v-if="testResult.error" class="text-xs text-rose-600">{{ testResult.error }}</p>
+          <p v-if="testResult.error" class="text-xs text-rose-600 dark:text-rose-400">{{ testResult.error }}</p>
 
           <template v-else>
             <p class="info-box">{{ testResult.summary }}</p>
@@ -450,12 +450,12 @@ const err = key => form.errors[key]
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="lead in testResult.sample" :key="lead.id" class="border-t border-slate-100">
-                    <td class="py-1.5 pr-3 font-medium text-slate-700">{{ lead.name }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ lead.stage }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ lead.source }}</td>
-                    <td class="py-1.5 pr-3 text-slate-500">{{ lead.project }}</td>
-                    <td class="py-1.5 text-slate-500">{{ lead.owner ?? '—' }}</td>
+                  <tr v-for="lead in testResult.sample" :key="lead.id" class="border-t border-slate-100 dark:border-slate-700/60">
+                    <td class="py-1.5 pr-3 font-medium text-slate-700 dark:text-slate-300">{{ lead.name }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-400">{{ lead.stage }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-400">{{ lead.source }}</td>
+                    <td class="py-1.5 pr-3 text-slate-500 dark:text-slate-400">{{ lead.project }}</td>
+                    <td class="py-1.5 text-slate-500 dark:text-slate-400">{{ lead.owner ?? '—' }}</td>
                   </tr>
                 </tbody>
               </table>

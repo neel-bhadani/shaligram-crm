@@ -68,7 +68,7 @@ const label = computed(() => `${code.value} ${digits.value}`.trim())
       rel="noopener"
       :class="[
         compact ? 'btn-xs inline-flex items-center' : 'btn-ghost flex-1 gap-1.5 px-3 py-1.5 text-xs',
-        'hover:!border-emerald-600 hover:!text-emerald-700',
+        'hover:!border-emerald-600 hover:!text-emerald-700 dark:text-emerald-300',
       ]"
       :title="compact ? `WhatsApp ${label}` : null"
       :aria-label="`Message ${label} on WhatsApp`"

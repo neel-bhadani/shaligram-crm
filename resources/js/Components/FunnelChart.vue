@@ -55,7 +55,7 @@ const dropText = band => {
 const dropClass = band => {
   if (band.drop === null) return 'text-slate-300'
 
-  return band.drop < 0 ? 'text-emerald-600' : 'text-slate-400'
+  return band.drop < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
 }
 
 // a band drawn at its true share can be a sliver; this keeps a stripe of
@@ -69,25 +69,25 @@ const barWidth = band => `${Math.max(band.width, band.value > 0 ? 2 : 0)}%`
       v-for="band in bands" :key="band.key"
       type="button"
       :aria-pressed="active === band.key"
-      class="group relative w-full rounded-md px-2 py-1 text-left transition hover:bg-slate-50"
-      :class="active === band.key ? 'bg-slate-50 ring-1 ring-inset ring-slate-200' : ''"
+      class="group relative w-full rounded-md px-2 py-1 text-left transition hover:bg-slate-50 dark:hover:bg-slate-700"
+      :class="active === band.key ? 'bg-slate-50 dark:bg-slate-900/60 ring-1 ring-inset ring-slate-200 dark:ring-slate-600' : ''"
       @click="$emit('select', band.key)"
     >
       <!-- line 1: the stage, its count, and the drop from the band above -->
       <div class="flex items-baseline justify-between gap-2">
-        <span class="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+        <span class="flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
           <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: band.color }"></span>
           <span class="truncate">{{ band.label }}</span>
         </span>
 
         <span class="flex shrink-0 items-baseline gap-2 tabular-nums">
           <span class="text-[11px]" :class="dropClass(band)">{{ dropText(band) }}</span>
-          <span class="text-xs font-bold text-slate-900">{{ band.value }}</span>
+          <span class="text-xs font-bold text-slate-900 dark:text-slate-100">{{ band.value }}</span>
         </span>
       </div>
 
       <!-- line 2: the band itself, on a track so an empty stage still has a row -->
-      <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-700">
         <div class="h-full rounded-full transition-[width] duration-300"
              :style="{ width: barWidth(band), backgroundColor: band.color }"></div>
       </div>

@@ -172,8 +172,8 @@ const submit = () => form.post(route('todos.complete', props.todo.id), {
 
     <!-- the next task: nothing schedules one on its own any more -->
     <template v-if="showNext">
-      <div class="mt-6 border-t border-slate-200 pt-5">
-        <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div class="mt-6 border-t border-slate-200 dark:border-slate-700 pt-5">
+        <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
           Next follow-up
         </div>
 

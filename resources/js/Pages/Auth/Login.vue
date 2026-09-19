@@ -96,16 +96,16 @@ const submitSignup = () => signup.post(route('signup.store'), {
     </div>
 
     <!-- right: the forms -->
-    <div class="flex flex-1 items-center justify-center bg-white px-6 py-10">
+    <div class="flex flex-1 items-center justify-center bg-white dark:bg-slate-800 px-6 py-10">
       <div class="w-full max-w-sm">
 
-        <div class="mb-7 flex gap-1 border-b border-slate-100" role="tablist">
+        <div class="mb-7 flex gap-1 border-b border-slate-100 dark:border-slate-700/60" role="tablist">
           <Link v-for="t in tabs" :key="t.key" :href="t.href()" preserve-state
                 role="tab" :aria-selected="tab === t.key"
                 class="-mb-px border-b-2 px-3 py-2 text-sm font-medium"
                 :class="tab === t.key
-                  ? 'border-teal-700 font-semibold text-slate-900'
-                  : 'border-transparent text-slate-500 hover:text-slate-700'">
+                  ? 'border-teal-700 font-semibold text-slate-900 dark:text-slate-100'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'">
             {{ t.label }}
           </Link>
         </div>
@@ -113,9 +113,9 @@ const submitSignup = () => signup.post(route('signup.store'), {
         <!-- ================= sign in ================= -->
         <template v-if="!isSignup">
           <h1 class="mb-1.5 text-2xl font-semibold tracking-tight">Sign in</h1>
-          <p class="mb-7 text-sm text-slate-500">Use your email address or mobile number.</p>
+          <p class="mb-7 text-sm text-slate-500 dark:text-slate-400">Use your email address or mobile number.</p>
 
-          <div v-if="status" class="mb-4 text-sm font-medium text-teal-700">{{ status }}</div>
+          <div v-if="status" class="mb-4 text-sm font-medium text-teal-700 dark:text-teal-300">{{ status }}</div>
 
           <!--
             Waiting for approval, or turned down. Not a red line under the email
@@ -143,7 +143,7 @@ const submitSignup = () => signup.post(route('signup.store'), {
               </div>
             </FormField>
 
-            <label class="flex items-center gap-2 text-sm text-slate-500">
+            <label class="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               <input v-model="login.remember" type="checkbox" class="!min-h-0 !w-auto rounded" />
               Keep me signed in
             </label>
@@ -153,9 +153,9 @@ const submitSignup = () => signup.post(route('signup.store'), {
             </button>
           </form>
 
-          <p class="mt-6 text-center text-sm text-slate-500">
+          <p class="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
             New here?
-            <Link :href="route('signup')" preserve-state class="font-semibold text-teal-700 hover:underline">
+            <Link :href="route('signup')" preserve-state class="font-semibold text-teal-700 dark:text-teal-300 hover:underline">
               Request an account
             </Link>
           </p>
@@ -164,7 +164,7 @@ const submitSignup = () => signup.post(route('signup.store'), {
         <!-- ================= sign up ================= -->
         <template v-else>
           <h1 class="mb-1.5 text-2xl font-semibold tracking-tight">Request an account</h1>
-          <p class="mb-7 text-sm text-slate-500">
+          <p class="mb-7 text-sm text-slate-500 dark:text-slate-400">
             An administrator approves every new account. You can sign in once they have.
           </p>
 
@@ -212,9 +212,9 @@ const submitSignup = () => signup.post(route('signup.store'), {
             </button>
           </form>
 
-          <p class="mt-6 text-center text-sm text-slate-500">
+          <p class="mt-6 text-center text-sm text-slate-500 dark:text-slate-400">
             Already have an account?
-            <Link :href="route('login')" preserve-state class="font-semibold text-teal-700 hover:underline">
+            <Link :href="route('login')" preserve-state class="font-semibold text-teal-700 dark:text-teal-300 hover:underline">
               Sign in
             </Link>
           </p>

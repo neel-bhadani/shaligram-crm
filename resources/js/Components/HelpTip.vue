@@ -42,10 +42,10 @@ onUnmounted(() => {
   <span ref="root" class="relative inline-flex">
     <button
       type="button"
-      class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300
-             text-[10px] font-bold leading-none text-slate-500 transition
+      class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 dark:border-slate-600
+             text-[10px] font-bold leading-none text-slate-500 dark:text-slate-400 transition
              hover:border-teal-600 hover:text-teal-700"
-      :class="open ? 'border-teal-600 bg-teal-50 text-teal-700' : ''"
+      :class="open ? 'border-teal-600 bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300' : ''"
       :aria-expanded="open"
       aria-label="What does this mean?"
       @click.stop="open = !open"
@@ -58,12 +58,12 @@ onUnmounted(() => {
     -->
     <div
       v-if="open"
-      class="absolute top-6 z-[70] w-72 rounded-lg border border-slate-200 bg-white p-3 text-left
+      class="absolute top-6 z-[70] w-72 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 text-left
              shadow-xl"
       :class="align === 'right' ? 'right-0' : 'left-0'"
     >
-      <p v-if="title" class="mb-1 text-xs font-semibold text-slate-900">{{ title }}</p>
-      <div class="text-xs leading-relaxed text-slate-600"><slot /></div>
+      <p v-if="title" class="mb-1 text-xs font-semibold text-slate-900 dark:text-slate-100">{{ title }}</p>
+      <div class="text-xs leading-relaxed text-slate-600 dark:text-slate-300"><slot /></div>
     </div>
   </span>
 </template>

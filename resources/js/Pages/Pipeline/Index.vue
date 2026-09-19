@@ -265,12 +265,12 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
     <div class="card overflow-hidden">
 
       <!-- tabs -->
-      <div class="flex gap-1 border-b border-slate-100 p-3 sm:px-4">
+      <div class="flex gap-1 border-b border-slate-100 dark:border-slate-700/60 p-3 sm:px-4">
         <button
           v-for="t in [{ key: 'stages', label: 'Stages' }, { key: 'sources', label: 'Sources' }]"
           :key="t.key"
           class="rounded-lg px-3 py-1.5 text-sm font-semibold transition"
-          :class="tab === t.key ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'"
+          :class="tab === t.key ? 'bg-slate-900 text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-600'"
           @click="switchTab(t.key)"
         >
           {{ t.label }}
@@ -279,7 +279,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
         <span v-if="savingOrder" class="self-center pl-2 text-xs text-slate-400">Saving order…</span>
       </div>
 
-      <p class="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500">
+      <p class="border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500 dark:text-slate-400">
         <template v-if="isStages">
           Drag a row, or use the arrows, to change the order. That order is the order of
           every dropdown, every chart axis and the funnel.
@@ -295,7 +295,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
 
       <table class="hidden w-full text-sm lg:table">
         <thead>
-          <tr class="bg-slate-50 text-left text-xs text-slate-500">
+          <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
             <th class="w-10 px-2 py-2.5"></th>
             <th class="px-4 py-2.5 font-semibold">{{ isStages ? 'Stage' : 'Source' }}</th>
             <th class="px-4 py-2.5 font-semibold">Key</th>
@@ -310,7 +310,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
         <tbody>
           <tr
             v-for="(row, i) in rows" :key="row.id"
-            class="border-b border-slate-100"
+            class="border-b border-slate-100 dark:border-slate-700/60"
             :class="[row.is_active ? '' : 'bg-slate-50/60', dragging === i ? 'opacity-50' : '']"
             draggable="true"
             @dragstart="onDragStart(i)"
@@ -320,10 +320,10 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
           >
             <td class="px-2 py-3 align-middle">
               <div class="flex flex-col items-center gap-0.5">
-                <button class="text-xs leading-none text-slate-300 hover:text-slate-600 disabled:opacity-30"
+                <button class="text-xs leading-none text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30"
                         :disabled="i === 0" :aria-label="`Move ${row.label} up`" @click="nudge(i, -1)">▲</button>
                 <span class="cursor-grab select-none text-slate-300" aria-hidden="true">⠿</span>
-                <button class="text-xs leading-none text-slate-300 hover:text-slate-600 disabled:opacity-30"
+                <button class="text-xs leading-none text-slate-300 hover:text-slate-600 dark:hover:text-slate-300 disabled:opacity-30"
                         :disabled="i === rows.length - 1" :aria-label="`Move ${row.label} down`" @click="nudge(i, 1)">▼</button>
               </div>
             </td>
@@ -332,7 +332,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
               <div class="flex items-center gap-2">
                 <span v-if="isStages" class="h-3 w-3 flex-none rounded-full"
                       :style="{ backgroundColor: row.color }" aria-hidden="true"></span>
-                <span class="font-semibold" :class="row.is_active ? '' : 'text-slate-500'">{{ row.label }}</span>
+                <span class="font-semibold" :class="row.is_active ? '' : 'text-slate-500 dark:text-slate-400'">{{ row.label }}</span>
               </div>
               <div class="mt-1 flex flex-wrap gap-1.5">
                 <!--
@@ -341,17 +341,17 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
                   or deleted, because PHP names them.
                 -->
                 <span v-if="row.is_system"
-                      class="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                      class="rounded-full bg-slate-200 dark:bg-slate-600 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300"
                       title="Named in the application's own code. Its label and colour are yours; its key is not.">
                   Built in
                 </span>
                 <span v-if="row.is_handover"
-                      class="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+                      class="rounded-full bg-indigo-50 dark:bg-indigo-500/10 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:text-indigo-300"
                       title="Reaching this stage moves the lead from a telecaller to a salesperson.">
                   Handover
                 </span>
                 <span v-if="isStages && row.is_terminal"
-                      class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                      class="rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300"
                       title="A lead here is closed — no follow-up is booked.">
                   Ends the journey
                 </span>
@@ -361,16 +361,16 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
             <td class="px-4 py-3 font-mono text-xs text-slate-400">{{ row.key }}</td>
 
             <td v-if="isStages" class="px-4 py-3">
-              <span :class="row.owner_role ? 'text-slate-700' : 'text-slate-400'">{{ deskLabel(row) }}</span>
+              <span :class="row.owner_role ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'">{{ deskLabel(row) }}</span>
               <span v-if="misrouted(row)"
-                    class="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                    class="ml-1.5 rounded-full bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-300"
                     :title="misroutedTitle">
                 Past the site visit
               </span>
             </td>
 
-            <td v-if="!isStages" class="px-4 py-3 text-slate-500">{{ row.default_stage ?? '—' }}</td>
-            <td v-if="!isStages" class="px-4 py-3 text-slate-500">
+            <td v-if="!isStages" class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ row.default_stage ?? '—' }}</td>
+            <td v-if="!isStages" class="px-4 py-3 text-slate-500 dark:text-slate-400">
               {{ row.default_owner_role ? (options.roles[row.default_owner_role] ?? row.default_owner_role) : '—' }}
             </td>
 
@@ -379,7 +379,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
             <td class="px-4 py-3">
               <button
                 class="rounded-full px-2 py-0.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
-                :class="row.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                :class="row.is_active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'"
                 :disabled="row.is_active && !!row.cannot_deactivate"
                 :title="row.is_active ? (row.cannot_deactivate || 'Switch off') : 'Switch back on'"
                 @click="toggle(row)"
@@ -401,7 +401,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
       </table>
 
       <!-- phones and tablets: the same rows as cards, arrows only, no drag -->
-      <div class="divide-y divide-slate-100 lg:hidden">
+      <div class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
         <div v-for="(row, i) in rows" :key="row.id" class="p-4"
              :class="row.is_active ? '' : 'bg-slate-50/60'">
           <div class="flex items-start justify-between gap-3">
@@ -412,14 +412,14 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
                 <span class="truncate font-semibold">{{ row.label }}</span>
               </div>
               <div class="mt-0.5 font-mono text-xs text-slate-400">{{ row.key }}</div>
-              <div class="mt-1 text-xs text-slate-500">
+              <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 {{ row.leads }} {{ row.leads === 1 ? 'lead' : 'leads' }}
                 <template v-if="row.is_system"> · Built in</template>
                 <template v-if="isStages && row.is_terminal"> · Ends the journey</template>
               </div>
-              <div v-if="isStages" class="mt-1 text-xs text-slate-500">
+              <div v-if="isStages" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
                 New leads: {{ deskLabel(row) }}
-                <span v-if="misrouted(row)" class="font-medium text-amber-800" :title="misroutedTitle">
+                <span v-if="misrouted(row)" class="font-medium text-amber-800 dark:text-amber-300" :title="misroutedTitle">
                   · past the site visit
                 </span>
               </div>
@@ -428,7 +428,7 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
             <div class="flex flex-none flex-col items-end gap-1.5">
               <button
                 class="rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50"
-                :class="row.is_active ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200 text-slate-600'"
+                :class="row.is_active ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300' : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'"
                 :disabled="row.is_active && !!row.cannot_deactivate"
                 @click="toggle(row)"
               >{{ row.is_active ? 'In use' : 'Off' }}</button>

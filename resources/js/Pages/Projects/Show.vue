@@ -102,8 +102,8 @@ const when = iso => iso
             <div class="flex flex-wrap items-center gap-2">
               <span class="rounded-full px-2 py-0.5 text-xs font-medium"
                     :class="project.is_active
-                      ? 'bg-emerald-50 text-emerald-800'
-                      : 'bg-slate-200 text-slate-600'">
+                      ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300'">
                 {{ project.is_active ? 'Selling now' : 'Inactive' }}
               </span>
               <span class="text-xs text-slate-400">{{ project.type_label }}</span>
@@ -111,7 +111,7 @@ const when = iso => iso
             </div>
 
             <p v-if="project.description"
-               class="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-slate-600">
+               class="mt-2 max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               {{ project.description }}
             </p>
           </div>
@@ -132,7 +132,7 @@ const when = iso => iso
       <div class="card p-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <h2 class="text-sm font-semibold text-slate-900">Salespeople on this project</h2>
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Salespeople on this project</h2>
             <p class="mt-0.5 text-xs text-slate-400">
               When a lead on this project needs a salesperson, it goes to the next of the people
               ticked here, in turn.
@@ -152,14 +152,14 @@ const when = iso => iso
         <template v-else>
           <div class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             <label v-for="s in salespeople" :key="s.id"
-                   class="flex items-center gap-2.5 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                   class="flex items-center gap-2.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm text-slate-700 dark:text-slate-300">
               <input v-model="team.salesperson_ids" type="checkbox" :value="s.id"
-                     class="h-4 w-4 flex-none rounded border-slate-300" />
+                     class="h-4 w-4 flex-none rounded border-slate-300 dark:border-slate-600" />
               <span class="truncate">{{ s.name }}</span>
             </label>
           </div>
 
-          <p v-if="teamError" class="mt-2 text-xs text-rose-700">{{ teamError }}</p>
+          <p v-if="teamError" class="mt-2 text-xs text-rose-700 dark:text-rose-300">{{ teamError }}</p>
 
           <p v-if="unstaffed" class="warn-box mt-3">
             Nobody is assigned to this project. Its leads that need a salesperson go to any active
@@ -172,8 +172,8 @@ const when = iso => iso
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div v-for="k in kpis" :key="k.l" class="card p-4">
           <div class="text-2xl font-semibold tabular-nums"
-               :class="k.tone === 'good' ? 'text-emerald-700' : 'text-slate-900'">{{ k.v }}</div>
-          <div class="mt-0.5 text-sm font-medium text-slate-700">{{ k.l }}</div>
+               :class="k.tone === 'good' ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-900 dark:text-slate-100'">{{ k.v }}</div>
+          <div class="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{{ k.l }}</div>
           <div class="mt-0.5 text-xs text-slate-400">{{ k.d }}</div>
         </div>
       </div>
@@ -182,27 +182,27 @@ const when = iso => iso
 
         <!-- ---------------- by stage ---------------- -->
         <div class="card p-4">
-          <h2 class="text-sm font-semibold text-slate-900">Where the leads stand</h2>
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Where the leads stand</h2>
           <p class="mt-0.5 text-xs text-slate-400">
             Every lead on this project, in the stage it is in today. Adds up to
             {{ totals.leads }}.
           </p>
 
-          <div v-if="!totals.leads" class="py-8 text-center text-sm text-slate-500">
+          <div v-if="!totals.leads" class="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             No leads have been filed against this project yet.
           </div>
 
           <div v-else class="mt-4 space-y-2">
             <div v-for="s in byStage" :key="s.key" class="flex items-center gap-3">
-              <span class="w-36 flex-none truncate text-xs text-slate-600">{{ s.label }}</span>
-              <span class="h-4 flex-1 overflow-hidden rounded bg-slate-100">
+              <span class="w-36 flex-none truncate text-xs text-slate-600 dark:text-slate-300">{{ s.label }}</span>
+              <span class="h-4 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-700">
                 <span class="block h-full rounded transition-all"
                       :style="{
                         width: `${Math.round(s.total / widest * 100)}%`,
                         backgroundColor: options.stageColors[s.key] ?? '#94a3b8',
                       }" />
               </span>
-              <span class="w-10 flex-none text-right text-xs tabular-nums text-slate-700">
+              <span class="w-10 flex-none text-right text-xs tabular-nums text-slate-700 dark:text-slate-300">
                 {{ s.total }}
               </span>
               <span class="w-12 flex-none text-right text-xs tabular-nums text-slate-400">
@@ -214,12 +214,12 @@ const when = iso => iso
 
         <!-- ---------------- by source ---------------- -->
         <div class="card p-4">
-          <h2 class="text-sm font-semibold text-slate-900">Where the leads came from</h2>
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Where the leads came from</h2>
           <p class="mt-0.5 text-xs text-slate-400">
             Sources nobody used are left out rather than drawn as empty rows.
           </p>
 
-          <div v-if="!bySource.length" class="py-8 text-center text-sm text-slate-500">
+          <div v-if="!bySource.length" class="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
             Nothing to break down yet.
           </div>
 
@@ -232,8 +232,8 @@ const when = iso => iso
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in bySource" :key="s.key" class="border-t border-slate-100">
-                <td class="py-1.5 text-slate-700">{{ s.label }}</td>
+              <tr v-for="s in bySource" :key="s.key" class="border-t border-slate-100 dark:border-slate-700/60">
+                <td class="py-1.5 text-slate-700 dark:text-slate-300">{{ s.label }}</td>
                 <td class="py-1.5 text-right tabular-nums">{{ s.total }}</td>
                 <td class="py-1.5 text-right tabular-nums text-slate-400">{{ pct(s.share) }}</td>
               </tr>
@@ -244,9 +244,9 @@ const when = iso => iso
 
       <!-- ---------------- leads ---------------- -->
       <div class="card overflow-hidden">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 p-4">
           <div>
-            <h2 class="text-sm font-semibold text-slate-900">Latest leads</h2>
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Latest leads</h2>
             <p class="mt-0.5 text-xs text-slate-400">
               The {{ options.leadPreview }} most recent. The full list, with filters and search,
               is on the Leads page.
@@ -258,15 +258,15 @@ const when = iso => iso
         </div>
 
         <div v-if="!leads.length" class="px-5 py-12 text-center">
-          <p class="mb-1 text-sm font-semibold text-slate-700">No leads yet</p>
-          <p class="mx-auto max-w-md text-sm text-slate-500">
+          <p class="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">No leads yet</p>
+          <p class="mx-auto max-w-md text-sm text-slate-500 dark:text-slate-400">
             Leads filed against this project from the Add lead form will appear here.
           </p>
         </div>
 
         <table v-else class="hidden w-full text-sm lg:table">
           <thead>
-            <tr class="bg-slate-50 text-left text-xs text-slate-500">
+            <tr class="bg-slate-50 dark:bg-slate-900/60 text-left text-xs text-slate-500 dark:text-slate-400">
               <th class="px-4 py-2.5 font-semibold">Name</th>
               <th class="px-4 py-2.5 font-semibold">Mobile</th>
               <th class="px-4 py-2.5 font-semibold">Stage</th>
@@ -276,23 +276,23 @@ const when = iso => iso
             </tr>
           </thead>
           <tbody>
-            <tr v-for="lead in leads" :key="lead.id" class="border-b border-slate-100">
+            <tr v-for="lead in leads" :key="lead.id" class="border-b border-slate-100 dark:border-slate-700/60">
               <td class="px-4 py-3 font-medium">{{ lead.name }}</td>
-              <td class="px-4 py-3 tabular-nums text-slate-500">{{ lead.mobile }}</td>
+              <td class="px-4 py-3 tabular-nums text-slate-500 dark:text-slate-400">{{ lead.mobile }}</td>
               <td class="px-4 py-3">
                 <span class="rounded-full px-2 py-0.5 text-xs font-medium text-white"
                       :style="{ backgroundColor: options.stageColors[lead.stage] ?? '#94a3b8' }">
                   {{ lead.stageLabel }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-slate-500">{{ lead.source }}</td>
-              <td class="px-4 py-3 text-slate-500">{{ lead.owner ?? '—' }}</td>
-              <td class="px-4 py-3 text-slate-500">{{ when(lead.created_at) }}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ lead.source }}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ lead.owner ?? '—' }}</td>
+              <td class="px-4 py-3 text-slate-500 dark:text-slate-400">{{ when(lead.created_at) }}</td>
             </tr>
           </tbody>
         </table>
 
-        <div v-if="leads.length" class="divide-y divide-slate-100 lg:hidden">
+        <div v-if="leads.length" class="divide-y divide-slate-100 dark:divide-slate-700/60 lg:hidden">
           <div v-for="lead in leads" :key="lead.id" class="p-4">
             <div class="mb-1.5 flex items-start justify-between gap-3">
               <div class="min-w-0">

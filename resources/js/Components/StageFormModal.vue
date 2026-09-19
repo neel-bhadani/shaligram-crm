@@ -3,6 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
+import { useTheme } from '@/composables/useTheme'
+import { chipStyle } from '@/lib/dynamicChipColor'
+
+const { isDark } = useTheme()
 
 /*
  | Add and edit a stage — one modal for both, the same shape as every other form
@@ -96,7 +100,7 @@ const submit = () => {
           ? 'Fixed. Every lead and every follow-up in this stage is stored against this word.'
           : 'Made from the name. It cannot be changed afterwards.'"
       >
-        <div class="rounded-lg bg-slate-50 px-3 py-2 font-mono text-sm text-slate-500">
+        <div class="rounded-lg bg-slate-50 dark:bg-slate-900/60 px-3 py-2 font-mono text-sm text-slate-500 dark:text-slate-400">
           {{ editing ? stage.key : keyPreview }}
         </div>
       </FormField>
@@ -106,8 +110,8 @@ const submit = () => {
         <div class="flex flex-wrap gap-2">
           <button
             v-for="c in options.palette" :key="c" type="button"
-            class="h-8 w-8 rounded-full ring-offset-2 transition"
-            :class="form.color === c ? 'ring-2 ring-slate-900' : 'ring-1 ring-slate-200 hover:ring-slate-400'"
+            class="h-8 w-8 rounded-full ring-offset-2 transition dark:ring-offset-slate-800"
+            :class="form.color === c ? 'ring-2 ring-slate-900 dark:ring-slate-100' : 'ring-1 ring-slate-200 dark:ring-slate-600 hover:ring-slate-400'"
             :style="{ backgroundColor: c }"
             :aria-label="c" :aria-pressed="form.color === c"
             @click="form.color = c"
@@ -123,7 +127,7 @@ const submit = () => {
       <div v-if="form.color" class="flex items-center gap-2 text-xs text-slate-400">
         <span>Preview</span>
         <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold"
-              :style="{ color: form.color, backgroundColor: form.color + '18' }">
+              :style="chipStyle(form.color, isDark)">
           <span class="h-1.5 w-1.5 rounded-full bg-current"></span>{{ form.label || 'Stage' }}
         </span>
       </div>
@@ -157,7 +161,7 @@ const submit = () => {
         </select>
       </FormField>
 
-      <p v-if="misrouted" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      <p v-if="misrouted" class="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
         This stage is at or past the site visit. A telecaller given a lead here has no reason
         to call the customer, and no salesperson will see it until somebody moves it by hand.
         <template v-if="stage?.is_handover">
@@ -178,7 +182,7 @@ const submit = () => {
       </FormField>
 
       <p v-if="editing && stage.rules.length && form.is_active === false"
-         class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+         class="rounded-lg bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
         {{ stage.rules.length === 1 ? 'An automation rule uses' : 'Automation rules use' }}
         this stage: {{ stage.rules.join(', ') }}.
         {{ stage.rules.length === 1 ? 'It' : 'They' }} will stop having an effect while the stage is off.

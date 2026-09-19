@@ -118,7 +118,7 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
 <template>
   <Modal :show="show" :title="lead?.full_name ?? 'Lead'" @close="emit('close')">
 
-    <div v-if="loading" class="py-10 text-center text-sm text-slate-500">Loading…</div>
+    <div v-if="loading" class="py-10 text-center text-sm text-slate-500 dark:text-slate-400">Loading…</div>
 
     <div v-else-if="lead">
       <dl class="grid gap-4 sm:grid-cols-2">

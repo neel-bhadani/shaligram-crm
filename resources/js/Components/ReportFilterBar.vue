@@ -29,8 +29,8 @@ const emit = defineEmits(['select', 'clear'])
 </script>
 
 <template>
-  <div class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
-    <span class="text-xs font-semibold text-slate-500">Dates</span>
+  <div class="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+    <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">Dates</span>
 
     <DateRangePicker :range="range" :presets="presets" @select="emit('select', $event)" />
 

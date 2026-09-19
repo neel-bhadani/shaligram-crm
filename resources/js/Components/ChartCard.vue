@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import Chart from 'chart.js/auto'
 import TileHeader from './TileHeader.vue'
+import { useTheme } from '@/composables/useTheme'
 
 /*
  | Every card looks the same, and there is deliberately no prop that can change
@@ -49,6 +50,21 @@ let chart = null
 let observer = null
 let timer
 
+const { isDark } = useTheme()
+
+/*
+ | Every chart's own axis ticks, legend labels and gridlines read Chart.js's
+ | global defaults unless a config overrides them — most of ours do not — so
+ | setting these two here, before render(), is what keeps a dark-mode axis
+ | label from staying the light-mode grey Chart.js would otherwise bake in.
+ | Mutated on the shared Chart object rather than passed through `config`,
+ | because `config` is built once by the parent and does not know the theme.
+ */
+const applyChartTheme = () => {
+  Chart.defaults.color = isDark.value ? '#94a3b8' : '#64748b'
+  Chart.defaults.borderColor = isDark.value ? 'rgba(148, 163, 184, 0.18)' : '#e2e8f0'
+}
+
 /*
  | Two separate paths, and keeping them separate is the point.
  |
@@ -62,6 +78,8 @@ let timer
  */
 const render = () => {
   if (!canvas.value) return
+
+  applyChartTheme()
 
   // destroy before recreating, or old canvases leak and
   // ghost tooltips follow the mouse around the screen
@@ -97,6 +115,10 @@ onMounted(() => {
 })
 
 watch(() => props.config, render, { deep: true })
+
+// the config itself hasn't changed when the toggle is flipped, so it needs
+// its own watcher to make an already-drawn chart pick up the new palette
+watch(isDark, render)
 
 onBeforeUnmount(() => {
   // the pending debounce goes too: left alone it fires after the component is

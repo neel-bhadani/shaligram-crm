@@ -56,12 +56,12 @@ onUnmounted(() => clearTimeout(timer))
 
 <template>
   <div>
-    <label class="mb-1.5 block text-xs font-semibold text-slate-500">{{ label }}</label>
+    <label class="mb-1.5 block text-xs font-semibold text-slate-500 dark:text-slate-400">{{ label }}</label>
 
     <div class="flex gap-2">
       <input
         :value="value" readonly
-        class="min-w-0 flex-1 !bg-slate-50 text-slate-600"
+        class="min-w-0 flex-1 !bg-slate-50 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300"
         :class="mono ? 'font-mono text-xs' : ''"
         @focus="$event.target.select()"
       />

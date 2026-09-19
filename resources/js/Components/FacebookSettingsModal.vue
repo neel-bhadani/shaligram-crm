@@ -77,8 +77,8 @@ const submit = () => {
       <!-- ---------- what we need from the client ---------- -->
       <section class="space-y-4">
         <header>
-          <h4 class="text-sm font-semibold text-slate-900">From the Meta app dashboard</h4>
-          <p class="mt-0.5 text-xs text-slate-500">
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">From the Meta app dashboard</h4>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Get these from the client's Meta Business account. Both are stored encrypted
             and are never shown again.
           </p>
@@ -113,9 +113,9 @@ const submit = () => {
       </section>
 
       <!-- ---------- where the leads go ---------- -->
-      <section class="space-y-4 border-t border-slate-100 pt-5">
+      <section class="space-y-4 border-t border-slate-100 dark:border-slate-700/60 pt-5">
         <header>
-          <h4 class="text-sm font-semibold text-slate-900">Where these leads land</h4>
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Where these leads land</h4>
         </header>
 
         <div class="grid gap-4 sm:grid-cols-2">
@@ -155,21 +155,21 @@ const submit = () => {
         <label class="flex items-start gap-2.5 text-sm">
           <input v-model="form.is_active" type="checkbox" class="mt-0.5 h-4 w-4 flex-none" />
           <span>
-            <span class="font-medium text-slate-800">Accept leads from Facebook</span>
-            <span class="block text-xs text-slate-500">
+            <span class="font-medium text-slate-800 dark:text-slate-200">Accept leads from Facebook</span>
+            <span class="block text-xs text-slate-500 dark:text-slate-400">
               When off, signed deliveries from Meta are logged and discarded rather than imported.
             </span>
           </span>
         </label>
-        <p v-if="form.errors.is_active" class="text-xs text-rose-600">{{ form.errors.is_active }}</p>
+        <p v-if="form.errors.is_active" class="text-xs text-rose-600 dark:text-rose-400">{{ form.errors.is_active }}</p>
       </section>
 
       <!-- ---------- what they paste into Meta ---------- -->
-      <section class="space-y-4 border-t border-slate-100 pt-5">
+      <section class="space-y-4 border-t border-slate-100 dark:border-slate-700/60 pt-5">
         <header>
-          <h4 class="text-sm font-semibold text-slate-900">Paste these into Meta</h4>
-          <p class="mt-0.5 text-xs text-slate-500">
-            Meta app dashboard → Webhooks → Page → Subscribe to <code class="rounded bg-slate-100 px-1">leadgen</code>.
+          <h4 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Paste these into Meta</h4>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Meta app dashboard → Webhooks → Page → Subscribe to <code class="rounded bg-slate-100 dark:bg-slate-700 px-1">leadgen</code>.
           </p>
         </header>
 
