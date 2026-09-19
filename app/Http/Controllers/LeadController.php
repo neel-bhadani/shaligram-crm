@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesDateRange;
 use App\Http\Controllers\Concerns\ResolvesFilters;
 use App\Http\Requests\LeadReassignRequest;
 use App\Http\Requests\LeadRequest;
+use App\Http\Requests\LeadSwitchProjectRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
 use App\Models\Project;
@@ -387,6 +388,38 @@ class LeadController extends Controller
         $this->service->reassignTo($lead, $to, $request->validated('stage'));
 
         return back()->with('success', "Lead reassigned to {$to->display_name}.");
+    }
+
+    /**
+     * Move a lead to a different project — the Follow-up page's "Switch
+     * project" action. LeadSwitchProjectRequest has already checked the
+     * target project is a real change and does not clash with an existing
+     * lead there; LeadFollowUpService::switchProject() does the rest — moves
+     * the lead itself, re-runs the stage-to-role assignment against the new
+     * project, and moves the pending to-do if the owner changes.
+     */
+    public function switchProject(LeadSwitchProjectRequest $request, Lead $lead)
+    {
+        $to = Project::findOrFail($request->validated('project_id'));
+
+        try {
+            $outcome = $this->service->switchProject($lead, $to);
+        } catch (UniqueConstraintViolationException $e) {
+            // the narrow gap between LeadSwitchProjectRequest's check and the
+            // save — see duplicateMobile() for the same race on the add-lead
+            // form
+            throw ValidationException::withMessages([
+                'project_id' => 'This number already has a lead on that project.',
+            ]);
+        }
+
+        $notice = "Lead switched to {$outcome['switched_to']}.";
+
+        if ($outcome['reassigned_to']) {
+            $notice .= " Reassigned to {$outcome['reassigned_to']}.";
+        }
+
+        return back()->with('success', $notice);
     }
 
     public function destroy(Lead $lead)

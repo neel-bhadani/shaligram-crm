@@ -7,15 +7,18 @@ use App\Http\Controllers\Concerns\ResolvesFilters;
 use App\Http\Requests\CompleteTodoRequest;
 use App\Http\Requests\TodoRequest;
 use App\Models\Lead;
+use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\LeadFollowUpService;
 use App\Support\CrmTaxonomy;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class TodoController extends Controller
@@ -141,6 +144,9 @@ class TodoController extends Controller
                 // CallButtons builds its tel: and wa.me hrefs from this
                 'countryCode' => config('crm.country_code'),
                 'roleLabels' => config('crm.role_labels'),
+                // the "Switch project" action's target picker — every active
+                // project, the same list the add-lead form offers
+                'projects' => Project::active()->get(['id', 'name']),
                 /*
                  | assigned_to rides along so TodoFormModal can ask whether the
                  | person this lead belongs to is already busy at the time being
@@ -252,24 +258,39 @@ class TodoController extends Controller
 
     /**
      * Log the call: closes this task, moves the stage, saves the next task the
-     * user booked on the same form.
+     * user booked on the same form — and switches the lead's project first,
+     * in the same action, when the form's project selector was changed.
+     *
+     * CompleteTodoRequest has already checked a changed project is a real
+     * one and does not clash with an existing lead there; null when the
+     * selector was left on the lead's own project, which
+     * LeadFollowUpService::complete() reads as no switch at all.
      */
     public function complete(CompleteTodoRequest $request, Todo $todo)
     {
         abort_if($todo->status !== 'pending', 422, 'This follow-up is already closed.');
 
-        $outcome = $this->service->complete(
-            todo: $todo,
-            stage: $request->stage,
-            remarks: $request->remarks,
-            // used exactly as entered; nothing moves a datetime a person chose
-            nextAt: $request->filled('follow_up_at')
-                ? Carbon::parse($request->follow_up_at)
-                : null,
-            nextType: $request->input('follow_up_type'),
-            nextRemarks: $request->input('follow_up_remarks'),
-            extra: $request->only('reason', 'booked_unit', 'booking_date'),
-        );
+        try {
+            $outcome = $this->service->complete(
+                todo: $todo,
+                stage: $request->stage,
+                remarks: $request->remarks,
+                // used exactly as entered; nothing moves a datetime a person chose
+                nextAt: $request->filled('follow_up_at')
+                    ? Carbon::parse($request->follow_up_at)
+                    : null,
+                nextType: $request->input('follow_up_type'),
+                nextRemarks: $request->input('follow_up_remarks'),
+                extra: $request->only('reason', 'booked_unit', 'booking_date'),
+                project: $request->filled('project_id') ? Project::find($request->input('project_id')) : null,
+            );
+        } catch (UniqueConstraintViolationException $e) {
+            // the narrow gap between CompleteTodoRequest's check and the save
+            // — see LeadController::switchProject() for the same race
+            throw ValidationException::withMessages([
+                'project_id' => 'This number already has a lead on that project.',
+            ]);
+        }
 
         $response = back()->with('success', CrmTaxonomy::isTerminal($request->stage)
             ? 'Call logged and the lead closed.'
