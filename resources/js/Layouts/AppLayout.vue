@@ -38,106 +38,99 @@ const roleLabel = computed(() => {
     .join(' ')
 })
 
+const isAdmin = computed(() => user.value?.role === 'admin')
+
 /*
- | Users and Integrations are admin-only and are left out of the array rather
- | than rendered disabled — a greyed link advertises a page somebody cannot
- | reach. This is presentation only: `role:admin` on each route group is what
- | actually refuses a telecaller who types /users or /integrations into the
- | address bar, and both come back 403 rather than empty.
+ | Four labelled groups instead of one flat list, so daily-operational pages
+ | are visually separated from the admin/configuration pages that sit below
+ | them. Each group is `{ label, items }`; the template only renders a group's
+ | muted header when its `items` is non-empty, so an admin-only group that a
+ | telecaller or salesperson filters down to nothing never leaves an orphaned
+ | label floating above an empty section.
  |
- | Channel Partners used to sit in that admin block and now sits beside Leads,
- | because the page is readable, editable AND mergeable by every role — see the
- | channel-partners block in routes/web.php, which keeps GET (index), PUT
- | (update) and POST /merge on the outer `auth` group and leaves only delete
- | behind role:admin. The link is therefore not a widening: a non-admin who
- | opens it gets the roster, the search and the filters, an Edit and a Merge
- | button whose routes will accept them, and no delete button whose route would
- | refuse them.
+ | Users and Integrations are admin-only and are left out of their arrays
+ | rather than rendered disabled — a greyed link advertises a page somebody
+ | cannot reach. This is presentation only: `role:admin` on each route group is
+ | what actually refuses a telecaller who types /users or /integrations into
+ | the address bar, and both come back 403 rather than empty.
  */
-const nav = computed(() => [
-  { name: 'Dashboard', href: route('dashboard'), active: route().current('dashboard') },
-  { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') },
-/*
-    | Channel Partners sits next to Leads because the two are read, edited and
-    | merged together: the lead form's broker picker offers this same roster to
-    | anyone who can file a lead, the Edit button saves through a PUT on the
-    | same `auth` group, and the Merge button cleans up the duplicates that
-    | filing leads produces. Only delete is admin-only, so the link is
-    | presentation of already-open routes rather than a way around anything.
-    */
-  { name: 'Channel Partners', href: route('channel-partners.index'), active: route().current('channel-partners.*') },
-  { name: 'Follow-ups', href: route('todos.index'), active: route().current('todos.*') },
-  /*
-   | Calendar sits beside Follow-ups because it is the same list drawn by the
-   | day: which follow-ups are due when. It reads the same rows as the To-do
-   | page, through the same Todo::forUser() boundary, so a telecaller's
-   | calendar is their own follow-ups and an admin's is the office's.
-   */
-  { name: 'Calendar', href: route('calendar.index'), active: route().current('calendar.*') },
-  /*
-   | Alerts is for everyone, and deliberately so. A telecaller is told about
-   | their own overdue follow-ups and carries an unread count in the header on
-   | every page; hiding the page they would land on would leave that count
-   | pointing at nothing. Each person sees only the alerts addressed to them.
-   */
-  { name: 'Alerts', href: route('alerts.index'), active: route().current('alerts.*') },
-  ...(user.value?.role === 'admin'
-    ? [
-        /*
-         | Automation sits directly under Alerts because the two are read
-         | together: a rule raises an alert, and the alert is how you find out
-         | the rule did something. Admin-only here and admin-only for real —
-         | `role:admin` on the route group is what refuses a telecaller who
-         | types /automation, and they get a 403 rather than an empty page.
-         */
-        {
-          name: 'Automation',
-          href: route('automation.index'),
-          active: route().current('automation.*'),
-        },
-        /*
-         | Projects and Stages & Sources sit together because they are the same
-         | kind of thing: reference data the Add lead form reads and every lead
-         | in the database points at, not staff administration. Channel Partners
-         | used to sit with them and now lives beside Leads, because that page
-         | was opened up to every role while these two were not.
-         |
-         | Admin-only here and admin-only for real: `role:admin` on the route
-         | group is what refuses a telecaller who types /projects, and they get
-         | a 403 rather than an empty page.
-         */
-        { name: 'Projects', href: route('projects.index'), active: route().current('projects.*') },
-        /*
-         | Stages & Sources is reference data every lead points at, not staff
-         | administration. Last of the admin block, because it is the one that
-         | is set up once and rarely opened again.
-         |
-         | Admin-only here and admin-only for real: `role:admin` on the route
-         | group is what refuses a telecaller who types /pipeline, and they get
-         | a 403 rather than an empty page.
-         */
-        {
-          name: 'Stages & Sources',
-          href: route('pipeline.index'),
-          active: route().current('pipeline.*'),
-        },
-        { name: 'Users', href: route('users.index'), active: route().current('users.*') },
-        /*
-         | Integrations is last because it is the one nobody opens twice: it is
-         | set up once and then only visited when leads have stopped arriving.
-         |
-         | Admin-only here and admin-only for real — `role:admin` on the route
-         | group in routes/web.php is what refuses a telecaller who types
-         | /integrations, and they get a 403 rather than an empty page. Leaving
-         | the link out is presentation; the middleware is the answer.
-         */
-        {
-          name: 'Integrations',
-          href: route('integrations.index'),
-          active: route().current('integrations.*'),
-        },
-      ]
-    : []),
+const navGroups = computed(() => [
+  {
+    label: 'Daily work',
+    items: [
+      { name: 'Dashboard', href: route('dashboard'), active: route().current('dashboard') },
+      { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') },
+      /*
+       | Channel Partners sits here, next to Leads, rather than in Manage
+       | beside Projects and Users, because it is read, edited and merged by
+       | every role in the course of daily work: the lead form's broker picker
+       | offers this same roster to anyone who can file a lead, the Edit button
+       | saves through a PUT on the same `auth` group, and the Merge button
+       | cleans up the duplicates that filing leads produces. Only delete is
+       | admin-only, so the link is presentation of already-open routes rather
+       | than a way around anything — grouping it with the admin-only pages
+       | would misrepresent who it's for.
+       */
+      { name: 'Channel Partners', href: route('channel-partners.index'), active: route().current('channel-partners.*') },
+      { name: 'Follow-ups', href: route('todos.index'), active: route().current('todos.*') },
+      /*
+       | Calendar sits beside Follow-ups because it is the same list drawn by the
+       | day: which follow-ups are due when. It reads the same rows as the To-do
+       | page, through the same Todo::forUser() boundary, so a telecaller's
+       | calendar is their own follow-ups and an admin's is the office's.
+       */
+      { name: 'Calendar', href: route('calendar.index'), active: route().current('calendar.*') },
+      /*
+       | Alerts is for everyone, and deliberately so. A telecaller is told about
+       | their own overdue follow-ups and carries an unread count in the header on
+       | every page; hiding the page they would land on would leave that count
+       | pointing at nothing. Each person sees only the alerts addressed to them.
+       */
+      { name: 'Alerts', href: route('alerts.index'), active: route().current('alerts.*') },
+    ],
+  },
+  {
+    /*
+     | Manage holds Users alone. Admin-only here and admin-only for real:
+     | `role:admin` on the route group is what refuses a telecaller who types
+     | /users, and they get a 403 rather than an empty page.
+     */
+    label: 'Manage',
+    items: isAdmin.value
+      ? [{ name: 'Users', href: route('users.index'), active: route().current('users.*') }]
+      : [],
+  },
+  {
+    /*
+     | Setup is reference/configuration data: set up once and rarely revisited,
+     | as opposed to Manage's staff administration.
+     |
+     | Projects and Stages & Sources sit together because they are the same
+     | kind of thing: reference data the Add lead form reads and every lead in
+     | the database points at, not staff administration.
+     |
+     | Automation sits after them because a rule raises an alert, and the alert
+     | is how you find out the rule did something — it belongs with the other
+     | configuration screens rather than beside Alerts itself now that Alerts
+     | is grouped with the pages read every day.
+     |
+     | Integrations is last because it is the one nobody opens twice: it is set
+     | up once and then only visited when leads have stopped arriving.
+     |
+     | Admin-only here and admin-only for real: `role:admin` on each route group
+     | is what refuses a telecaller who types /projects, /pipeline, /automation
+     | or /integrations, and they get a 403 rather than an empty page.
+     */
+    label: 'Setup',
+    items: isAdmin.value
+      ? [
+          { name: 'Projects', href: route('projects.index'), active: route().current('projects.*') },
+          { name: 'Stages & Sources', href: route('pipeline.index'), active: route().current('pipeline.*') },
+          { name: 'Automation', href: route('automation.index'), active: route().current('automation.*') },
+          { name: 'Integrations', href: route('integrations.index'), active: route().current('integrations.*') },
+        ]
+      : [],
+  },
 ])
 
 /*
@@ -292,15 +285,39 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
         hand the rest of the gesture to the page behind the drawer.
       -->
       <nav class="nav-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-        <Link
-          v-for="item in nav" :key="item.name" :href="item.href"
-          class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
-          :class="item.active ? 'bg-teal-700 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'"
-          @click="open = false"
-        >{{ item.name }}</Link>
+        <!--
+          Each group's muted header is v-if'd on its own items, not v-show'd,
+          so an admin-only group a telecaller or salesperson filters down to
+          nothing renders no header at all — never a label floating above an
+          empty section. `first:mt-0` only ever removes the gap above Daily
+          work, since it's the one group with items for every role.
+        -->
+        <template v-for="group in navGroups" :key="group.label">
+          <div
+            v-if="group.items.length"
+            class="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500 first:mt-0"
+          >{{ group.label }}</div>
+
+          <Link
+            v-for="item in group.items" :key="item.name" :href="item.href"
+            class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
+            :class="item.active ? 'bg-teal-700 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'"
+            @click="open = false"
+          >{{ item.name }}</Link>
+        </template>
 
         <!--
-          Reports is a disclosure, not a link. There is no /reports landing page
+          Reports doesn't get a separate muted header above it the way the
+          three link groups do: its own button already reads "Reports" one
+          line above its children, so a second, near-identical "REPORTS"
+          label stacked directly on top of it would be the one header in the
+          sidebar that duplicates rather than labels the row underneath —
+          exactly what requirement 1 asks headers not to do. The button is
+          also never hidden: Reports carries no role gate (see routes/web.php,
+          where the report routes sit outside the admin-only groups), so
+          there's no empty-group case to guard against here either.
+
+          It is a disclosure, not a link. There is no /reports landing page
           to send anyone to — the section is its two report pages — so the
           heading opens the group and the children are what navigate.
 

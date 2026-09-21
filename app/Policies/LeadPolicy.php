@@ -49,9 +49,22 @@ class LeadPolicy
         return $user->can_('add_leads');
     }
 
+    /**
+     * Full edit access is exactly what it always was: `edit_leads` and the
+     * ownership check above, nothing else — an admin or salesperson without
+     * the permission is still refused outright, same as before.
+     *
+     * A telecaller without it is let through anyway, but this is as far as
+     * the exception goes. It says nothing about which FIELDS they may save —
+     * LeadRequest is what turns "may open this form" into "may save these
+     * fields", by allowing Stage and the follow-up through and rejecting any
+     * change to the lead's own core details. Every other role still needs
+     * `edit_leads` to get past this line at all, so nothing here can leak
+     * the telecaller exception into anyone else's access.
+     */
     public function update(User $user, Lead $lead): bool
     {
-        return $user->can_('edit_leads') && $this->view($user, $lead);
+        return ($user->can_('edit_leads') || $user->isTelecaller()) && $this->view($user, $lead);
     }
 
     public function delete(User $user, Lead $lead): bool
