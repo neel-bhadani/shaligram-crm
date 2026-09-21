@@ -373,6 +373,31 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
             >{{ item.name }}</Link>
           </div>
         </div>
+
+        <!--
+          Export Data, sitting directly under Reports because it answers the same
+          "take this with you" question the report pages do. Drawn as a top-level
+          row rather than a third group inside the disclosure: it is one page,
+          not a set of groupings, so giving it a group header of its own would be
+          a parent who labels a single child. It is the same font, spacing and
+          active fill as the rows above — presentation only, and only for the
+          people the route will let through: `canExportData` is the permission
+          resolved in HandleInertiaRequests, and a user without it sees no link
+          and would be refused here anyway.
+        -->
+        <template v-if="user?.canExportData">
+          <div class="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Export</div>
+          <Link
+            :href="route('export-data.index')"
+            class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
+            :class="route().current('export-data.*')
+              ? 'bg-teal-700 text-white'
+              : 'text-slate-400 hover:bg-white/5 hover:text-white'"
+            @click="open = false"
+          >
+            Export Data
+          </Link>
+        </template>
       </nav>
 
       <div class="shrink-0 px-4 py-4">

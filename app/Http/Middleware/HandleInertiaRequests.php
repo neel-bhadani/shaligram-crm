@@ -23,10 +23,10 @@ class HandleInertiaRequests extends Middleware
 
             'auth' => [
                 'user' => $user ? [
-                    'id'    => $user->id,
-                    'name'  => $user->display_name,
+                    'id' => $user->id,
+                    'name' => $user->display_name,
                     'email' => $user->email,
-                    'role'  => $user->role,
+                    'role' => $user->role,
                     /*
                      | Resolved server-side, because it is a permission and not
                      | a role: a sales manager granted see_all_leads is not an
@@ -38,6 +38,14 @@ class HandleInertiaRequests extends Middleware
                      | back, whatever the sidebar shows.
                      */
                     'seeAllLeads' => $user->can_('see_all_leads'),
+                    /*
+                     | The `export_data` permission, resolved server-side so the
+                     | sidebar can draw the Export Data link only for the people
+                     | the route will actually let through. The route itself is
+                     | the real door — this only keeps the link off a sidebar
+                     | that leads to a 403.
+                     */
+                    'canExportData' => $user->can_('export_data'),
                 ] : null,
             ],
 
@@ -62,22 +70,22 @@ class HandleInertiaRequests extends Middleware
             'alerts' => $user ? fn () => [
                 'unread' => app(AlertService::class)->unreadCount($user),
                 'recent' => app(AlertService::class)->recent($user)->map(fn ($alert) => [
-                    'id'         => $alert->id,
-                    'title'      => $alert->title,
-                    'body'       => $alert->body,
-                    'severity'   => $alert->severity,
-                    'read'       => $alert->read_at !== null,
+                    'id' => $alert->id,
+                    'title' => $alert->title,
+                    'body' => $alert->body,
+                    'severity' => $alert->severity,
+                    'read' => $alert->read_at !== null,
                     'created_at' => $alert->created_at?->toIso8601String(),
-                    'lead'       => $alert->lead?->full_name,
+                    'lead' => $alert->lead?->full_name,
                 ]),
             ] : null,
 
             // read once in AppLayout and shown as a toast
             'flash' => [
-                'success' => fn() => $request->session()->get('success'),
-                'error'   => fn() => $request->session()->get('error'),
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
                 // things the app decided on its own — an auto-lost lead, a handover
-                'warning' => fn() => $request->session()->get('warning'),
+                'warning' => fn () => $request->session()->get('warning'),
             ],
         ]);
     }
