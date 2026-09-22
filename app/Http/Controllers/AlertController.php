@@ -56,8 +56,38 @@ class AlertController extends Controller
         }
 
         return $alert->action_url
-            ? redirect()->to($alert->action_url)
+            ? redirect()->to($this->sameOriginUrl($alert->action_url))
             : back();
+    }
+
+    /**
+     * The stored destination, without the host that generated it.
+     *
+     * `action_url` is written as an absolute `route()` url when the alert is
+     * raised. Everywhere that happens the URL is pinned to whichever host the
+     * process was wired up to — the local `APP_URL` is `127.0.0.1`, so the
+     * alert points at `http://127.0.0.1:8000/...` even when the browser is
+     * standing on `localhost:8000`, and the front end follows this redirect
+     * through an XHR, where pointing at a different host is a cross-origin
+     * request the browser refuses outright.
+     *
+     * Only the path ever matters for navigation — the alert's job is to open a
+     * page, on whatever host the reader happens to be using. The query string
+     * still carries the payload (the lead's mobile, a pending-users filter), so
+     * it is kept; the scheme and host are not, which makes the redirect
+     * relative and therefore the reader's origin.
+     */
+    private function sameOriginUrl(string $url): string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+
+        if ($path === '') {
+            return $url;
+        }
+
+        $query = parse_url($url, PHP_URL_QUERY);
+
+        return $query ? $path.'?'.$query : $path;
     }
 
     public function readAll(Request $request)
