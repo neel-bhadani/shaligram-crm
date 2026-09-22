@@ -1,0 +1,306 @@
+{
+  "within_file_groups": [
+    {
+      "mobile_number": "8209328504",
+      "count": 3,
+      "projects": ["felicity"],
+      "same_project_more_than_once": ["felicity"],
+      "rows": [
+        {
+          "rank": 1,
+          "row_number": 18,
+          "name": "Monika Jain",
+          "project_key": "felicity",
+          "stage": "not_connected",
+          "created_at": "2026-09-14 05:10:39"
+        },
+        {
+          "rank": 2,
+          "row_number": 11,
+          "name": "Monika Jain",
+          "project_key": "felicity",
+          "stage": "not_connected",
+          "created_at": "2026-09-11 01:49:07"
+        },
+        {
+          "rank": 3,
+          "row_number": 3,
+          "name": "Monika Jain",
+          "project_key": "felicity",
+          "stage": "not_connected",
+          "created_at": "2026-09-02 03:59:49"
+        }
+      ]
+    },
+    {
+      "mobile_number": "9099477660",
+      "count": 2,
+      "projects": ["felicity"],
+      "same_project_more_than_once": ["felicity"],
+      "rows": [
+        {
+          "rank": 1,
+          "row_number": 14,
+          "name": "Mrunal Solucky",
+          "project_key": "felicity",
+          "stage": "lost",
+          "created_at": "2026-09-12 15:40:28"
+        },
+        {
+          "rank": 2,
+          "row_number": 2,
+          "name": "Mrunal Solucky",
+          "project_key": "felicity",
+          "stage": "not_connected",
+          "created_at": "2026-09-01 14:00:49"
+        }
+      ]
+    },
+    {
+      "mobile_number": "9879276073",
+      "count": 2,
+      "projects": ["felicity", "skydeck"],
+      "same_project_more_than_once": [],
+      "rows": [
+        {
+          "rank": 1,
+          "row_number": 13,
+          "name": "Jatin Germanwala",
+          "project_key": "felicity",
+          "stage": "lost",
+          "created_at": "2026-09-12 15:00:17"
+        },
+        {
+          "rank": 2,
+          "row_number": 39,
+          "name": "Jatin Germanwala",
+          "project_key": "skydeck",
+          "stage": "fresh",
+          "created_at": "2026-09-09 14:59:33"
+        }
+      ]
+    }
+  ],
+  "existing_db_conflicts": [
+    {
+      "row_number": 2,
+      "name": "Mrunal Solucky",
+      "mobile_number": "9099477660",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 1881,
+      "existing_stage": "fresh",
+      "existing_created_at": "2024-07-05 00:00:00",
+      "existing_name": "Mrunal solucky"
+    },
+    {
+      "row_number": 3,
+      "name": "Monika Jain",
+      "mobile_number": "8209328504",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 8982,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-25 01:33:17",
+      "existing_name": "Monika Jain"
+    },
+    {
+      "row_number": 6,
+      "name": "Sunil Vin",
+      "mobile_number": "9898303088",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 10986,
+      "existing_stage": "in_discussion",
+      "existing_created_at": "2026-09-03 15:16:00",
+      "existing_name": "Sunil Vin"
+    },
+    {
+      "row_number": 7,
+      "name": "Shivangi Chandarana",
+      "mobile_number": "9825096047",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 10314,
+      "existing_stage": "in_discussion",
+      "existing_created_at": "2026-06-01 17:19:10",
+      "existing_name": "Shivangi Chandarana"
+    },
+    {
+      "row_number": 8,
+      "name": "Vipul Shah",
+      "mobile_number": "9998876576",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 6678,
+      "existing_stage": "lost",
+      "existing_created_at": "2025-09-07 00:00:00",
+      "existing_name": "Vipul Shah"
+    },
+    {
+      "row_number": 9,
+      "name": "Monica Pachchigar",
+      "mobile_number": "8983251403",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 8249,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-02 00:00:00",
+      "existing_name": "Monica Pachchigar"
+    },
+    {
+      "row_number": 11,
+      "name": "Monika Jain",
+      "mobile_number": "8209328504",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 8982,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-25 01:33:17",
+      "existing_name": "Monika Jain"
+    },
+    {
+      "row_number": 12,
+      "name": "Divyesh Kapadia",
+      "mobile_number": "9727999389",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 11034,
+      "existing_stage": "fresh",
+      "existing_created_at": "2026-08-29 23:00:00",
+      "existing_name": "Divyesh Kapadia"
+    },
+    {
+      "row_number": 13,
+      "name": "Jatin Germanwala",
+      "mobile_number": "9879276073",
+      "project_key": "felicity",
+      "file_stage": "lost",
+      "existing_lead_id": 8860,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-23 13:51:13",
+      "existing_name": "Jatin Germanwala"
+    },
+    {
+      "row_number": 14,
+      "name": "Mrunal Solucky",
+      "mobile_number": "9099477660",
+      "project_key": "felicity",
+      "file_stage": "lost",
+      "existing_lead_id": 1881,
+      "existing_stage": "fresh",
+      "existing_created_at": "2024-07-05 00:00:00",
+      "existing_name": "Mrunal solucky"
+    },
+    {
+      "row_number": 15,
+      "name": "Shankar Nair",
+      "mobile_number": "7990973881",
+      "project_key": "felicity",
+      "file_stage": "lost",
+      "existing_lead_id": 6207,
+      "existing_stage": "lost",
+      "existing_created_at": "2025-08-14 00:00:00",
+      "existing_name": "Madhu Nair"
+    },
+    {
+      "row_number": 17,
+      "name": "Mitali Joshi",
+      "mobile_number": "9898563320",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 7602,
+      "existing_stage": "lost",
+      "existing_created_at": "2025-12-12 00:00:00",
+      "existing_name": "Mitali Joshi"
+    },
+    {
+      "row_number": 18,
+      "name": "Monika Jain",
+      "mobile_number": "8209328504",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 8982,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-25 01:33:17",
+      "existing_name": "Monika Jain"
+    },
+    {
+      "row_number": 19,
+      "name": "Shreyash Patel",
+      "mobile_number": "8460027947",
+      "project_key": "felicity",
+      "file_stage": "details_shared",
+      "existing_lead_id": 10640,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-07-04 23:56:15",
+      "existing_name": "Shreyash Patel"
+    },
+    {
+      "row_number": 20,
+      "name": "Showhost Shroff",
+      "mobile_number": "8733970333",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 9248,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-04-26 22:58:51",
+      "existing_name": "Trrupti Shroff"
+    },
+    {
+      "row_number": 22,
+      "name": "Dinesh Sachdev",
+      "mobile_number": "9687684009",
+      "project_key": "felicity",
+      "file_stage": "not_connected",
+      "existing_lead_id": 1917,
+      "existing_stage": "lost",
+      "existing_created_at": "2024-07-06 00:00:00",
+      "existing_name": "Dinesh Sachdev(D)"
+    },
+    {
+      "row_number": 24,
+      "name": "Bhagat NARESH",
+      "mobile_number": "9825159951",
+      "project_key": "skydeck",
+      "file_stage": "fresh",
+      "existing_lead_id": 10976,
+      "existing_stage": "fresh",
+      "existing_created_at": "2026-09-04 17:17:00",
+      "existing_name": "Nareshbhai Kahar"
+    },
+    {
+      "row_number": 39,
+      "name": "Jatin Germanwala",
+      "mobile_number": "9879276073",
+      "project_key": "skydeck",
+      "file_stage": "fresh",
+      "existing_lead_id": 8591,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-06-29 01:08:53",
+      "existing_name": "Jatin Germanwala(D)"
+    },
+    {
+      "row_number": 48,
+      "name": "Siddharth",
+      "mobile_number": "9429445245",
+      "project_key": "skydeck",
+      "file_stage": "fresh",
+      "existing_lead_id": 11347,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-08-08 00:48:00",
+      "existing_name": "Siddharth"
+    },
+    {
+      "row_number": 56,
+      "name": "Nikku Choksi",
+      "mobile_number": "9265600929",
+      "project_key": "skydeck",
+      "file_stage": "fresh",
+      "existing_lead_id": 6609,
+      "existing_stage": "lost",
+      "existing_created_at": "2025-09-04 00:00:00",
+      "existing_name": "Nikku Choksi"
+    }
+  ]
+}

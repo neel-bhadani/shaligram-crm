@@ -1,0 +1,54 @@
+{
+  "source_file": "lead_18_sep",
+  "import_key_prefix": "lead-18-sep",
+  "input_rows": 55,
+  "leads_out": 55,
+  "stage_breakdown_raw": {
+    "Not Connected": 15,
+    "Lost (Choice not available)": 1,
+    "Lost (Duplicate lead)": 1,
+    "Lost (Location Issue)": 1,
+    "Details Share": 3,
+    "Fresh": 34
+  },
+  "stage_breakdown_mapped": {
+    "not_connected": 15,
+    "lost": 3,
+    "details_shared": 3,
+    "fresh": 34
+  },
+  "project_breakdown": {
+    "Felicity": 21,
+    "Skydeck": 34
+  },
+  "assigned_role_breakdown": {
+    "telecaller": 55
+  },
+  "assigned_to_breakdown": {
+    "Riya Gandhi": 55
+  },
+  "unique_mobiles": 51,
+  "mobile_not_10_digits": [],
+  "mobile2_nonblank_count": 0,
+  "oldest_created_at": "2026-09-01 14:00:49",
+  "newest_created_at": "2026-09-16 10:37:11",
+  "within_file_duplicate_groups": 3,
+  "within_file_duplicate_rows": 7,
+  "within_file_same_project_conflicts": 2,
+  "existing_db_conflicts_count": 20,
+  "rows_to_create": 35,
+  "rows_to_skip_duplicate": 20,
+  "open_leads": 52,
+  "lost_leads": 3,
+  "to_create_by_stage": {
+    "not_connected": 3,
+    "details_shared": 2,
+    "fresh": 30
+  },
+  "to_skip_by_stage": {
+    "not_connected": 12,
+    "lost": 3,
+    "details_shared": 1,
+    "fresh": 4
+  }
+}
