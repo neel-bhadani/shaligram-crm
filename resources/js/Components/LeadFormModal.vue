@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
-import { useForm } from '@inertiajs/vue3'
+import { useForm, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
@@ -43,6 +43,23 @@ const blankFollowUp = { follow_up_type: 'call', follow_up_at: '', follow_up_rema
 
 const form = useForm({ ...blank, ...blankFollowUp })
 const duplicate = ref(null)
+
+/*
+ | A telecaller may open an existing lead and change its Stage and its Next
+ | follow-up — see LeadPolicy::update() and LeadRequest::restrictedToCoreDetails()
+ | — but not the lead's own core details. Locked only on an edit: a telecaller
+ | cannot reach this form with `lead` null in the first place, since `add_leads`
+ | gates the Add button that is the only way to open it blank.
+ |
+ | This is a courtesy, not the boundary — LeadRequest rejects a changed value
+ | on any of these fields server-side even if a crafted request disables
+ | nothing at all.
+ */
+const coreFieldsLocked = computed(() =>
+  usePage().props.auth.user.role === 'telecaller' && Boolean(props.lead))
+
+const lockedHint = computed(() =>
+  coreFieldsLocked.value ? 'Telecallers can update the stage and follow-up here, not this field.' : '')
 
 // the past-date guard on the follow-up field; the message matches the one
 // LeadRequest sends back, so a bypassed `min` reads the same either way
@@ -339,35 +356,36 @@ const submit = () => {
   <Modal :show="show" :title="lead ? 'Edit lead' : 'Add lead'" @close="emit('close')">
 
     <div class="grid gap-4 sm:grid-cols-3">
-      <FormField label="First name" required :error="form.errors.first_name">
-        <input v-model="form.first_name" type="text" />
+      <FormField label="First name" required :error="form.errors.first_name" :hint="lockedHint">
+        <input v-model="form.first_name" type="text" :disabled="coreFieldsLocked" />
       </FormField>
-      <FormField label="Middle name" :error="form.errors.middle_name">
-        <input v-model="form.middle_name" type="text" />
+      <FormField label="Middle name" :error="form.errors.middle_name" :hint="lockedHint">
+        <input v-model="form.middle_name" type="text" :disabled="coreFieldsLocked" />
       </FormField>
-      <FormField label="Last name" required :error="form.errors.last_name">
-        <input v-model="form.last_name" type="text" />
+      <FormField label="Last name" required :error="form.errors.last_name" :hint="lockedHint">
+        <input v-model="form.last_name" type="text" :disabled="coreFieldsLocked" />
       </FormField>
     </div>
 
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <FormField label="Mobile number" required :error="form.errors.mobile_number">
-        <input v-model="form.mobile_number" type="text" maxlength="10" inputmode="numeric" />
+      <FormField label="Mobile number" required :error="form.errors.mobile_number" :hint="lockedHint">
+        <input v-model="form.mobile_number" type="text" maxlength="10" inputmode="numeric"
+               :disabled="coreFieldsLocked" />
         <div v-if="duplicate" class="warn-box mt-2">{{ duplicate }}</div>
       </FormField>
-      <FormField label="Email" :error="form.errors.email">
-        <input v-model="form.email" type="email" />
+      <FormField label="Email" :error="form.errors.email" :hint="lockedHint">
+        <input v-model="form.email" type="email" :disabled="coreFieldsLocked" />
       </FormField>
     </div>
 
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <FormField label="Project" required :error="form.errors.project_id">
-        <select v-model="form.project_id">
+      <FormField label="Project" required :error="form.errors.project_id" :hint="lockedHint">
+        <select v-model="form.project_id" :disabled="coreFieldsLocked">
           <option v-for="p in projectOptions" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </FormField>
-      <FormField label="Source" required :error="form.errors.source">
-        <select v-model="form.source">
+      <FormField label="Source" required :error="form.errors.source" :hint="lockedHint">
+        <select v-model="form.source" :disabled="coreFieldsLocked">
           <option v-for="o in sourceOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
         </select>
       </FormField>

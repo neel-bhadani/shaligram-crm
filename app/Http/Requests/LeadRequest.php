@@ -19,6 +19,26 @@ class LeadRequest extends FormRequest
     use ValidatesTaxonomy;
 
     /**
+     * The lead's own core details — visible to a telecaller on this form, and
+     * the fields LeadPolicy::update() lets them THROUGH without letting them
+     * CHANGE. See restrictedToCoreDetails() and withValidator() below.
+     *
+     * Stage and the three follow-up fields are deliberately not here — a
+     * telecaller keeps full control of both, exactly as before this lock
+     * existed.
+     *
+     * `channel_partner_id`, `reason`, `booked_unit` and `requirement` are not
+     * here either: the first only ever matters when `source` does, which is
+     * already locked, and the other three are the direct consequence of a
+     * stage a telecaller IS trusted to set — locking them would let a
+     * telecaller move a lead to Lost without ever being able to say why.
+     */
+    private const TELECALLER_LOCKED_FIELDS = [
+        'first_name', 'middle_name', 'last_name',
+        'mobile_number', 'email', 'project_id', 'source',
+    ];
+
+    /**
      * Permissions, not roles.
      *
      * This used to read `in_array($this->user()->role, ['admin','salesperson'])`
@@ -44,13 +64,13 @@ class LeadRequest extends FormRequest
     {
         // the lead being edited, or null on store — the taxonomy rules below
         // need its current stage and source, not just its id
-        $lead   = $this->route('lead');
+        $lead = $this->route('lead');
         $leadId = $lead?->id;
 
         return [
-            'first_name'    => ['required', 'string', 'max:100'],
-            'middle_name'   => ['nullable', 'string', 'max:100'],
-            'last_name'     => ['required', 'string', 'max:100'],
+            'first_name' => ['required', 'string', 'max:100'],
+            'middle_name' => ['nullable', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
 
             /*
              | The index on the table is a plain unique (mobile_number,
@@ -79,15 +99,15 @@ class LeadRequest extends FormRequest
                 },
             ],
 
-            'email'         => ['nullable', 'email', 'max:150'],
-            'project_id'    => ['required', 'exists:projects,id'],
+            'email' => ['nullable', 'email', 'max:150'],
+            'project_id' => ['required', 'exists:projects,id'],
 
             /*
              | Active sources, plus whichever one this lead already carries —
              | see ValidatesTaxonomy. Without the second half, switching a
              | source off would make every lead ever filed under it uneditable.
              */
-            'source'        => ['required', $this->activeSourceRule($lead?->source)],
+            'source' => ['required', $this->activeSourceRule($lead?->source)],
 
             /*
              | `broker_name` IS NOT VALIDATED HERE ANY MORE, and that is the
@@ -142,14 +162,14 @@ class LeadRequest extends FormRequest
                 },
             ],
 
-            'stage'         => ['required', $this->activeStageRule($lead?->stage)],
-            'reason'        => [
+            'stage' => ['required', $this->activeStageRule($lead?->stage)],
+            'reason' => [
                 'nullable', 'required_if:stage,lost',
                 Rule::in(array_keys(config('crm.lost_reasons'))),
             ],
 
-            'requirement'   => ['nullable', 'string', 'max:100'],
-            'booked_unit'   => ['nullable', 'required_if:stage,booking_done', 'string', 'max:50'],
+            'requirement' => ['nullable', 'string', 'max:100'],
+            'booked_unit' => ['nullable', 'required_if:stage,booking_done', 'string', 'max:50'],
         ] + $this->followUpRules();
     }
 
@@ -193,9 +213,56 @@ class LeadRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'mobile_number.digits'         => 'Enter a 10 digit mobile number.',
-            'channel_partner_id.required'  => 'Choose the channel partner this lead came through.',
-            'reason.required_if'           => 'Select why this lead was lost.',
+            'mobile_number.digits' => 'Enter a 10 digit mobile number.',
+            'channel_partner_id.required' => 'Choose the channel partner this lead came through.',
+            'reason.required_if' => 'Select why this lead was lost.',
         ] + $this->followUpMessages();
+    }
+
+    /**
+     * True only on an update, and only for a telecaller LeadPolicy::update()
+     * let through without `edit_leads`. Everyone else who reaches this class
+     * already had every field to themselves, on both store and update, so
+     * this is the one case that needs a second check at all.
+     */
+    private function restrictedToCoreDetails(): bool
+    {
+        $lead = $this->route('lead');
+
+        return $lead !== null
+            && $this->user()->isTelecaller()
+            && ! $this->user()->can_('edit_leads');
+    }
+
+    /**
+     * The server-side half of the telecaller field lock. The form disables
+     * these inputs, but a disabled input is a UI courtesy, not a boundary —
+     * this is what actually stops a crafted request from posting a changed
+     * mobile number alongside a stage change, and it says so rather than
+     * failing silently or 500ing on a write the policy never meant to allow.
+     *
+     * Ordinary validation rules cannot express this: whether a field is
+     * "wrong" here depends on who is asking and on the row already in the
+     * database, not on the value's own shape — so it runs after the rules
+     * above, against the lead the request is bound to.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if (! $this->restrictedToCoreDetails()) {
+                return;
+            }
+
+            $lead = $this->route('lead');
+
+            foreach (self::TELECALLER_LOCKED_FIELDS as $field) {
+                if ((string) ($this->input($field) ?? '') !== (string) ($lead->{$field} ?? '')) {
+                    $validator->errors()->add(
+                        $field,
+                        'Telecallers can change the stage and the next follow-up here, not this field.'
+                    );
+                }
+            }
+        });
     }
 }

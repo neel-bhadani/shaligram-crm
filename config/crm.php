@@ -356,6 +356,21 @@ return [
     'country_code' => '+91',
 
     /*
+     | Export Data page. CSV and Excel stream in bounded memory and carry no
+     | row cap — capping them would just force a manual stitch of dozens of
+     | files, worse than the problem it solves, so both stay unlimited by
+     | design. PDF is a genuinely different problem: dompdf renders the whole
+     | document in memory, slows to a crawl by a few thousand rows and
+     | OOM-kills the process by ten thousand — so past this many rows a PDF
+     | export is not refused, it is paged, this many rows per file. A config
+     | value, not php.ini or a hardcoded number, so the page size can move
+     | without touching code.
+     */
+    'exports' => [
+        'pdf_row_limit' => 500,
+    ],
+
+    /*
     |--------------------------------------------------------------------------
     | Reports
     |--------------------------------------------------------------------------

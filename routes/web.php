@@ -7,6 +7,7 @@ use App\Http\Controllers\AutomationRuleController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ChannelPartnerController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ExportDataController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\MessageQueueController;
@@ -99,6 +100,28 @@ Route::middleware(['auth'])->group(function () {
      */
     Route::get('/reports/leads', [ReportController::class, 'leads'])->name('reports.leads');
     Route::get('/reports/followups', [ReportController::class, 'followUps'])->name('reports.followups');
+
+    /* ---------------- export data ---------------- */
+
+    /*
+     | One page, two routes. The GET renders the Export Data screen for anyone
+     | granted the `export_data` permission — the one toggle config had been
+     | carrying reserved. The POST is a plain form submission, not an Inertia
+     | visit: it validates the request, hands it to DataExporter, and answers
+     | with a binary file the browser downloads without the page moving.
+     |
+     | The permission is the whole gate — a telecaller with the toggle exports
+     | their own rows and nothing more, because each query inside DataExporter
+     | runs through Lead::scopeVisibleTo and Todo::scopeForUser, the same
+     | boundaries every page in the application uses. A salesperson who types
+     | /export-data without the toggle gets a 403, exactly as their sidebar
+     | already left the link out.
+     */
+    Route::get('/export-data', [ExportDataController::class, 'index'])->name('export-data.index');
+    Route::post('/export-data/download', [ExportDataController::class, 'download'])
+        ->name('export-data.download');
+    Route::post('/export-data/count', [ExportDataController::class, 'count'])
+        ->name('export-data.count');
 
     /* ---------------- users (admin only) ---------------- */
 
