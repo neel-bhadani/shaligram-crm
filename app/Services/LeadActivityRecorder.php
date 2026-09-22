@@ -7,6 +7,7 @@ use App\Models\LeadActivity;
 use App\Models\Todo;
 use App\Support\CrmTaxonomy;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 
 /**
  * The only writer of `lead_activities`.
@@ -158,6 +159,42 @@ class LeadActivityRecorder
     public function projectSwitched(Lead $lead, ?int $userId, int $from, int $to): void
     {
         $this->write($lead, $userId, LeadActivity::ProjectSwitched, 'project_id', $from, $to);
+    }
+
+    /**
+     * A pending follow-up's date/time was changed after it was booked — the
+     * Follow-ups page's reschedule form. Called before the to-do itself is
+     * updated, so `$from` is read off the row rather than off this call's
+     * argument order alone.
+     *
+     * Its own head row, never folded into whichever entry originally booked
+     * the follow-up: that entry keeps the date it was written with, and the
+     * person editing it now may not be the person who booked it.
+     */
+    public function followUpRescheduled(Todo $todo, ?int $userId, Carbon $from, Carbon $to): void
+    {
+        $this->write(
+            $todo->lead_id,
+            $userId,
+            LeadActivity::FollowUpRescheduled,
+            $todo->type,
+            $from->toDateTimeString(),
+            $to->toDateTimeString(),
+        );
+    }
+
+    /**
+     * A pending follow-up was called off before it happened.
+     */
+    public function followUpCancelled(Todo $todo, ?int $userId): void
+    {
+        $this->write(
+            $todo->lead_id,
+            $userId,
+            LeadActivity::FollowUpCancelled,
+            $todo->type,
+            $todo->scheduled_at->toDateTimeString(),
+        );
     }
 
     private function write(
