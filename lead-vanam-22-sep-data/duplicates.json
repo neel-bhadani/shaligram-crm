@@ -1,0 +1,16 @@
+{
+  "within_file_groups": [],
+  "existing_db_conflicts": [
+    {
+      "row_number": 28,
+      "name": "Pradip Prajapati",
+      "mobile_number": "9408846346",
+      "project_key": "vanam",
+      "file_stage": "fresh",
+      "existing_lead_id": 8365,
+      "existing_stage": "lost",
+      "existing_created_at": "2026-05-08 17:50:00",
+      "existing_name": "Pradip Prajapati"
+    }
+  ]
+}

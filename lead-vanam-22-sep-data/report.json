@@ -1,0 +1,54 @@
+{
+  "source_file": "lead_vanam_22_sep",
+  "import_key_prefix": "lead-vanam-22-sep",
+  "input_rows": 33,
+  "leads_out": 33,
+  "snapshot_or_incremental": "incremental",
+  "snapshot_analysis": {
+    "summary": "33-row batch postdating the already-imported old-data corpus (dates 2026-09-13 .. 2026-09-22). Compared against old-data/leads.json, lead-18-sep-data/leads.json and a live tinker read of leads: exactly one (mobile, Vanam) pair already exists in the database (#9408846346, stage lost), so 32 rows are new and 1 is a duplicate. No within-file duplicate mobiles.",
+    "overlap_with_old_data_mobiles": [
+      "9408846346"
+    ],
+    "overlap_with_lead_18_sep_mobiles": [
+      "8733970333"
+    ]
+  },
+  "follow_up_date": "2026-09-23",
+  "follow_up_time_source_counts": {
+    "fallback_excel_has_no_time_column": 33
+  },
+  "follow_ups_to_create": 32,
+  "stage_breakdown_raw": {
+    "Fresh": 33
+  },
+  "stage_breakdown_mapped": {
+    "fresh": 33
+  },
+  "project_breakdown": {
+    "Vanam": 33
+  },
+  "assigned_role_breakdown": {
+    "telecaller": 33
+  },
+  "assigned_to_breakdown": {
+    "Riya Gandhi": 33
+  },
+  "unique_mobiles": 33,
+  "mobile_not_10_digits": [],
+  "mobile2_nonblank_count": 0,
+  "oldest_created_at": "2026-09-13 00:00:00",
+  "newest_created_at": "2026-09-22 00:00:00",
+  "within_file_duplicate_groups": 0,
+  "within_file_duplicate_rows": 0,
+  "existing_db_conflicts_count": 1,
+  "rows_to_create": 32,
+  "rows_to_skip_duplicate": 1,
+  "open_leads": 33,
+  "lost_leads": 0,
+  "to_create_by_stage": {
+    "fresh": 32
+  },
+  "to_skip_by_stage": {
+    "fresh": 1
+  }
+}
