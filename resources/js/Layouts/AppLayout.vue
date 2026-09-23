@@ -59,7 +59,11 @@ const navGroups = computed(() => [
     label: 'Daily work',
     items: [
       { name: 'Dashboard', href: route('dashboard'), active: route().current('dashboard') },
-      { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') },
+      { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') && !route().current('leads.import*') },
+      // Bulk import also requires an admin or salesperson role.
+      ...(user.value?.canImportLeads
+        ? [{ name: 'Bulk Import Leads', href: route('leads.import'), active: route().current('leads.import') }]
+        : []),
       /*
        | Channel Partners sits here, next to Leads, rather than in Manage
        | beside Projects and Users, because it is read, edited and merged by

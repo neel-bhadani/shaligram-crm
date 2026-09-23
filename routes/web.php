@@ -10,6 +10,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExportDataController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\LeadController;
+use App\Http\Controllers\LeadImportController;
 use App\Http\Controllers\MessageQueueController;
 use App\Http\Controllers\MessageTemplateController;
 use App\Http\Controllers\PipelineController;
@@ -28,6 +29,23 @@ Route::middleware(['auth'])->group(function () {
     /* ---------------- leads ---------------- */
 
     Route::get('/leads', [LeadController::class, 'index'])->name('leads.index');
+
+    /*
+     | Ahead of `/leads/{lead}` on purpose — that route has no numeric
+     | constraint, so "import" would otherwise resolve as a lead route key
+     | and 404 before ever reaching this controller.
+     */
+    Route::get('/leads/import', [LeadImportController::class, 'create'])->name('leads.import');
+    Route::post('/leads/import/upload', [LeadImportController::class, 'upload'])->name('leads.import.upload');
+    Route::post('/leads/import/preview', [LeadImportController::class, 'preview'])->name('leads.import.preview');
+    Route::post('/leads/import/sheet', [LeadImportController::class, 'sheet'])->name('leads.import.sheet');
+    Route::post('/leads/import/final-preview', [LeadImportController::class, 'finalPreview'])->name('leads.import.final-preview');
+    Route::post('/leads/import/exclude', [LeadImportController::class, 'exclude'])->name('leads.import.exclude');
+    Route::post('/leads/import/restore', [LeadImportController::class, 'restore'])->name('leads.import.restore');
+    Route::post('/leads/import/cancel', [LeadImportController::class, 'cancel'])->name('leads.import.cancel');
+    Route::get('/leads/import/download', [LeadImportController::class, 'download'])->name('leads.import.download');
+    Route::post('/leads/import/chunk', [LeadImportController::class, 'import'])->name('leads.import.chunk');
+
     Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
     Route::post('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])
         ->name('leads.check-duplicate');

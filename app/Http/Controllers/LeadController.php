@@ -13,6 +13,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Services\LeadActivityRecorder;
 use App\Services\LeadAssignmentService;
+use App\Services\LeadCreationService;
 use App\Services\LeadFollowUpService;
 use App\Services\LeadTimeline;
 use App\Support\CrmTaxonomy;
@@ -39,6 +40,7 @@ class LeadController extends Controller
         private LeadAssignmentService $assignment,
         private LeadActivityRecorder $activities,
         private LeadTimeline $timeline,
+        private LeadCreationService $creation,
     ) {}
 
     public function index(Request $request)
@@ -189,46 +191,12 @@ class LeadController extends Controller
          | application would notice.
          */
         try {
-            DB::transaction(function () use ($request, $user) {
-                /*
-                 | Routed by the stage and project being saved, not by who is
-                 | saving it — see LeadAssignmentService, which the handover
-                 | asks as well. Never taken from the form: LeadRequest has no
-                 | `assigned_to` rule, so a posted one is not in validated() and
-                 | cannot reach the row.
-                 |
-                 | Inside the transaction, so the project's round robin turn is
-                 | taken under its lock and an insert that fails below gives
-                 | the turn back.
-                 |
-                 | Never null here: the creator is the fallback when a desk is
-                 | empty.
-                 */
-                $owner = $this->assignment->ownerFor(
-                    $request->input('stage'),
-                    $user,
-                    (int) $request->input('project_id'),
-                );
-
-                // the follow-up fields ride in on the same form and are not
-                // columns on the lead; they are the to-do about to be created
-                $lead = Lead::create($this->leadAttributes($request) + [
-                    'assigned_to' => $owner->id,
-                    // the role of the person it landed on — not the role the
-                    // stage asked for, and not the creator's
-                    'assigned_role' => $owner->role,
-                    'created_by' => $user->id,
-                    'stage_changed_at' => now(),
-                    'last_activity_at' => now(),
-                ]);
-
-                $this->service->onLeadCreated(
-                    $lead,
-                    $this->followUpAt($request),
-                    $request->input('follow_up_type'),
-                    $request->input('follow_up_remarks'),
-                );
-            });
+            $this->creation->create(
+                $this->leadAttributes($request), $user, $user,
+                $this->followUpAt($request),
+                $request->input('follow_up_type'),
+                $request->input('follow_up_remarks'),
+            );
         } catch (UniqueConstraintViolationException $e) {
             throw $this->duplicateMobile();
         }

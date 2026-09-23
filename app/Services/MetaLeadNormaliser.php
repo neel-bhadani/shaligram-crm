@@ -40,7 +40,7 @@ class MetaLeadNormaliser
              */
             Log::info('[integration:facebook] unrecognised lead form fields', [
                 'leadgen_id' => $leadgenId,
-                'fields'     => $unrecognised,
+                'fields' => $unrecognised,
             ]);
         }
 
@@ -55,11 +55,11 @@ class MetaLeadNormaliser
         [$first, $last] = $this->names($values);
 
         return [
-            'first_name'    => $first,
-            'last_name'     => $last,
+            'first_name' => $first,
+            'last_name' => $last,
             'mobile_number' => $phone,
-            'email'         => $values['email'] ?? null,
-            'unrecognised'  => $unrecognised,
+            'email' => $values['email'] ?? null,
+            'unrecognised' => $unrecognised,
         ];
     }
 
@@ -72,8 +72,8 @@ class MetaLeadNormaliser
      */
     private function bucket(array $fieldData): array
     {
-        $aliases      = config('integrations.meta.field_aliases');
-        $values       = [];
+        $aliases = config('integrations.meta.field_aliases');
+        $values = [];
         $unrecognised = [];
 
         foreach ($fieldData as $field) {
@@ -89,6 +89,7 @@ class MetaLeadNormaliser
 
             if ($bucket === null) {
                 $unrecognised[] = $name;
+
                 continue;
             }
 
@@ -133,9 +134,10 @@ class MetaLeadNormaliser
      * A first and last name out of whatever the form asked for.
      *
      * `first_name`/`last_name` win when the form asked separately; otherwise
-     * `full_name` is split on the first space, everything after it being the
-     * last name — "Bhavesh Kumar Bhatt" is a person whose last name is "Kumar
-     * Bhatt" far more often than it is a middle name the CRM should guess at.
+     * `full_name` is split through the same three-part rule the bulk importer
+     * uses, then the middle is folded back onto the last name — "Bhavesh Kumar
+     * Bhatt" is a person whose last name is "Kumar Bhatt" far more often than
+     * it is a middle name the CRM should guess at.
      *
      * An empty last name is allowed and is not a hole: `leads.last_name` is NOT
      * NULL but takes an empty string, and Lead::getFullNameAttribute() builds
@@ -148,12 +150,11 @@ class MetaLeadNormaliser
     private function names(array $values): array
     {
         $first = $values['first_name'] ?? null;
-        $last  = $values['last_name'] ?? null;
+        $last = $values['last_name'] ?? null;
 
         if ($first === null && isset($values['full_name'])) {
-            $parts = preg_split('/\s+/', trim($values['full_name']), 2);
-            $first = $parts[0] ?? null;
-            $last ??= $parts[1] ?? '';
+            [$first, $middle, $lastPart] = $this->splitNameParts($values['full_name']);
+            $last ??= trim($middle !== '' ? $middle.' '.$lastPart : $lastPart);
         }
 
         return [
@@ -162,6 +163,33 @@ class MetaLeadNormaliser
             $first !== null && $first !== '' ? $first : 'Facebook lead',
             (string) ($last ?? ''),
         ];
+    }
+
+    /**
+     * Split a full name into its first, middle and last parts.
+     *
+     * One word is a first name; two are first + last; three are first + middle
+     * + last; four or more keep everything between the ends as the middle name,
+     * because dropping prefixes or suffixes ("Mr.", "Jr.") loses information
+     * the person wrote down. Whitespace is trimmed and no token is discarded.
+     *
+     * Shared by the Meta import (which folds the middle back into the last
+     * name) and the bulk importer, so one column of names is parsed one way
+     * across the whole application.
+     *
+     * @return array{0: string, 1: string, 2: string}
+     */
+    public function splitNameParts(string $fullName): array
+    {
+        $parts = array_values(array_filter(preg_split('/\s+/', trim($fullName)) ?: [], fn (string $part): bool => $part !== ''));
+
+        return match (count($parts)) {
+            0 => ['', '', ''],
+            1 => [$parts[0], '', ''],
+            2 => [$parts[0], '', $parts[1]],
+            3 => [$parts[0], $parts[1], $parts[2]],
+            default => [$parts[0], implode(' ', array_slice($parts, 1, -1)), $parts[count($parts) - 1]],
+        };
     }
 
     /**
@@ -177,8 +205,12 @@ class MetaLeadNormaliser
      *
      * Fewer than ten digits is not a number this application can dial, so it
      * is rejected rather than padded.
+     *
+     * Public so the bulk lead importer (App\Services\LeadImport\LeadImportPlanner)
+     * can clean a file's phone column with the exact same rule a Meta lead's
+     * phone answer gets — one definition of "a usable number", not two.
      */
-    private function phone(?string $raw): ?string
+    public function phone(?string $raw): ?string
     {
         $digits = preg_replace('/\D/', '', (string) $raw);
 

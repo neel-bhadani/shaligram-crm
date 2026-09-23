@@ -46,6 +46,8 @@ class HandleInertiaRequests extends Middleware
                      | that leads to a 403.
                      */
                     'canExportData' => $user->can_('export_data'),
+                    // Bulk import requires both manual-create permission and an allowed role.
+                    'canImportLeads' => $user->is_active && in_array($user->role, ['admin', 'salesperson'], true) && $user->can_('add_leads'),
                 ] : null,
             ],
 

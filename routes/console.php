@@ -34,3 +34,5 @@ Schedule::command('automation:run')
     ->hourly()
     ->withoutOverlapping()
     ->runInBackground();
+
+Schedule::command('leads:prune-imports')->hourly()->withoutOverlapping();
