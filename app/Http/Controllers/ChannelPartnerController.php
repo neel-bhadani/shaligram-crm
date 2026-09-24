@@ -8,9 +8,11 @@ use App\Http\Requests\MergeChannelPartnerRequest;
 use App\Http\Requests\QuickChannelPartnerRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
+use App\Support\RecordSearch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -120,24 +122,14 @@ class ChannelPartnerController extends Controller
     /** The roster, as the page draws it. `adding` opens the create modal. */
     private function page(Request $request, bool $adding = false)
     {
-        $user    = $request->user();
+        $user = $request->user();
         $filters = $this->filters($request);
 
         $partners = ChannelPartner::query()
             // the Parent firm column, and the appended display_label that
             // reads it — without this the page is a query a row
             ->with('parent:id,name')
-            ->when($filters['search'] ?? null, function ($q, $s) {
-                $q->where(function ($w) use ($s) {
-                    $w->where('name', 'like', "%$s%")
-                        ->orWhere('contact_person', 'like', "%$s%")
-                        ->orWhere('phone', 'like', "%$s%")
-                        ->orWhere('alt_phone', 'like', "%$s%")
-                        ->orWhere('email', 'like', "%$s%")
-                        // "show me Shreeji Realty and everyone under it"
-                        ->orWhereHas('parent', fn ($p) => $p->where('name', 'like', "%$s%"));
-                });
-            })
+            ->tap(fn (Builder $q) => RecordSearch::channelPartners($q, $filters['search'] ?? null))
             ->when($filters['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
             ->when(
                 // 'all' is absence; the two real values are strings because
@@ -198,30 +190,30 @@ class ChannelPartnerController extends Controller
              */
             ->orderByRaw("CASE type WHEN 'firm' THEN 0 ELSE 1 END")
             ->orderBy('name')
-            ->paginate(15)
+            ->paginate(15)->appends(['reset' => 1] + $filters)
             ->through(fn (ChannelPartner $p) => [
-                'id'             => $p->id,
-                'name'           => $p->name,
-                'display_label'  => $p->display_label,
-                'type'           => $p->type,
-                'parent_id'      => $p->parent_id,
-                'parent_name'    => $p->parent?->name,
+                'id' => $p->id,
+                'name' => $p->name,
+                'display_label' => $p->display_label,
+                'type' => $p->type,
+                'parent_id' => $p->parent_id,
+                'parent_name' => $p->parent?->name,
                 'contact_person' => $p->contact_person,
-                'phone'          => $p->phone,
-                'alt_phone'      => $p->alt_phone,
-                'email'          => $p->email,
-                'address'        => $p->address,
-                'is_active'      => $p->is_active,
-                'leads_count'          => $p->leads_count,
-                'bookings_count'       => $p->bookings_count,
-                'brokers_count'        => $p->brokers_count,
+                'phone' => $p->phone,
+                'alt_phone' => $p->alt_phone,
+                'email' => $p->email,
+                'address' => $p->address,
+                'is_active' => $p->is_active,
+                'leads_count' => $p->leads_count,
+                'bookings_count' => $p->bookings_count,
+                'brokers_count' => $p->brokers_count,
                 'active_brokers_count' => $p->active_brokers_count,
             ]);
 
         return Inertia::render('ChannelPartners/Index', [
             'partners' => $partners,
-            'filters'  => $filters,
-            'options'  => [
+            'filters' => $filters,
+            'options' => [
                 'types' => config('crm.channel_partner_types'),
                 /*
                  | Active firms, for the modal's parent dropdown and for the
@@ -256,9 +248,9 @@ class ChannelPartnerController extends Controller
                     ->orderBy('name')
                     ->get(['id', 'name', 'type', 'parent_id'])
                     ->map(fn (ChannelPartner $p) => [
-                        'id'    => $p->id,
+                        'id' => $p->id,
                         'label' => $p->display_label,
-                        'type'  => $p->type,
+                        'type' => $p->type,
                     ]),
             ],
             'adding' => $adding,
@@ -272,9 +264,9 @@ class ChannelPartnerController extends Controller
             $request,
             'channel-partners',
             [
-                'search'    => ['sometimes', 'string', 'max:100'],
-                'type'      => ['sometimes', 'string', Rule::in(array_keys(config('crm.channel_partner_types')))],
-                'status'    => ['sometimes', 'string', 'in:active,inactive'],
+                'search' => ['sometimes', 'string', 'max:100'],
+                'type' => ['sometimes', 'string', Rule::in(array_keys(config('crm.channel_partner_types')))],
+                'status' => ['sometimes', 'string', 'in:active,inactive'],
                 'parent_id' => ['sometimes', 'integer', 'min:1'],
             ],
         );
@@ -380,10 +372,10 @@ class ChannelPartnerController extends Controller
     private function partnerOption(ChannelPartner $partner): array
     {
         return [
-            'id'    => $partner->id,
-            'name'  => $partner->name,
+            'id' => $partner->id,
+            'name' => $partner->name,
             'label' => $partner->display_label,
-            'type'  => $partner->type,
+            'type' => $partner->type,
         ];
     }
 
@@ -503,10 +495,10 @@ class ChannelPartnerController extends Controller
          | it from the database, and leaving it pointing at a merged-away row
          | would be the one lead in the table that disagreed with the rest.
          */
-        $notice = "{$moved['leads']} lead" . ($moved['leads'] === 1 ? '' : 's')
-            . " moved to {$target->name}."
-            . ($moved['brokers'] > 0
-                ? " {$moved['brokers']} broker" . ($moved['brokers'] === 1 ? '' : 's') . ' moved with it.'
+        $notice = "{$moved['leads']} lead".($moved['leads'] === 1 ? '' : 's')
+            ." moved to {$target->name}."
+            .($moved['brokers'] > 0
+                ? " {$moved['brokers']} broker".($moved['brokers'] === 1 ? '' : 's').' moved with it.'
                 : '');
 
         return back()
@@ -525,8 +517,8 @@ class ChannelPartnerController extends Controller
 
         if ($partner->isFirm() && $active > 0) {
             throw ValidationException::withMessages([
-                'partner' => "This firm has {$active} active broker" . ($active === 1 ? '' : 's')
-                    . ' filed under it. Reassign or deactivate them first.',
+                'partner' => "This firm has {$active} active broker".($active === 1 ? '' : 's')
+                    .' filed under it. Reassign or deactivate them first.',
             ]);
         }
 

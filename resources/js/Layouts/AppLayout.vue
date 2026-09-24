@@ -60,10 +60,6 @@ const navGroups = computed(() => [
     items: [
       { name: 'Dashboard', href: route('dashboard'), active: route().current('dashboard') },
       { name: 'Leads',     href: route('leads.index'), active: route().current('leads.*') && !route().current('leads.import*') },
-      // Bulk import also requires an admin or salesperson role.
-      ...(user.value?.canImportLeads
-        ? [{ name: 'Bulk Import Leads', href: route('leads.import'), active: route().current('leads.import') }]
-        : []),
       /*
        | Channel Partners sits here, next to Leads, rather than in Manage
        | beside Projects and Users, because it is read, edited and merged by
@@ -379,19 +375,28 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
         </div>
 
         <!--
-          Export Data, sitting directly under Reports because it answers the same
-          "take this with you" question the report pages do. Drawn as a top-level
-          row rather than a third group inside the disclosure: it is one page,
-          not a set of groupings, so giving it a group header of its own would be
-          a parent who labels a single child. It is the same font, spacing and
-          active fill as the rows above — presentation only, and only for the
-          people the route will let through: `canExportData` is the permission
-          resolved in HandleInertiaRequests, and a user without it sees no link
-          and would be refused here anyway.
+          The Export group, sitting directly under Reports because both pages
+          answer the same "take this with you" question the report pages do.
+          Drawn as top-level rows rather than a third group inside the
+          disclosure: each is one page, not a set of groupings, so giving the
+          group a header per row would be a parent who labels a single child.
+          They are the same font, spacing and active fill as the rows above —
+          presentation only, and only for the people the routes will let
+          through: `canExportData` and `canImportLeads` are the permissions
+          resolved in HandleInertiaRequests, and a user without them sees no
+          link and would be refused here anyway. The header only renders when
+          at least one of the two rows is visible.
+
+          Bulk Import Leads lives here rather than under Daily work because it
+          is not a page read every day: it is a one-off import you run and then
+          leave. Its own route gate is independent of Export Data's, so the two
+          rows are each gated on their own permission and the header survives
+          when only one shows.
         -->
-        <template v-if="user?.canExportData">
+        <template v-if="user?.canExportData || user?.canImportLeads">
           <div class="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Export</div>
           <Link
+            v-if="user?.canExportData"
             :href="route('export-data.index')"
             class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
             :class="route().current('export-data.*')
@@ -400,6 +405,17 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
             @click="open = false"
           >
             Export Data
+          </Link>
+          <Link
+            v-if="user?.canImportLeads"
+            :href="route('leads.import')"
+            class="mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition-colors"
+            :class="route().current('leads.import')
+              ? 'bg-teal-700 text-white'
+              : 'text-slate-400 hover:bg-white/5 hover:text-white'"
+            @click="open = false"
+          >
+            Bulk Import Leads
           </Link>
         </template>
       </nav>

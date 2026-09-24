@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Support\CrmTaxonomy;
+use App\Support\RecordSearch;
 use Dompdf\Dompdf;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -347,16 +348,7 @@ class DataExporter
             ->with('parent:id,name');
 
         return $query
-            ->when($f['search'] ?? null, function ($q, $s) {
-                $q->where(function ($w) use ($s) {
-                    $w->where('name', 'like', "%$s%")
-                        ->orWhere('contact_person', 'like', "%$s%")
-                        ->orWhere('phone', 'like', "%$s%")
-                        ->orWhere('alt_phone', 'like', "%$s%")
-                        ->orWhere('email', 'like', "%$s%")
-                        ->orWhereHas('parent', fn ($p) => $p->where('name', 'like', "%$s%"));
-                });
-            })
+            ->tap(fn (Builder $q) => RecordSearch::channelPartners($q, $f['search'] ?? null))
             ->when($f['type'] ?? null, fn ($q, $v) => $q->where('type', $v))
             ->when(
                 isset($f['status']),

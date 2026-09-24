@@ -11,6 +11,8 @@ use App\Models\Todo;
 use App\Models\User;
 use App\Services\AlertService;
 use App\Support\CrmTaxonomy;
+use App\Support\RecordSearch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -62,7 +64,7 @@ class ProjectController extends Controller
         $user = $request->user();
 
         $projects = Project::query()
-            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where('name', 'like', "%$s%"))
+            ->tap(fn (Builder $q) => RecordSearch::apply($q, $filters['search'] ?? null, ['name'], ['name']))
             ->when(
                 // 'all' is absence; the two real values are the strings a
                 // <select> sends, exactly as the Users page does it
@@ -97,7 +99,7 @@ class ProjectController extends Controller
             ])
             ->orderByDesc('is_active')
             ->orderBy('name')
-            ->paginate(15)
+            ->paginate(15)->appends(['reset' => 1] + $filters)
             ->through(fn (Project $p) => [
                 'id' => $p->id,
                 'name' => $p->name,

@@ -75,6 +75,8 @@ export function useDebouncedFilters(fields, push, delay = 300) {
     let timer
     let skip = false
 
+    onUnmounted(() => clearTimeout(timer))
+
     watch(fields, () => {
         if (skip) return
 

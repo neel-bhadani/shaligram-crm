@@ -17,6 +17,7 @@ use App\Services\LeadCreationService;
 use App\Services\LeadFollowUpService;
 use App\Services\LeadTimeline;
 use App\Support\CrmTaxonomy;
+use App\Support\RecordSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -68,14 +69,9 @@ class LeadController extends Controller
          | along for the same ride.
          */
         $base = fn () => Lead::visibleTo($user)
-            ->when($filters['search'] ?? null, function ($q, $s) {
-                $q->where(function ($w) use ($s) {
-                    $w->where('first_name', 'like', "%$s%")
-                        ->orWhere('last_name', 'like', "%$s%")
-                        ->orWhere('mobile_number', 'like', "%$s%")
-                        ->orWhere('email', 'like', "%$s%");
-                });
-            })
+            ->tap(fn (Builder $q) => RecordSearch::apply($q, $filters['search'] ?? null,
+                ['first_name', 'middle_name', 'last_name', 'mobile_number', 'email'],
+                ['first_name', 'middle_name', 'last_name'], ['mobile_number']))
             ->when($filters['project_id'] ?? null, fn ($q, $v) => $q->where('project_id', $v))
             ->when($filters['source'] ?? null, fn ($q, $v) => $q->where('source', $v))
             // where the leads report's "By channel partner" rows drill through to
@@ -107,9 +103,8 @@ class LeadController extends Controller
                 'channelPartner.parent:id,name',
             ])
             ->latest()
-            // no withQueryString(): the filters are in the session now, so a
-            // page link carries nothing but its page number
-            ->paginate(15);
+            // Carry this view’s filters so another tab cannot change pagination results.
+            ->paginate(15)->appends(['reset' => 1] + $filters);
 
         return Inertia::render('Leads/Index', [
             'leads' => $leads,

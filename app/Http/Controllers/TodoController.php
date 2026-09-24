@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\LeadActivityRecorder;
 use App\Services\LeadFollowUpService;
 use App\Support\CrmTaxonomy;
+use App\Support\RecordSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
@@ -70,13 +71,10 @@ class TodoController extends Controller
             Todo::forUser($user)
                 // a deleted lead takes its rows off this page with it
                 ->hasLead()
-                ->when($filters['search'] ?? null, function ($q, $s) {
-                    $q->whereHas('lead', function ($w) use ($s) {
-                        $w->where('first_name', 'like', "%$s%")
-                            ->orWhere('last_name', 'like', "%$s%")
-                            ->orWhere('mobile_number', 'like', "%$s%");
-                    });
-                })
+                ->when(isset($filters['search']), fn (Builder $q) => $q->whereHas('lead',
+                    fn (Builder $lead) => RecordSearch::apply($lead, $filters['search'],
+                        ['first_name', 'middle_name', 'last_name', 'mobile_number'],
+                        ['first_name', 'middle_name', 'last_name'], ['mobile_number'])))
                 ->when($filters['assigned_to'] ?? null, fn ($q, $v) => $q->where('assigned_to', $v)),
             $tab,
             $from,
@@ -113,9 +111,8 @@ class TodoController extends Controller
             : $rows->orderBy('scheduled_at');
 
         return Inertia::render('Todos/Index', [
-            // no withQueryString(): the filters are in the session now, so a
-            // page link carries nothing but its page number
-            'todos' => $rows->paginate(15),
+            // Carry this view’s filters so another tab cannot change pagination results.
+            'todos' => $rows->paginate(15)->appends(['reset' => 1] + $filters),
             'tab' => $tab,
             /*
              | The tab badges, and they are deliberately not the chips. They

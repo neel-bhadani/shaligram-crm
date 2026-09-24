@@ -270,15 +270,15 @@ let countSeq = 0
 
 const fetchCount = async () => {
   clearTimeout(countTimer)
+  const seq = ++countSeq
 
   // the count is about to change, so any PDF pagination in progress against
   // the old count no longer means anything — back to page 1
   pdfNextPage.value = 1
 
   // an invalid date pair is never worth counting — the server would 422 it
-  if (dateError.value) { matchingCount.value = null; return }
+  if (dateError.value) { matchingCount.value = null; counting.value = false; return }
 
-  const seq = ++countSeq
   counting.value = true
 
   try {
@@ -293,6 +293,9 @@ const fetchCount = async () => {
 
 const scheduleCount = () => {
   clearTimeout(countTimer)
+  countSeq++
+  matchingCount.value = null
+  counting.value = true
   countTimer = window.setTimeout(fetchCount, 300)
 }
 
@@ -311,7 +314,10 @@ watch(() => [
 ], scheduleCount)
 
 onMounted(fetchCount)
-onBeforeUnmount(() => clearTimeout(countTimer))
+onBeforeUnmount(() => {
+  clearTimeout(countTimer)
+  countSeq++
+})
 </script>
 
 <template>
