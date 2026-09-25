@@ -8,6 +8,8 @@ use App\Http\Requests\UserRequest;
 use App\Models\User;
 use App\Services\AlertService;
 use App\Services\UserHandoverService;
+use App\Support\RecordSearch;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -38,14 +40,9 @@ class UserController extends Controller
          | of users instead of N round trips.
          */
         $users = User::query()
-            ->when($filters['search'] ?? null, function ($q, $s) {
-                $q->where(function ($w) use ($s) {
-                    $w->where('first_name', 'like', "%$s%")
-                        ->orWhere('last_name', 'like', "%$s%")
-                        ->orWhere('email', 'like', "%$s%")
-                        ->orWhere('mobile_number', 'like', "%$s%");
-                });
-            })
+            ->tap(fn (Builder $q) => RecordSearch::apply($q, $filters['search'] ?? null,
+                ['first_name', 'last_name', 'email', 'mobile_number'],
+                ['first_name', 'last_name'], ['mobile_number']))
             ->when($filters['role'] ?? null, fn ($q, $v) => $q->where('role', $v))
             /*
              | Four statuses, and every row is in exactly one. 'all' is
@@ -54,7 +51,7 @@ class UserController extends Controller
              | looked at yet, which is Pending and asks for a different action.
              */
             ->when($filters['status'] ?? null, fn ($q, $status) => match ($status) {
-                'active'   => $q->where('is_active', true),
+                'active' => $q->where('is_active', true),
                 'inactive' => $q->where('is_active', false)->approved(),
                 'pending', 'rejected' => $q->where('approval_status', $status),
             })
@@ -68,21 +65,21 @@ class UserController extends Controller
             ->orderByRaw("CASE approval_status WHEN 'pending' THEN 0 ELSE 1 END")
             ->orderByRaw("CASE role WHEN 'admin' THEN 0 WHEN 'salesperson' THEN 1 ELSE 2 END")
             ->orderBy('first_name')
-            ->paginate(15)
+            ->paginate(15)->appends(['reset' => 1] + $filters)
             ->through(fn (User $u) => [
-                'id'            => $u->id,
-                'display_name'  => $u->display_name,
-                'first_name'    => $u->first_name,
-                'last_name'     => $u->last_name,
-                'email'         => $u->email,
+                'id' => $u->id,
+                'display_name' => $u->display_name,
+                'first_name' => $u->first_name,
+                'last_name' => $u->last_name,
+                'email' => $u->email,
                 'mobile_number' => $u->mobile_number,
-                'role'          => $u->role,
-                'is_active'     => $u->is_active,
+                'role' => $u->role,
+                'is_active' => $u->is_active,
                 'approval_status' => $u->approval_status,
                 // when a pending request came in; the badge says how long it has waited
-                'signed_up_on'  => $u->created_at?->format('j M Y'),
-                'open_leads_count'     => $u->open_leads_count,
-                'pending_todos_count'  => $u->pending_todos_count,
+                'signed_up_on' => $u->created_at?->format('j M Y'),
+                'open_leads_count' => $u->open_leads_count,
+                'pending_todos_count' => $u->pending_todos_count,
                 'advanced_leads_count' => $u->advanced_leads_count,
                 /*
                  | Resolved, not raw. The modal shows the value in force, so a
@@ -90,20 +87,20 @@ class UserController extends Controller
                  | rather than five blanks — and saving them writes exactly
                  | what was on screen.
                  */
-                'permissions'   => $u->effectivePermissions(),
+                'permissions' => $u->effectivePermissions(),
                 // null until somebody opens the permissions tab; the table
                 // uses it to say "role defaults" rather than "customised"
                 'has_custom_permissions' => $u->permissions !== null,
             ]);
 
         return Inertia::render('Users/Index', [
-            'users'   => $users,
+            'users' => $users,
             'filters' => $filters,
             'options' => [
                 // every role, for the filter and the table's label lookup
-                'roleLabels'  => config('crm.role_labels'),
+                'roleLabels' => config('crm.role_labels'),
                 // the two this screen may hand out; admin is not among them
-                'staffRoles'  => config('crm.staff_roles'),
+                'staffRoles' => config('crm.staff_roles'),
                 'permissions' => config('crm.permissions'),
                 'permissionDefaults' => config('crm.permission_defaults'),
                 /*
@@ -112,17 +109,17 @@ class UserController extends Controller
                  | itself. Active users only — the rule in HandsOverWork checks
                  | the same thing on the way back in.
                  */
-                'assignable'  => User::active()
+                'assignable' => User::active()
                     ->orderBy('first_name')
                     ->get(['id', 'first_name', 'last_name', 'role'])
                     ->map(fn ($u) => [
                         'id' => $u->id, 'name' => $u->display_name, 'role' => $u->role,
                     ]),
                 // the two guards the UI greys out before the server repeats them
-                'currentUserId'    => $request->user()->id,
+                'currentUserId' => $request->user()->id,
                 'activeAdminCount' => User::active()->where('role', 'admin')->count(),
                 // the banner above the table, whatever the filters are hiding
-                'pendingCount'     => User::where('approval_status', 'pending')->count(),
+                'pendingCount' => User::where('approval_status', 'pending')->count(),
             ],
         ]);
     }
@@ -135,7 +132,7 @@ class UserController extends Controller
             'users',
             [
                 'search' => ['sometimes', 'string', 'max:100'],
-                'role'   => ['sometimes', 'string', Rule::in(array_keys(config('crm.role_labels')))],
+                'role' => ['sometimes', 'string', Rule::in(array_keys(config('crm.role_labels')))],
                 'status' => ['sometimes', 'string', 'in:active,inactive,pending,rejected'],
             ],
         );
@@ -202,8 +199,8 @@ class UserController extends Controller
 
         $user->forceFill([
             'approval_status' => 'approved',
-            'is_active'       => true,
-            'permissions'     => null,
+            'is_active' => true,
+            'permissions' => null,
         ])->save();
 
         $alerts->resolve($user->approvalAlertType());
@@ -228,7 +225,7 @@ class UserController extends Controller
 
         $user->forceFill([
             'approval_status' => 'rejected',
-            'is_active'       => false,
+            'is_active' => false,
         ])->save();
 
         $alerts->resolve($user->approvalAlertType());
@@ -260,7 +257,7 @@ class UserController extends Controller
         });
 
         $response = back()->with('success', 'User deleted.');
-        $notice   = $this->handover->summarise($result, $target);
+        $notice = $this->handover->summarise($result, $target);
 
         return $notice ? $response->with('warning', $notice) : $response;
     }

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\AlertService;
 use App\Services\Automation\LoopGuard;
 use App\Services\Automation\RuleEngine;
 use App\Services\LeadFollowUpService;
@@ -38,6 +39,13 @@ class AppServiceProvider extends ServiceProvider
      *   RuleEngine            holds the suspension flag, so withoutRules()
      *                         actually reaches the code inside it.
      *
+     *   AlertService          holds the same kind of suspension flag, for the
+     *                         same reason — see withoutAlerts(). Bound here
+     *                         too, otherwise LeadAssignmentService's copy and
+     *                         a bulk importer's copy would be two different
+     *                         instances and suspending one would do nothing
+     *                         to the other.
+     *
      * They are containers of request state rather than stateless helpers, which
      * is exactly what a singleton binding is for. Nothing here is shared
      * between requests — the container is rebuilt for each one.
@@ -47,6 +55,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(LoopGuard::class);
         $this->app->singleton(RuleEngine::class);
         $this->app->singleton(LeadFollowUpService::class);
+        $this->app->singleton(AlertService::class);
     }
 
     public function boot(): void

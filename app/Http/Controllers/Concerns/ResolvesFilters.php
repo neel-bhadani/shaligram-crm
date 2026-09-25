@@ -32,10 +32,10 @@ use Illuminate\Support\Facades\Validator;
 trait ResolvesFilters
 {
     /**
-     * @param  array<string, array>  $rules     one entry per key the page owns
+     * @param  array<string, array>  $rules  one entry per key the page owns
      * @param  array<string, mixed>  $defaults  filled in where the state is silent
-     * @param  ?callable             $normalise last word on the resolved state,
-     *                                          for rules a validator cannot express
+     * @param  ?callable  $normalise  last word on the resolved state,
+     *                                for rules a validator cannot express
      */
     protected function resolveFilters(
         Request $request,
@@ -45,7 +45,7 @@ trait ResolvesFilters
         ?callable $normalise = null,
     ): array {
         $sessionKey = "filters.$page";
-        $reset      = $request->boolean('reset');
+        $reset = $request->boolean('reset');
 
         $stored = $reset ? [] : (array) $request->session()->get($sessionKey, []);
 
@@ -57,7 +57,13 @@ trait ResolvesFilters
             }
         }
 
-        $state = $this->withoutEmpty(array_merge($this->withoutEmpty($stored), $incoming));
+        $state = array_merge($this->withoutEmpty($stored), $incoming);
+
+        if (isset($state['search']) && is_string($state['search'])) {
+            $state['search'] = trim($state['search']);
+        }
+
+        $state = $this->withoutEmpty($state);
 
         /*
          | The session is user-controlled — it was filled from a query string
@@ -90,6 +96,6 @@ trait ResolvesFilters
      */
     private function withoutEmpty(array $state): array
     {
-        return array_filter($state, fn($v) => $v !== '' && $v !== null && $v !== []);
+        return array_filter($state, fn ($v) => $v !== '' && $v !== null && $v !== []);
     }
 }

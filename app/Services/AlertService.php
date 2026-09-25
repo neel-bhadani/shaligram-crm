@@ -37,14 +37,41 @@ use Illuminate\Support\Collection;
 class AlertService
 {
     /**
+     * Set while a bulk operation — the lead importer — is running.
+     *
+     * Mirrors RuleEngine::$suspended (App\Services\Automation\RuleEngine). A
+     * rule action that raises an alert is already silenced by
+     * RuleEngine::withoutRules() because the rule never dispatches; this
+     * covers the one alert raised outside a rule — LeadAssignmentService's
+     * "no salesperson is staffed on this project" — which an import can
+     * trigger dozens of times in a few seconds for what is really one
+     * misconfiguration, not dozens of them.
+     */
+    private bool $suspended = false;
+
+    /** Run $work with every alert() call silently doing nothing. */
+    public function withoutAlerts(callable $work): mixed
+    {
+        $was = $this->suspended;
+        $this->suspended = true;
+
+        try {
+            return $work();
+        } finally {
+            $this->suspended = $was;
+        }
+    }
+
+    /**
      * Raise one alert for one person.
      *
      * @param  string  $type  what this is ABOUT, and the key deduplication
      *                        groups on. Two different rules raising alerts on
      *                        the same lead are two different types, so one does
      *                        not silence the other.
-     * @return Alert|null  null when it was deduplicated or the recipient may
-     *                     not see the lead. Callers do not need to care which.
+     * @return Alert|null null when it was deduplicated, suspended, or the
+     *                    recipient may not see the lead. Callers do not need
+     *                    to care which.
      */
     public function raise(
         User $recipient,
@@ -56,6 +83,10 @@ class AlertService
         ?AutomationRule $rule = null,
         ?string $actionUrl = null,
     ): ?Alert {
+        if ($this->suspended) {
+            return null;
+        }
+
         // a deactivated account still has rows in `alerts`; adding to the pile
         // of somebody who cannot sign in is not a notification
         if (! $recipient->is_active) {
@@ -71,13 +102,13 @@ class AlertService
         }
 
         return Alert::create([
-            'user_id'    => $recipient->id,
-            'lead_id'    => $lead?->id,
-            'rule_id'    => $rule?->id,
-            'type'       => $type,
-            'title'      => $title,
-            'body'       => $body,
-            'severity'   => in_array($severity, ['info', 'warning', 'urgent'], true) ? $severity : 'info',
+            'user_id' => $recipient->id,
+            'lead_id' => $lead?->id,
+            'rule_id' => $rule?->id,
+            'type' => $type,
+            'title' => $title,
+            'body' => $body,
+            'severity' => in_array($severity, ['info', 'warning', 'urgent'], true) ? $severity : 'info',
             'action_url' => $actionUrl ?? ($lead ? $this->leadUrl($lead) : null),
             'created_at' => now(),
         ]);
@@ -88,7 +119,7 @@ class AlertService
      * see the lead.
      *
      * @param  iterable<User>  $recipients
-     * @return int  how many were actually written
+     * @return int how many were actually written
      */
     public function raiseMany(
         iterable $recipients,
@@ -120,7 +151,7 @@ class AlertService
      * lead them to a Pending filter with nobody in it. Marked read rather than
      * deleted, so the Alerts page still shows it was raised.
      *
-     * @return int  how many were marked
+     * @return int how many were marked
      */
     public function resolve(string $type): int
     {
