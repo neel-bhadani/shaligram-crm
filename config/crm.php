@@ -325,6 +325,7 @@ return [
         'fresh' => 'telecaller',
         'connected' => 'telecaller',
         'not_connected' => 'telecaller',
+        'details_shared' => 'telecaller',
     ],
 
     'stage_owner_role_default' => 'salesperson',

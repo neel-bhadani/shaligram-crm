@@ -587,20 +587,8 @@ class LeadFollowUpService
         }
 
         /*
-         | Handover — not one named stage any more, and not one direction
-         | either. `lead_stages.owner_role` already says who works each
-         | stage, and the desk moves whenever that role changes, forward or
-         | backward: `fresh` to `site_visit_scheduled` crosses it, so does
-         | `not_connected` straight to `site_visit_done`, and so does a
-         | salesperson putting a lead back on `fresh` — the same handover,
-         | run in reverse, back onto a telecaller.
-         |
-         | Moving between two telecaller stages (`fresh` to `connected`) or
-         | two salesperson stages (`in_discussion` to `booking_done`) is not a
-         | handover — the lead stays exactly where it was, with no round robin
-         | re-run. Nor is landing on a terminal stage, whose owner_role is
-         | `null`: the lead stays with whoever was already holding it — see
-         | CrmTaxonomy::ownerRoleFor().
+         | Handover — one direction only, telecaller to salesperson. See
+         | handsOver() for the rule; nothing here names a stage.
          |
          | `crm.handover_stage` itself is untouched and still read directly by
          | LeadAssignmentService::stagesPastHandover() and routingWarning(),
@@ -618,13 +606,8 @@ class LeadFollowUpService
              | LeadAssignmentService::ownerForProjectSwitch().
              */
             $outcome['handed_over_to'] = $this->handoverForNewProject($lead, $stage);
-        } else {
-            $fromRole = CrmTaxonomy::ownerRoleFor($fromStage);
-            $toRole = CrmTaxonomy::ownerRoleFor($stage);
-
-            if ($fromRole !== null && $toRole !== null && $fromRole !== $toRole) {
-                $outcome['handed_over_to'] = $this->handover($lead, $stage);
-            }
+        } elseif ($this->handsOver($lead, $fromStage, $stage)) {
+            $outcome['handed_over_to'] = $this->handover($lead, $stage);
         }
 
         if ($terminal || ! $when) {
@@ -700,20 +683,50 @@ class LeadFollowUpService
     }
 
     /**
+     * Whether this stage change hands the lead to a salesperson.
+     *
+     * Only forward, and only once. The move has to cross from a telecaller
+     * stage to a salesperson stage, and the lead must not already be held by
+     * a salesperson. Once a salesperson has it, no stage change moves it —
+     * back to `not_connected`, `connected`, `fresh`, or on to a terminal
+     * stage — because they are mid-conversation with that customer and the
+     * lead would vanish from their list. Only a manual reassignment moves it
+     * off them.
+     *
+     * The holder is read from `users.role`, not `leads.assigned_role`: the
+     * label can be stale, and it is who actually holds the lead that matters.
+     * An admin holding a lead because no telecaller was active is not a
+     * salesperson, so their lead is still handed over.
+     *
+     * Requiring the FROM stage to be a telecaller one is what keeps an admin's
+     * manual move of a salesperson-stage lead onto a telecaller in place: the
+     * next salesperson-stage change is not a crossing, so nothing undoes it.
+     */
+    private function handsOver(Lead $lead, string $fromStage, string $stage): bool
+    {
+        if (CrmTaxonomy::ownerRoleFor($fromStage) !== 'telecaller'
+            || CrmTaxonomy::ownerRoleFor($stage) !== 'salesperson') {
+            return false;
+        }
+
+        $holder = $lead->assigned_to ? User::find($lead->assigned_to) : null;
+
+        return $holder?->role !== 'salesperson';
+    }
+
+    /**
      * Move the lead to whoever LeadAssignmentService says a lead at `$stage`
      * belongs to — the same answer, from the same code, that LeadController
      * gets for a lead created at that stage. Two places deciding this is how a
      * created lead and a handed-over one end up on different desks.
      *
-     * A telecaller's lead takes the next turn from its project's salesperson
-     * round robin — the same per-project turns, the same fallback and the same
-     * admin alert as a lead created at this stage; a lead an admin was holding
-     * because no telecaller was active goes the same way, which a check on
-     * `assigned_role === 'telecaller'` used to miss. A salesperson's lead
-     * moving the other way goes to the first active telecaller — telecallers
-     * are a single company-wide desk, never chosen per project. Nobody on the
-     * desk, or `handover_mode` set to `admin` (which only silences the
-     * salesperson round robin), and the lead stays put.
+     * Only ever called for a telecaller-to-salesperson move — see handsOver().
+     * The lead takes the next turn from its project's salesperson round robin
+     * — the same per-project turns, the same fallback and the same admin
+     * alert as a lead created at this stage; a lead an admin was holding
+     * because no telecaller was active goes the same way. Nobody on the desk,
+     * or `handover_mode` set to `admin` (which only silences the salesperson
+     * round robin), and the lead stays put.
      *
      * Already inside this class's transaction, so the turn is taken under the
      * project lock and rolls back with the stage change if anything fails.

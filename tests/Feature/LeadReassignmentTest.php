@@ -8,15 +8,16 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\LeadTimeline;
+use App\Support\CrmTaxonomy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Tests\TestCase;
 
 /**
- * Handover moves a lead automatically when a stage change crosses the
- * telecaller/salesperson line, in either direction — see
- * LeadFollowUpService::schedule(). Reassignment moves it by hand, to a named
+ * Handover moves a lead automatically when a stage change crosses from a
+ * telecaller stage to a salesperson stage — one way only, never back — see
+ * LeadFollowUpService::handsOver(). Reassignment moves it by hand, to a named
  * person, without necessarily touching its stage — see
  * LeadFollowUpService::assign(). Both keep the same two invariants
  * LeadRoutingTest checks after every automatic assignment:
@@ -59,24 +60,71 @@ class LeadReassignmentTest extends TestCase
     }
 
     /* ================================================================
-     | Automatic handover, both directions
+     | Automatic handover, telecaller to salesperson only
      ================================================================ */
 
-    /** Forward handover — telecaller to salesperson — is unchanged. */
-    public function test_forward_handover_still_moves_a_telecaller_lead_to_a_salesperson(): void
+    /** Every telecaller stage, round and round: nobody new, no turn taken. */
+    public function test_a_telecaller_keeps_the_lead_through_every_calling_stage(): void
     {
         $lead = $this->add($this->admin, 'facebook', 'fresh');
         $this->assertSame($this->tia->id, $lead->assigned_to);
 
-        $this->completeTo($this->tia, $lead, 'site_visit_scheduled');
+        foreach (['not_connected', 'connected', 'not_connected', 'connected', 'details_shared'] as $stage) {
+            $this->logCall($this->tia, $lead, $stage);
 
-        $this->assertSame($this->sam->id, $lead->fresh()->assigned_to);
-        $this->assertSame('salesperson', $lead->fresh()->assigned_role);
-        $this->assertRoutingHolds();
+            $this->assertOwnedBy($this->tia, $lead, $stage);
+        }
+
+        $this->assertNull($this->alpha->fresh()->last_assigned_salesperson_id, 'no salesperson turn was taken');
+        $this->assertSame(0, LeadActivity::where('lead_id', $lead->id)->where('action', LeadActivity::HandedOver)->count());
     }
 
-    /** Backward handover — salesperson to telecaller — is new. */
-    public function test_backward_handover_moves_a_salesperson_lead_to_the_telecaller_when_its_stage_resets(): void
+    public function test_scheduling_the_site_visit_hands_over_once(): void
+    {
+        $lead = $this->salespersonsLead();
+
+        $this->assertOwnedBy($this->sam, $lead, 'site_visit_scheduled');
+        $this->assertSame($this->sam->id, $this->alpha->fresh()->last_assigned_salesperson_id, 'one turn, the round robin\'s first');
+        $this->assertSame(1, LeadActivity::where('lead_id', $lead->id)->where('action', LeadActivity::HandedOver)->count());
+    }
+
+    public function test_the_salesperson_keeps_the_lead_at_site_visit_done(): void
+    {
+        $lead = $this->salespersonsLead();
+
+        $this->logCall($this->sam, $lead, 'site_visit_done');
+
+        $this->assertOwnedBy($this->sam, $lead, 'site_visit_done');
+    }
+
+    /** The reported bug: an unanswered call used to hand the lead back to a telecaller. */
+    public function test_a_salesperson_logging_not_connected_keeps_the_lead(): void
+    {
+        $lead = $this->salespersonsLead();
+        $this->logCall($this->sam, $lead, 'site_visit_done');
+
+        $this->logCall($this->sam, $lead, 'not_connected');
+
+        $this->assertOwnedBy($this->sam, $lead, 'not_connected');
+        $this->assertSame(1, LeadActivity::where('lead_id', $lead->id)->where('action', LeadActivity::HandedOver)->count(), 'the forward handover only');
+    }
+
+    /** Back through the calling stages and forward again: still theirs, and no second turn. */
+    public function test_a_salesperson_moving_the_lead_back_through_calling_stages_keeps_it(): void
+    {
+        $lead = $this->salespersonsLead();
+
+        foreach (['connected', 'details_shared', 'site_visit_scheduled'] as $stage) {
+            $this->logCall($this->sam, $lead, $stage);
+
+            $this->assertOwnedBy($this->sam, $lead, $stage);
+        }
+
+        $this->assertSame($this->sam->id, $this->alpha->fresh()->last_assigned_salesperson_id, 'crossing forward again takes no second turn');
+    }
+
+    /** The lead form's stage field is the other way a stage moves back. */
+    public function test_a_salesperson_putting_the_lead_back_on_fresh_from_the_lead_form_keeps_it(): void
     {
         $lead = $this->add($this->admin, 'walk_in', 'site_visit_done');
         $this->assertSame($this->sam->id, $lead->assigned_to, 'the round robin\'s first turn');
@@ -89,18 +137,49 @@ class LeadReassignmentTest extends TestCase
             ]))
             ->assertSessionHasNoErrors();
 
-        $lead->refresh();
-        $this->assertSame($this->tia->id, $lead->assigned_to, 'the only telecaller — a single, company-wide desk');
-        $this->assertSame('telecaller', $lead->assigned_role);
-        $this->assertSame($this->tia->id, $lead->pendingTodo->assigned_to);
+        $this->assertOwnedBy($this->sam, $lead, 'fresh');
+        $this->assertSame(0, LeadActivity::where('lead_id', $lead->id)->where('action', LeadActivity::HandedOver)->count());
+    }
 
-        $this->assertSame($this->sam->id, $this->alpha->fresh()->last_assigned_salesperson_id, 'telecallers take no turn from the salesperson round robin');
-        $this->assertRoutingHolds();
+    public function test_a_salesperson_marking_the_lead_lost_keeps_it_and_closes_it(): void
+    {
+        $lead = $this->salespersonsLead();
 
-        $handedOver = $this->timelineFor($lead)->firstWhere('title', 'Stage changed');
-        $this->assertNotNull($handedOver);
-        $this->assertSame('Handed over', $handedOver['details'][0]['label']);
-        $this->assertSame('Sam Tester → Tia Tester', $handedOver['details'][0]['value']);
+        $this->logCall($this->sam, $lead, 'lost', ['reason' => 'budget']);
+
+        $this->assertClosedBy($this->sam, $lead, 'lost');
+        $this->assertSame('budget', $lead->fresh()->reason);
+    }
+
+    public function test_a_salesperson_booking_the_lead_keeps_it_and_closes_it(): void
+    {
+        $lead = $this->salespersonsLead();
+
+        $this->logCall($this->sam, $lead, 'booking_done', ['booked_unit' => 'A-402']);
+
+        $this->assertClosedBy($this->sam, $lead, 'booking_done');
+        $this->assertSame('A-402', $lead->fresh()->booked_unit);
+    }
+
+    /** Only a person can move a lead off a salesperson — and nothing automatic moves it back. */
+    public function test_an_admin_moving_a_salesperson_lead_to_a_telecaller_sticks(): void
+    {
+        $lead = $this->salespersonsLead();
+        $this->logCall($this->sam, $lead, 'site_visit_done');
+
+        // a telecaller can only be picked for a telecaller stage, so the
+        // stage moves in the same action — see LeadReassignRequest
+        $this->actingAs($this->admin)
+            ->put(route('leads.reassign', $lead), ['assigned_to' => $this->tia->id, 'stage' => 'connected'])
+            ->assertSessionHasNoErrors();
+
+        $this->assertOwnedBy($this->tia, $lead, 'connected');
+
+        foreach (['not_connected', 'details_shared'] as $stage) {
+            $this->logCall($this->tia, $lead, $stage);
+
+            $this->assertOwnedBy($this->tia, $lead, $stage);
+        }
     }
 
     /* ================================================================
@@ -361,6 +440,55 @@ class LeadReassignmentTest extends TestCase
                 'follow_up_at' => now()->addDays(3)->format('Y-m-d H:i'),
             ])
             ->assertSessionHasNoErrors();
+    }
+
+    /** Tia's lead, walked to the site visit and handed to Sam. */
+    private function salespersonsLead(): Lead
+    {
+        $lead = $this->add($this->admin, 'facebook', 'fresh');
+        $this->logCall($this->tia, $lead, 'details_shared');
+        $this->completeTo($this->tia, $lead->fresh(), 'site_visit_scheduled');
+
+        return $lead->fresh();
+    }
+
+    /** A call logged from the Follow-ups page; an open stage books the next one. */
+    private function logCall(User $by, Lead $lead, string $stage, array $extra = []): void
+    {
+        $next = CrmTaxonomy::isTerminal($stage) ? [] : [
+            'follow_up_type' => 'call',
+            'follow_up_at' => now()->addDays(2)->format('Y-m-d H:i'),
+        ];
+
+        $this->actingAs($by)
+            ->post("/todos/{$lead->fresh()->pendingTodo->id}/complete", array_merge([
+                'stage' => $stage,
+                'remarks' => 'Called.',
+            ], $next, $extra))
+            ->assertSessionHasNoErrors();
+    }
+
+    /** Held by `$owner`, labelled with their role, and their next follow-up is the only one. */
+    private function assertOwnedBy(User $owner, Lead $lead, string $stage): void
+    {
+        $lead = $lead->fresh();
+
+        $this->assertSame($stage, $lead->stage);
+        $this->assertSame([$owner->id, $owner->role], [$lead->assigned_to, $lead->assigned_role], "owner at $stage");
+        $this->assertSame(1, $lead->todos()->where('status', 'pending')->count(), "one pending follow-up at $stage");
+        $this->assertSame($owner->id, $lead->pendingTodo->assigned_to, "the follow-up at $stage is the owner's");
+        $this->assertRoutingHolds();
+    }
+
+    private function assertClosedBy(User $owner, Lead $lead, string $stage): void
+    {
+        $lead = $lead->fresh();
+
+        $this->assertSame($stage, $lead->stage);
+        $this->assertSame([$owner->id, $owner->role], [$lead->assigned_to, $lead->assigned_role]);
+        $this->assertSame(0, $lead->todos()->where('status', 'pending')->count(), 'nothing left pending');
+        $this->assertSame(1, LeadActivity::where('lead_id', $lead->id)->where('action', LeadActivity::HandedOver)->count(), 'the forward handover only');
+        $this->assertRoutingHolds();
     }
 
     private function editPayload(Lead $lead, array $overrides = []): array
