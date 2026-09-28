@@ -41,8 +41,17 @@ const blank = {
 
 const blankFollowUp = { follow_up_type: 'call', follow_up_at: '', follow_up_remarks: '' }
 
-const form = useForm({ ...blank, ...blankFollowUp })
+/*
+ | submission_key: one per opening of the form, so a double-clicked Save is
+ | one lead and a deliberate second lead with the same details is not refused
+ | — see LeadController::store(). Not a lead column, and not in `blank`, so
+ | it survives the Object.assign below and is replaced only on open.
+ */
+const form = useForm({ ...blank, ...blankFollowUp, submission_key: '' })
 const duplicate = ref(null)
+// the pending duplicate check, and which one is current — see checkDuplicate()
+let timer
+let checkSeq = 0
 
 /*
  | A telecaller may open an existing lead and change its Stage and its Next
@@ -269,6 +278,9 @@ const { conflict, clear: clearConflict } = useFollowUpConflict({
 })
 
 watch(() => props.show, v => {
+  // a check still in flight belongs to the form as it was, not the next one
+  clearTimeout(timer)
+  checkSeq++
   duplicate.value = null
   clearConflict()
   form.clearErrors()
@@ -277,6 +289,8 @@ watch(() => props.show, v => {
 
   // now, as of this opening — not as of whenever the page was loaded
   refreshMinAt()
+  // randomUUID() exists only on https or localhost; anything unique per opening will do
+  form.submission_key = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
   Object.assign(form, blankFollowUp)
   // a half-filled partner form must not be waiting inside the next lead
   cancelAddPartner()
@@ -313,27 +327,36 @@ watch([showFollowUp, visitPreset], ([shown, visit]) => {
   if (visit) form.follow_up_type = 'site_visit'
 })
 
-/* live duplicate check — the unique index is the real guarantee */
-let timer
+/*
+ | Live duplicate check — a warning only; Save stays enabled and the lead still
+ | saves. Runs as soon as the number is ten digits, project or not: without one
+ | the server still says whether the number is known, because saying nothing
+ | reads as "this number is new". See LeadController::duplicateWarning().
+ |
+ | `checkSeq` drops a response that a later keystroke has overtaken, so a slow
+ | answer about an old number cannot land under the new one.
+ */
 const checkDuplicate = () => {
   clearTimeout(timer)
   duplicate.value = null
+  const seq = ++checkSeq
 
-  if (String(form.mobile_number).length !== 10 || !form.project_id) return
+  if (!/^\d{10}$/.test(String(form.mobile_number ?? ''))) return
 
   timer = setTimeout(async () => {
     try {
       const { data } = await axios.post(route('leads.check-duplicate'), {
         mobile_number: form.mobile_number,
-        project_id: form.project_id,
+        project_id: form.project_id || null,
         lead_id: props.lead?.id,
       })
-      duplicate.value = data.exists ? data.message : null
+      // { headline, lines, detail } — see LeadController::duplicateWarning()
+      if (seq === checkSeq) duplicate.value = data.exists ? data : null
     } catch (e) {
-      // 422 only means the number or project is not usable yet — nothing to say.
-      // Anything else and the check genuinely did not run, so warn: the unique
-      // index will still reject a duplicate, but not until save.
-      if (e?.response?.status !== 422) {
+      // 422 only means the number is not usable yet — nothing to say.
+      // Anything else and the check genuinely did not run, so warn: the save
+      // repeats the check and flashes the same warning afterwards.
+      if (seq === checkSeq && e?.response?.status !== 422) {
         toast.warning('Could not check for a duplicate number. Please verify before saving.')
       }
     }
@@ -371,7 +394,11 @@ const submit = () => {
       <FormField label="Mobile number" required :error="form.errors.mobile_number" :hint="lockedHint">
         <input v-model="form.mobile_number" type="text" maxlength="10" inputmode="numeric"
                :disabled="coreFieldsLocked" />
-        <div v-if="duplicate" class="warn-box mt-2">{{ duplicate }}</div>
+        <div v-if="duplicate" class="warn-box mt-2" role="status">
+          <p class="text-[13px] font-semibold">{{ duplicate.headline }}</p>
+          <p v-for="(line, i) in duplicate.lines" :key="i" class="mt-0.5">{{ line }}</p>
+          <p class="mt-1">{{ duplicate.detail }}</p>
+        </div>
       </FormField>
       <FormField label="Email" :error="form.errors.email" :hint="lockedHint">
         <input v-model="form.email" type="email" :disabled="coreFieldsLocked" />

@@ -6,6 +6,7 @@ use App\Models\Integration;
 use App\Models\Lead;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -58,6 +59,35 @@ class IncomingLeadService
         }
 
         /*
+         | The same person, enquiring again.
+         |
+         | Not an error: they have filled in a second form, perhaps from a
+         | different ad. But they already have a lead on this project with an
+         | owner and a pending follow-up, and a second row would split one
+         | conversation in two and put the same customer on two people's call
+         | lists.
+         |
+         | The form may add the same number twice on purpose; this path may
+         | not. Nothing in the schema enforces it any more, so the check and
+         | the insert run under one lock per number and project — two
+         | different enquiries from the same person arriving at once are still
+         | one lead and one repeat, as they were when the index refused the
+         | second. The external_id check runs inside it as well, so a
+         | redelivery that waited on the lock is still called a duplicate.
+         */
+        return Cache::lock("incoming-lead:{$projectId}:{$attributes['mobile_number']}", 30)
+            ->block(10, fn () => $this->importOnce($externalId, $attributes, $projectId, $holder, $source));
+    }
+
+    /**
+     * The repeat check and the insert, run while import() holds the lock.
+     *
+     * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string}  $attributes
+     * @return array{result: string, lead: ?Lead, message: string}
+     */
+    private function importOnce(string $externalId, array $attributes, int $projectId, User $holder, string $source): array
+    {
+        /*
          | Idempotency, first pass.
          |
          | withTrashed(), because `leads.external_id` is unique across deleted
@@ -75,16 +105,6 @@ class IncomingLeadService
             ];
         }
 
-        /*
-         | The same person, enquiring again.
-         |
-         | Not an error: they have filled in a second form, perhaps from a
-         | different ad. But they already have a lead on this project with an
-         | owner and a pending follow-up, and a second row would split one
-         | conversation in two and put the same customer on two people's call
-         | lists. The unique index on (mobile_number, project_id) would refuse
-         | the insert anyway — this is the same answer given as a sentence.
-         */
         $repeat = Lead::withTrashed()
             ->where('mobile_number', $attributes['mobile_number'])
             ->where('project_id', $projectId)
@@ -113,7 +133,7 @@ class IncomingLeadService
                  |
                  | Asked here, after the two early returns and inside the
                  | transaction, so neither a redelivery nor a concurrent one the
-                 | unique index refuses takes a turn from a round robin.
+                 | external_id index refuses takes a turn from a round robin.
                  */
                 $owner = $this->assignment->ownerFor(self::STAGE, $holder, $projectId);
 

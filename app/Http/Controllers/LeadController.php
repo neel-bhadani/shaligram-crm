@@ -19,15 +19,18 @@ use App\Services\LeadTimeline;
 use App\Support\CrmTaxonomy;
 use App\Support\RecordSearch;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Throwable;
 
 class LeadController extends Controller
 {
@@ -35,6 +38,9 @@ class LeadController extends Controller
 
     /** The three fields that book a follow-up; they are not lead columns. */
     private const FOLLOW_UP_FIELDS = ['follow_up_type', 'follow_up_at', 'follow_up_remarks'];
+
+    /** How long, in seconds, a create submission is remembered — see store(). */
+    private const SUBMISSION_WINDOW = 60;
 
     public function __construct(
         private LeadFollowUpService $service,
@@ -179,6 +185,20 @@ class LeadController extends Controller
         $user = $request->user();
 
         /*
+         | Double-submit guard. The unique (mobile_number, project_id) index used
+         | to be what stopped a triple-clicked Save from creating three leads;
+         | the same number may now be added twice on purpose, so it cannot.
+         | The first request through claims this key and the repeats are told
+         | so and write nothing. Taken after validation, so a rejected form
+         | never claims it, and given back if the create fails.
+         */
+        $submission = $this->submissionKey($request);
+
+        if (! Cache::add($submission, true, self::SUBMISSION_WINDOW)) {
+            return back()->with('warning', 'That lead was just submitted; the repeat was ignored.');
+        }
+
+        /*
          | Both writes or neither. onLeadCreated() gives the lead the first
          | to-do the user booked on the form, and "an open lead always has one"
          | is an invariant the whole To-do page leans on — a lead that committed
@@ -186,19 +206,25 @@ class LeadController extends Controller
          | application would notice.
          */
         try {
-            $this->creation->create(
+            $lead = $this->creation->create(
                 $this->leadAttributes($request), $user, $user,
                 $this->followUpAt($request),
                 $request->input('follow_up_type'),
                 $request->input('follow_up_remarks'),
             );
-        } catch (UniqueConstraintViolationException $e) {
-            throw $this->duplicateMobile();
+        } catch (Throwable $e) {
+            Cache::forget($submission);
+
+            throw $e;
         }
 
-        return back()->with('success', CrmTaxonomy::isTerminal($request->stage)
+        $response = back()->with('success', CrmTaxonomy::isTerminal($request->stage)
             ? 'Lead added.'
             : 'Lead added and follow-up scheduled.');
+
+        $duplicate = $this->duplicateWarning($user, $lead->mobile_number, $lead->project_id === null ? null : (int) $lead->project_id, $lead->id);
+
+        return $duplicate ? $response->with('warning', $this->duplicateWarningText($duplicate)) : $response;
     }
 
     public function show(Request $request, Lead $lead)
@@ -223,7 +249,44 @@ class LeadController extends Controller
             // it is where it always was
             'timeline' => $this->timeline->for($lead),
             'reassignCandidates' => $this->reassignCandidates($request->user(), $lead),
+            'sameMobile' => $this->sameMobile($request->user(), $lead),
         ]);
+    }
+
+    /**
+     * Every other live lead with this lead's number, on any project — so two
+     * people do not end up calling the same customer without knowing it.
+     *
+     * The name and owner of a lead this user cannot see are withheld, the
+     * same rule checkDuplicate() follows; its project and stage are not.
+     *
+     * @return list<array{id: ?int, name: ?string, project: ?string, stage: string, owner: ?string}>
+     */
+    private function sameMobile(User $user, Lead $lead): array
+    {
+        if ($lead->mobile_number === null) {
+            return [];
+        }
+
+        return Lead::query()
+            ->where('mobile_number', $lead->mobile_number)
+            ->where('id', '!=', $lead->id)
+            ->with(['project:id,name', 'owner:id,first_name,last_name'])
+            ->oldest('id')
+            ->get()
+            ->map(function (Lead $other) use ($user) {
+                $canSee = $user->can('view', $other);
+
+                return [
+                    'id' => $canSee ? $other->id : null,
+                    'name' => $canSee ? $other->full_name : null,
+                    'project' => $other->project?->name,
+                    'stage' => $other->stage,
+                    'owner' => $canSee ? $other->owner?->display_name : null,
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     /**
@@ -293,23 +356,19 @@ class LeadController extends Controller
          | save belongs to that stage change's entry rather than being a
          | separate edit: changeStage() records it from the saved lead.
          */
-        try {
-            DB::transaction(function () use ($lead, $data, $stage, $request) {
-                $lead->update($data);
+        DB::transaction(function () use ($lead, $data, $stage, $request) {
+            $lead->update($data);
 
-                $this->activities->edits(
-                    $lead,
-                    $request->user()->id,
-                    except: $lead->stage === $stage ? [] : match ($stage) {
-                        'booking_done' => ['booked_unit'],
-                        'lost' => ['reason'],
-                        default => [],
-                    },
-                );
-            });
-        } catch (UniqueConstraintViolationException $e) {
-            throw $this->duplicateMobile();
-        }
+            $this->activities->edits(
+                $lead,
+                $request->user()->id,
+                except: $lead->stage === $stage ? [] : match ($stage) {
+                    'booking_done' => ['booked_unit'],
+                    'lost' => ['reason'],
+                    default => [],
+                },
+            );
+        });
 
         // route every stage change through the service so history
         // and the next task stay consistent
@@ -333,8 +392,12 @@ class LeadController extends Controller
 
         $response = back()->with('success', 'Lead updated.');
 
-        // the service decided something on its own — say so
-        return $notice ? $response->with('warning', $notice) : $response;
+        // the service decided something on its own, or the number is already
+        // on another lead — say so
+        $duplicate = $this->duplicateWarning($request->user(), $lead->mobile_number, $lead->project_id === null ? null : (int) $lead->project_id, $lead->id);
+        $warning = collect([$notice, $duplicate ? $this->duplicateWarningText($duplicate) : null])->filter()->implode(' ');
+
+        return $warning !== '' ? $response->with('warning', $warning) : $response;
     }
 
     /**
@@ -370,8 +433,7 @@ class LeadController extends Controller
             $outcome = $this->service->switchProject($lead, $to);
         } catch (UniqueConstraintViolationException $e) {
             // the narrow gap between LeadSwitchProjectRequest's check and the
-            // save — see duplicateMobile() for the same race on the add-lead
-            // form
+            // save
             throw ValidationException::withMessages([
                 'project_id' => 'This number already has a lead on that project.',
             ]);
@@ -441,62 +503,185 @@ class LeadController extends Controller
     }
 
     /**
-     * The unique index is the real guarantee, and LeadRequest checks the same
-     * rows it does — so reaching here means the narrow gap between that check
-     * and the insert: two people adding the same number at the same moment.
-     * The index wins, and the user gets the message they should have seen
-     * rather than a 500.
+     * The cache key a create submission claims — see store(). The form sends
+     * a fresh `submission_key` each time it opens, so a triple click shares
+     * one key while a deliberate second lead with the same details does not.
+     * A caller that sends none is keyed on its whole payload instead.
      */
-    private function duplicateMobile(): ValidationException
+    private function submissionKey(Request $request): string
     {
-        return ValidationException::withMessages([
-            'mobile_number' => 'This number already exists for this project.',
-        ]);
+        $key = $request->input('submission_key');
+
+        return 'lead-submission:'.$request->user()->id.':'.sha1(
+            is_string($key) && $key !== '' ? $key : json_encode($request->except('submission_key'))
+        );
     }
 
     /**
-     * Live duplicate check as the user types.
-     * The unique index is the real guarantee; this is only for a friendly message.
+     * The advisory warning for a number already on another lead, or null. A
+     * warning, never a refusal: the save it describes goes through.
+     *
+     * Picked by situation — one lead or several, same project or another,
+     * open or closed — and always naming the existing customer, because the
+     * name is what tells the user whether this is the same person. Except
+     * where Lead::scopeVisibleTo() says this user cannot open that lead: then
+     * neither the customer's name nor the owner's is given, only the project.
+     *
+     * With no project chosen yet, only leads on projects this user can see
+     * are considered, and a lead on the same project is not a thing to name.
+     * A deleted lead is mentioned only when it is all there is on this
+     * project.
+     *
+     * @return array{headline: string, lines: list<string>, detail: string}|null
+     */
+    private function duplicateWarning(User $user, ?string $mobileNumber, ?int $projectId, ?int $exceptId = null): ?array
+    {
+        if ($mobileNumber === null) {
+            return null;
+        }
+
+        $matches = Lead::withTrashed()
+            ->where('mobile_number', $mobileNumber)
+            ->when($exceptId, fn ($q, $id) => $q->where('id', '!=', $id))
+            ->when($projectId === null, fn ($q) => $q->whereIn('project_id', $this->projectsVisibleTo($user)->select('projects.id')))
+            ->with(['project:id,name', 'owner:id,first_name,last_name'])
+            ->latest()
+            ->orderByDesc('id')
+            ->get();
+
+        [$deleted, $live] = $matches->partition(fn (Lead $lead) => $lead->trashed());
+
+        if ($live->isEmpty()) {
+            $gone = $projectId === null ? null : $deleted->first(fn (Lead $lead) => (int) $lead->project_id === $projectId);
+
+            return $gone ? [
+                'headline' => "Was in the system — a deleted lead on {$this->projectName($gone)}",
+                'lines' => [],
+                'detail' => 'You can still save. An admin can restore the old lead instead.',
+            ] : null;
+        }
+
+        $visibleIds = Lead::visibleTo($user)->whereKey($live->modelKeys())->pluck('id')->flip();
+        $canOpen = fn (Lead $lead) => $visibleIds->has($lead->id);
+
+        if ($live->count() > 1) {
+            $lines = $live->take(3)->map(fn (Lead $lead) => implode(' · ', [
+                $this->projectName($lead),
+                CrmTaxonomy::stageLabel($lead->stage),
+                $canOpen($lead) ? ($lead->owner?->display_name ?? 'unassigned') : 'another team member',
+            ]))->values()->all();
+
+            if ($live->count() > 3) {
+                $lines[] = 'and '.($live->count() - 3).' more';
+            }
+
+            return [
+                'headline' => "Already in the system — {$live->count()} leads with this number",
+                'lines' => $lines,
+                'detail' => 'You can still save.',
+            ];
+        }
+
+        $lead = $live->first();
+
+        if (! $canOpen($lead)) {
+            return [
+                'headline' => "Already in the system — on {$this->projectName($lead)}, handled by another team member.",
+                'lines' => [],
+                'detail' => 'You can still save. Check with the admin before calling.',
+            ];
+        }
+
+        if (CrmTaxonomy::isTerminal($lead->stage)) {
+            $stage = CrmTaxonomy::stageLabel($lead->stage);
+            $reason = $lead->reason ? config("crm.lost_reasons.{$lead->reason}") : null;
+
+            return [
+                'headline' => implode(' · ', [
+                    "Was in the system — {$lead->full_name}",
+                    $this->projectName($lead),
+                    $reason ? "{$stage} (".mb_strtolower($reason).')' : $stage,
+                    $lead->created_at->timezone('Asia/Kolkata')->diffForHumans(),
+                ]),
+                'lines' => [],
+                'detail' => "Saving creates a fresh enquiry. That's fine if they're back.",
+            ];
+        }
+
+        $owner = $lead->owner?->display_name ?? 'nobody';
+        $isMine = $lead->assigned_to === $user->id;
+
+        if ($projectId !== null && (int) $lead->project_id !== $projectId) {
+            return [
+                'headline' => "This number is also on {$this->projectName($lead)} — ".implode(' · ', [
+                    $lead->full_name,
+                    CrmTaxonomy::stageLabel($lead->stage),
+                    $isMine ? 'with you' : "with {$owner}",
+                ]),
+                'lines' => [],
+                'detail' => 'Same person enquiring about another project is normal. Save as usual.',
+            ];
+        }
+
+        return [
+            'headline' => 'Already in the system — '.implode(' · ', [
+                $lead->full_name,
+                $this->projectName($lead),
+                CrmTaxonomy::stageLabel($lead->stage),
+                $isMine ? 'with you' : "with {$owner}",
+            ]),
+            'lines' => [],
+            'detail' => match (true) {
+                $isMine => 'You can still save. The existing lead is already yours.',
+                $lead->owner !== null => "You can still save. If this is the same person, talk to {$lead->owner->first_name} first.",
+                default => 'You can still save.',
+            },
+        ];
+    }
+
+    private function projectName(Lead $lead): string
+    {
+        return $lead->project?->name ?? 'no project';
+    }
+
+    /**
+     * A duplicateWarning() as one line of text, for the toast flashed after
+     * a save — the form it was shown on has closed by then.
+     *
+     * @param  array{headline: string, lines: list<string>, detail: string}  $warning
+     */
+    private function duplicateWarningText(array $warning): string
+    {
+        $headline = rtrim($warning['headline'], '.');
+
+        return ($warning['lines'] === []
+            ? "{$headline}."
+            : "{$headline}: ".implode('; ', $warning['lines']).'.')
+            .' '.$warning['detail'];
+    }
+
+    /**
+     * Live duplicate check as the user types. Advisory only — the form shows
+     * the warning and still lets the lead be saved. `project_id` is optional:
+     * see duplicateWarning() for what is said without one.
      */
     public function checkDuplicate(Request $request)
     {
         $request->validate([
             'mobile_number' => ['required', 'digits:10'],
-            'project_id' => ['required', 'exists:projects,id'],
+            'project_id' => ['nullable', 'exists:projects,id'],
         ]);
 
-        // withTrashed(), because the index counts deleted rows and so does the
-        // rule in LeadRequest — a check that said "free" here and then failed
-        // on submit is what made this look like a random 500
-        $lead = Lead::withTrashed()
-            ->where('mobile_number', $request->mobile_number)
-            ->where('project_id', $request->project_id)
-            ->when($request->lead_id, fn ($q, $id) => $q->where('id', '!=', $id))
-            ->with('owner:id,first_name,last_name')
-            ->first();
+        $warning = $this->duplicateWarning(
+            $request->user(),
+            $request->mobile_number,
+            $request->filled('project_id') ? $request->integer('project_id') : null,
+            $request->integer('lead_id') ?: null,
+        );
 
-        if (! $lead) {
-            return response()->json(['exists' => false]);
-        }
-
-        if ($lead->trashed()) {
-            return response()->json([
-                'exists' => true,
-                'message' => 'This number belongs to a deleted lead on this project. Restore that lead instead of adding it again.',
-            ]);
-        }
-
-        $user = $request->user();
-
-        // a salesperson must not learn who owns someone else's lead
-        $canSee = $user->can('view', $lead);
-
-        return response()->json([
-            'exists' => true,
-            'message' => $canSee
-                ? "Already exists for this project — {$lead->full_name}, owned by {$lead->owner?->display_name}."
-                : 'This number already exists for this project. Please contact the admin.',
-        ]);
+        return response()->json($warning
+            ? ['exists' => true, ...$warning, 'message' => $this->duplicateWarningText($warning)]
+            : ['exists' => false]);
     }
 
     /**
@@ -515,15 +700,23 @@ class LeadController extends Controller
      */
     private function visibleProjects(User $user)
     {
-        $query = $user->isSalesperson() && ! $user->can_('see_all_leads')
-            ? $user->projects()
-            : Project::query();
-
-        return $query->active()
+        return $this->projectsVisibleTo($user)->active()
             ->orderBy('projects.name')
             ->get(['projects.id', 'projects.name'])
             ->map(fn (Project $p) => ['id' => $p->id, 'name' => $p->name])
             ->values();
+    }
+
+    /**
+     * Every project, active or not, inside the boundary visibleProjects()
+     * describes — the scope the duplicate check searches when no project has
+     * been chosen yet.
+     */
+    private function projectsVisibleTo(User $user): Builder|BelongsToMany
+    {
+        return $user->isSalesperson() && ! $user->can_('see_all_leads')
+            ? $user->projects()
+            : Project::query();
     }
 
     private function options($user): array
