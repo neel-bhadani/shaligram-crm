@@ -2,14 +2,17 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Webhooks\MetaWebhookController;
 use App\Jobs\ProcessMetaLead;
-use Illuminate\Contracts\Bus\Dispatcher;
 use App\Models\Integration;
 use App\Models\IntegrationEvent;
 use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\IncomingLeadService;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -45,19 +48,22 @@ use Throwable;
  *                   every list in the CRM. It is asserted after every import
  *                   below.
  *
- * @see \App\Http\Controllers\Webhooks\MetaWebhookController
- * @see \App\Jobs\ProcessMetaLead
- * @see \App\Services\IncomingLeadService
+ * @see MetaWebhookController
+ * @see ProcessMetaLead
+ * @see IncomingLeadService
  */
 class MetaWebhookTest extends TestCase
 {
     use RefreshDatabase;
 
     private const SECRET = 'app-secret-from-meta';
-    private const TOKEN  = 'page-access-token-from-meta';
-    private const URL    = '/webhooks/facebook/leads';
+
+    private const TOKEN = 'page-access-token-from-meta';
+
+    private const URL = '/webhooks/facebook/leads';
 
     private User $owner;
+
     private Project $project;
 
     protected function setUp(): void
@@ -66,7 +72,7 @@ class MetaWebhookTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-09-07 11:30', 'Asia/Kolkata'));
 
-        $this->owner   = $this->user('telecaller', 'Tia');
+        $this->owner = $this->user('telecaller', 'Tia');
         $this->project = Project::create(['name' => 'Alpha']);
 
         $this->connect();
@@ -78,10 +84,10 @@ class MetaWebhookTest extends TestCase
     {
         $verifyToken = Integration::forProvider('facebook')->setting('verify_token');
 
-        $response = $this->get(self::URL . '?' . http_build_query([
-            'hub.mode'         => 'subscribe',
+        $response = $this->get(self::URL.'?'.http_build_query([
+            'hub.mode' => 'subscribe',
             'hub.verify_token' => $verifyToken,
-            'hub.challenge'    => '1158201444',
+            'hub.challenge' => '1158201444',
         ]));
 
         $response->assertOk();
@@ -93,10 +99,10 @@ class MetaWebhookTest extends TestCase
 
     public function test_the_handshake_is_refused_when_the_token_does_not_match(): void
     {
-        $response = $this->get(self::URL . '?' . http_build_query([
-            'hub.mode'         => 'subscribe',
+        $response = $this->get(self::URL.'?'.http_build_query([
+            'hub.mode' => 'subscribe',
             'hub.verify_token' => 'not-the-stored-token',
-            'hub.challenge'    => '1158201444',
+            'hub.challenge' => '1158201444',
         ]));
 
         $response->assertForbidden();
@@ -108,9 +114,9 @@ class MetaWebhookTest extends TestCase
     {
         Integration::query()->delete();
 
-        $this->get(self::URL . '?' . http_build_query([
+        $this->get(self::URL.'?'.http_build_query([
             'hub.verify_token' => '',
-            'hub.challenge'    => '1158201444',
+            'hub.challenge' => '1158201444',
         ]))->assertForbidden();
     }
 
@@ -120,7 +126,7 @@ class MetaWebhookTest extends TestCase
     {
         Queue::fake();
 
-        $this->deliver($this->payload(), signature: 'sha256=' . str_repeat('a', 64))
+        $this->deliver($this->payload(), signature: 'sha256='.str_repeat('a', 64))
             ->assertForbidden();
 
         Queue::assertNothingPushed();
@@ -154,11 +160,11 @@ class MetaWebhookTest extends TestCase
         Queue::fake();
 
         $signed = json_encode($this->payload('111'));
-        $sent   = json_encode($this->payload('222'));
+        $sent = json_encode($this->payload('222'));
 
         $this->call('POST', self::URL, [], [], [], [
-            'CONTENT_TYPE'             => 'application/json',
-            'HTTP_X_HUB_SIGNATURE_256' => 'sha256=' . hash_hmac('sha256', $signed, self::SECRET),
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $signed, self::SECRET),
         ], $sent)->assertForbidden();
 
         Queue::assertNothingPushed();
@@ -196,7 +202,7 @@ class MetaWebhookTest extends TestCase
 
         $this->deliver([
             'object' => 'page',
-            'entry'  => [
+            'entry' => [
                 ['changes' => [
                     ['field' => 'leadgen', 'value' => ['leadgen_id' => 'aaa']],
                     ['field' => 'leadgen', 'value' => ['leadgen_id' => 'bbb']],
@@ -217,7 +223,7 @@ class MetaWebhookTest extends TestCase
 
         $this->deliver([
             'object' => 'page',
-            'entry'  => [['changes' => [
+            'entry' => [['changes' => [
                 ['field' => 'feed',    'value' => ['post_id' => '1']],
                 ['field' => 'leadgen', 'value' => []],
             ]]],
@@ -381,6 +387,26 @@ class MetaWebhookTest extends TestCase
         $this->assertStringContainsString('repeat enquiry', $event->message);
     }
 
+    /**
+     * The checks in IncomingLeadService are a read then a write. The index is
+     * what holds when two deliveries race past them — and with mobile numbers
+     * no longer unique, it is the only one left.
+     */
+    public function test_the_database_itself_refuses_a_second_lead_with_the_same_external_id(): void
+    {
+        $lead = fn (string $mobile) => Lead::create([
+            'first_name' => 'Neel', 'last_name' => 'Bhadani', 'mobile_number' => $mobile,
+            'project_id' => $this->project->id, 'source' => 'facebook', 'stage' => 'fresh',
+            'external_id' => 'lead-1',
+        ]);
+
+        $lead('9512779297');
+
+        $this->expectException(UniqueConstraintViolationException::class);
+
+        $lead('9000000001');
+    }
+
     /* ---------------- the field names nobody controls ---------------- */
 
     public function test_separate_first_and_last_name_fields_are_used_when_the_form_asks_for_them(): void
@@ -473,11 +499,11 @@ class MetaWebhookTest extends TestCase
     public static function phoneNumbers(): array
     {
         return [
-            'bare'            => ['9512779297'],
-            'country code'    => ['+919512779297'],
-            'spaced'          => ['+91 95127 79297'],
-            'hyphenated'      => ['+91-95127-79297'],
-            'double zero'     => ['00919512779297'],
+            'bare' => ['9512779297'],
+            'country code' => ['+919512779297'],
+            'spaced' => ['+91 95127 79297'],
+            'hyphenated' => ['+91-95127-79297'],
+            'double zero' => ['00919512779297'],
         ];
     }
 
@@ -541,11 +567,11 @@ class MetaWebhookTest extends TestCase
         $integration = Integration::forProvider('facebook');
 
         $integration->mergeSettings([
-            'page_access_token'  => self::TOKEN,
-            'app_secret'         => self::SECRET,
-            'page_id'            => '102938475600',
+            'page_access_token' => self::TOKEN,
+            'app_secret' => self::SECRET,
+            'page_id' => '102938475600',
             'default_project_id' => $this->project->id,
-            'assign_to_user_id'  => $this->owner->id,
+            'assign_to_user_id' => $this->owner->id,
         ]);
 
         $integration->is_active = true;
@@ -559,9 +585,9 @@ class MetaWebhookTest extends TestCase
     private function fakeGraph(array $fieldData): void
     {
         Http::fake(['graph.facebook.com/*' => Http::response([
-            'id'           => 'lead-1',
+            'id' => 'lead-1',
             'created_time' => now()->toIso8601String(),
-            'field_data'   => $fieldData,
+            'field_data' => $fieldData,
         ])]);
     }
 
@@ -570,15 +596,15 @@ class MetaWebhookTest extends TestCase
     {
         return [
             'object' => 'page',
-            'entry'  => [[
-                'id'      => '102938475600',
-                'time'    => now()->timestamp,
+            'entry' => [[
+                'id' => '102938475600',
+                'time' => now()->timestamp,
                 'changes' => [[
                     'field' => 'leadgen',
                     'value' => [
                         'leadgen_id' => $leadgenId,
-                        'page_id'    => '102938475600',
-                        'form_id'    => '556677',
+                        'page_id' => '102938475600',
+                        'form_id' => '556677',
                     ],
                 ]],
             ]],
@@ -595,9 +621,9 @@ class MetaWebhookTest extends TestCase
         $body = json_encode($payload);
 
         return $this->call('POST', self::URL, [], [], [], [
-            'CONTENT_TYPE'             => 'application/json',
+            'CONTENT_TYPE' => 'application/json',
             'HTTP_X_HUB_SIGNATURE_256' => $signature
-                ?? 'sha256=' . hash_hmac('sha256', $body, $secret ?? self::SECRET),
+                ?? 'sha256='.hash_hmac('sha256', $body, $secret ?? self::SECRET),
         ], $body);
     }
 
@@ -634,13 +660,13 @@ class MetaWebhookTest extends TestCase
     private function user(string $role, string $first): User
     {
         return User::create([
-            'first_name'    => $first,
-            'last_name'     => 'User',
-            'email'         => "$role@example.test",
+            'first_name' => $first,
+            'last_name' => 'User',
+            'email' => "$role@example.test",
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'role'          => $role,
-            'is_active'     => true,
-            'password'      => 'password',
+            'role' => $role,
+            'is_active' => true,
+            'password' => 'password',
         ]);
     }
 }

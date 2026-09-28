@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\LeadController;
 use App\Models\Lead;
 use App\Models\LeadActivity;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\LeadTimeline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -22,8 +24,8 @@ use Tests\TestCase;
  * open on the lead page, or write a single row while the update form keeps
  * doing what it always did.
  *
- * @see \App\Services\LeadTimeline
- * @see \App\Http\Controllers\LeadController::show
+ * @see LeadTimeline
+ * @see LeadController::show
  */
 class FollowUpActivityPanelTest extends TestCase
 {
@@ -79,7 +81,7 @@ class FollowUpActivityPanelTest extends TestCase
 
         $response = $this->actingAs($this->tele)->getJson("/leads/{$lead->id}")->assertOk();
 
-        $this->assertSame(['lead', 'timeline', 'reassignCandidates'], array_keys($response->json()));
+        $this->assertSame(['lead', 'timeline', 'reassignCandidates', 'sameMobile'], array_keys($response->json()));
 
         $timeline = $response->json('timeline');
 

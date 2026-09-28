@@ -25,6 +25,8 @@ const emit = defineEmits(['close', 'edit', 'followup'])
 
 const lead = ref(null)
 const timeline = ref([])
+// other leads on this number — see LeadController::sameMobile()
+const sameMobile = ref([])
 const loading = ref(false)
 // role => candidates, not a flat list — see LeadController::reassignCandidates().
 // The stage picker below decides which role's list is offered.
@@ -35,7 +37,7 @@ const reassigning = ref(false)
 
 async function load() {
   if (!props.show || !props.leadId) {
-    lead.value = null; timeline.value = []; reassignCandidates.value = {}
+    lead.value = null; timeline.value = []; reassignCandidates.value = {}; sameMobile.value = []
     return
   }
 
@@ -45,6 +47,7 @@ async function load() {
     lead.value = data.lead
     timeline.value = data.timeline ?? []
     reassignCandidates.value = data.reassignCandidates ?? {}
+    sameMobile.value = data.sameMobile ?? []
     reassignStage.value = lead.value?.stage ?? ''
   } catch (e) {
     // A non-admin who just reassigned this lead away from themselves no
@@ -148,6 +151,18 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
         <div v-if="lead.booked_unit"><dt class="text-[11px] font-semibold text-slate-400">Booked unit</dt>
              <dd class="text-sm">{{ lead.booked_unit }}</dd></div>
       </dl>
+
+      <div v-if="sameMobile.length" class="warn-box mt-5">
+        <p class="text-xs font-semibold">This phone number is on {{ sameMobile.length }} other lead{{ sameMobile.length === 1 ? '' : 's' }}</p>
+        <ul class="mt-1.5 space-y-1 text-xs">
+          <li v-for="(other, i) in sameMobile" :key="other.id ?? `hidden-${i}`" class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>{{ other.name ?? 'A lead you cannot view' }}</span>
+            <span class="text-slate-500">· {{ other.project ?? 'No project' }} ·</span>
+            <StageBadge :stage="other.stage" />
+            <span class="text-slate-500">· {{ other.owner ?? 'Please contact the admin' }}</span>
+          </li>
+        </ul>
+      </div>
 
       <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
 

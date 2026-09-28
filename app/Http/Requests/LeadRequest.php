@@ -11,7 +11,6 @@ use Illuminate\Validation\Rule;
 
 /**
  * Used for both store and update.
- * Route model binding gives us {lead} on update, which we ignore in the unique rule.
  */
 class LeadRequest extends FormRequest
 {
@@ -65,7 +64,6 @@ class LeadRequest extends FormRequest
         // the lead being edited, or null on store — the taxonomy rules below
         // need its current stage and source, not just its id
         $lead = $this->route('lead');
-        $leadId = $lead?->id;
 
         return [
             'first_name' => ['required', 'string', 'max:100'],
@@ -73,31 +71,11 @@ class LeadRequest extends FormRequest
             'last_name' => ['required', 'string', 'max:100'],
 
             /*
-             | The index on the table is a plain unique (mobile_number,
-             | project_id) — it knows nothing about soft deletes. A rule that
-             | skipped trashed rows therefore passed a number the index went
-             | on to reject, and the insert came back as a 500 instead of a
-             | message. This looks at exactly the rows the index looks at, and
-             | says which kind of lead is holding the number.
+             | Not unique. The same number may be on several leads, even in the
+             | same project — the form warns about it (see
+             | LeadController::checkDuplicate()) and the save goes through.
              */
-            'mobile_number' => [
-                'required', 'digits:10',
-                function (string $attribute, mixed $value, \Closure $fail) use ($leadId) {
-                    $clash = Lead::withTrashed()
-                        ->where('mobile_number', $value)
-                        ->where('project_id', $this->project_id)
-                        ->when($leadId, fn ($q, $id) => $q->where('id', '!=', $id))
-                        ->first();
-
-                    if (! $clash) {
-                        return;
-                    }
-
-                    $fail($clash->trashed()
-                        ? 'This number belongs to a deleted lead on this project. Restore that lead instead of adding it again.'
-                        : 'This number already exists for this project.');
-                },
-            ],
+            'mobile_number' => ['required', 'digits:10'],
 
             'email' => ['nullable', 'email', 'max:150'],
             'project_id' => ['required', 'exists:projects,id'],
