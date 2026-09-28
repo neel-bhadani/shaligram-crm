@@ -22,7 +22,7 @@ use Tests\TestCase;
 /**
  * A new lead is routed by the stage it is saved at, never by who added it.
  *
- *   fresh, connected, not_connected → telecaller
+ *   fresh, connected, not_connected, details_shared → telecaller
  *   any other open stage            → salesperson (the creator, if they are one)
  *   a terminal stage                → whoever added it
  *
@@ -134,7 +134,7 @@ class LeadRoutingTest extends TestCase
                 $lead = $this->add($creator, 'walk_in', $stage);
 
                 $expected = match (true) {
-                    in_array($stage, ['fresh', 'connected', 'not_connected'], true) => $this->tia,
+                    in_array($stage, ['fresh', 'connected', 'not_connected', 'details_shared'], true) => $this->tia,
                     CrmTaxonomy::isTerminal($stage) => $creator,
                     $creator->role === 'salesperson' => $creator,
                     default => null,   // the round robin's pick
@@ -432,6 +432,75 @@ class LeadRoutingTest extends TestCase
     }
 
     /* ================================================================
+     | The handover, from a telecaller's call
+     ================================================================ */
+
+    /** Sharing details is still calling work: nobody new, and no turn taken. */
+    public function test_details_shared_stays_with_the_telecaller(): void
+    {
+        $lead = $this->add($this->admin, 'facebook', 'fresh');
+
+        $this->logCall($this->tia, $lead, 'details_shared');
+
+        $lead->refresh();
+        $this->assertSame('details_shared', $lead->stage);
+        $this->assertSame([$this->tia->id, 'telecaller'], [$lead->assigned_to, $lead->assigned_role]);
+        $this->assertSame($this->tia->id, $lead->pendingTodo->assigned_to);
+        $this->assertNull($this->project->fresh()->last_assigned_salesperson_id, 'no salesperson turn was taken');
+        $this->assertRoutingHolds();
+    }
+
+    public function test_scheduling_the_site_visit_from_details_shared_hands_over(): void
+    {
+        $lead = $this->add($this->admin, 'facebook', 'fresh');
+        $this->logCall($this->tia, $lead, 'details_shared');
+
+        $this->completeTo($this->tia, $lead->fresh(), 'site_visit_scheduled');
+
+        $lead->refresh();
+        $this->assertSame([$this->sam->id, 'salesperson'], [$lead->assigned_to, $lead->assigned_role]);
+        $this->assertSame($this->sam->id, $lead->pendingTodo->assigned_to, 'the visit is on the salesperson');
+        $this->assertRoutingHolds();
+    }
+
+    /** The desk changes by role, not by passing one named stage. */
+    public function test_skipping_straight_to_site_visit_done_still_hands_over(): void
+    {
+        $lead = $this->add($this->admin, 'facebook', 'fresh');
+
+        $this->completeTo($this->tia, $lead, 'site_visit_done');
+
+        $lead->refresh();
+        $this->assertSame('site_visit_done', $lead->stage);
+        $this->assertSame([$this->sam->id, 'salesperson'], [$lead->assigned_to, $lead->assigned_role]);
+        $this->assertSame($this->sam->id, $lead->pendingTodo->assigned_to);
+        $this->assertRoutingHolds();
+    }
+
+    /** A terminal stage has no desk: the telecaller closes it themselves. */
+    public function test_losing_a_lead_from_details_shared_keeps_it_with_the_telecaller(): void
+    {
+        $lead = $this->add($this->admin, 'facebook', 'fresh');
+        $this->logCall($this->tia, $lead, 'details_shared');
+
+        $this->actingAs($this->tia)
+            ->post("/todos/{$lead->fresh()->pendingTodo->id}/complete", [
+                'stage' => 'lost',
+                'reason' => 'budget',
+                'remarks' => 'Over budget.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $lead->refresh();
+        $this->assertSame('lost', $lead->stage);
+        $this->assertSame('budget', $lead->reason);
+        $this->assertSame([$this->tia->id, 'telecaller'], [$lead->assigned_to, $lead->assigned_role]);
+        $this->assertSame(0, $lead->todos()->where('status', 'pending')->count());
+        $this->assertNull($this->project->fresh()->last_assigned_salesperson_id, 'no salesperson turn was taken');
+        $this->assertRoutingHolds();
+    }
+
+    /* ================================================================
      | The mapping, as the admin edits it
      ================================================================ */
 
@@ -441,7 +510,7 @@ class LeadRoutingTest extends TestCase
             'fresh' => 'telecaller',
             'connected' => 'telecaller',
             'not_connected' => 'telecaller',
-            'details_shared' => 'salesperson',
+            'details_shared' => 'telecaller',
             'site_visit_scheduled' => 'salesperson',
             'site_visit_done' => 'salesperson',
             'in_discussion' => 'salesperson',
@@ -593,6 +662,18 @@ class LeadRoutingTest extends TestCase
                 'remarks' => 'Coming Sunday.',
                 'follow_up_type' => 'site_visit',
                 'follow_up_at' => now()->addDays(3)->format('Y-m-d H:i'),
+            ])
+            ->assertSessionHasNoErrors();
+    }
+
+    private function logCall(User $by, Lead $lead, string $stage): void
+    {
+        $this->actingAs($by)
+            ->post("/todos/{$lead->fresh()->pendingTodo->id}/complete", [
+                'stage' => $stage,
+                'remarks' => 'Sent the brochure.',
+                'follow_up_type' => 'call',
+                'follow_up_at' => now()->addDays(2)->format('Y-m-d H:i'),
             ])
             ->assertSessionHasNoErrors();
     }

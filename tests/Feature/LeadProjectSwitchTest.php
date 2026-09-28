@@ -358,7 +358,7 @@ class LeadProjectSwitchTest extends TestCase
 
     /**
      * The gap a plain role-crossing check would miss: `in_discussion` to
-     * `details_shared` never crosses a desk, both are salesperson stages —
+     * `site_visit_done` never crosses a desk, both are salesperson stages —
      * but the project changed under the lead in the same action, so the
      * salesperson who held it is still ALPHA's, not PQR's. Without
      * handoverForNewProject() this would silently leave Sam holding a PQR
@@ -372,7 +372,7 @@ class LeadProjectSwitchTest extends TestCase
 
         $this->actingAs($this->sam)
             ->post(route('todos.complete', $todo), [
-                'stage' => 'details_shared',
+                'stage' => 'site_visit_done',
                 'project_id' => $this->pqr->id,
                 'remarks' => 'Actually wants PQR.',
                 'follow_up_type' => 'call',
@@ -382,7 +382,7 @@ class LeadProjectSwitchTest extends TestCase
 
         $lead->refresh();
         $this->assertSame($this->pqr->id, $lead->project_id);
-        $this->assertSame('details_shared', $lead->stage);
+        $this->assertSame('site_visit_done', $lead->stage);
         $this->assertSame($this->pat->id, $lead->assigned_to, 'PQR\'s own salesperson, even though the stage stayed salesperson-owned');
         $this->assertSame('salesperson', $lead->assigned_role);
         $this->assertSame($this->pat->id, $lead->pendingTodo->assigned_to);

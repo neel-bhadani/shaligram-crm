@@ -60,8 +60,7 @@ class ConsistencyCheckTest extends TestCase
     {
         $open = $this->addLead();
         $this->logCall($open, $this->telecaller, 'connected');
-        // 'connected' is still telecaller-owned: it's this call, reaching
-        // the salesperson-owned 'details_shared', that hands the lead over
+        // 'details_shared' is still telecaller-owned, so the lead stays put
         $this->logCall($open, $this->telecaller, 'details_shared');
 
         $booked = $this->addLead();

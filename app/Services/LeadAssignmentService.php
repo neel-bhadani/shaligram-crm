@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  * screen and seeded from `crm.stage_owner_roles`), and the lead goes to a
  * person doing that job:
  *
- *   fresh, connected, not_connected → telecaller
+ *   fresh, connected, not_connected, details_shared → telecaller
  *   any other open stage            → salesperson
  *   a terminal stage        → nobody new; it stays with whoever added it
  *
@@ -27,8 +27,8 @@ use Illuminate\Support\Facades\DB;
  *   The "holder" is the person adding it — or, for an import, the user the
  *   integration is configured to give leads to.
  *
- *   LeadFollowUpService::handover(), moving one — either direction. The holder
- *   is whoever owns the lead now.
+ *   LeadFollowUpService::handover(), moving one — telecaller to salesperson
+ *   only, never back. The holder is whoever owns the lead now.
  *
  * A holder already doing the job keeps the lead: a salesperson who adds a
  * walk-in after the site visit is the salesperson who will work it. Otherwise
@@ -116,6 +116,10 @@ class LeadAssignmentService
      * who already holds it. Falls back to the holder only when nobody is on
      * the new project's desk at all, the same fallback ownerFor() itself
      * applies.
+     *
+     * A salesperson's lead stays on the salesperson desk whatever its stage:
+     * a lead is never handed back to a telecaller — see
+     * LeadFollowUpService::handsOver().
      */
     public function ownerForProjectSwitch(string $stage, User $holder, int $projectId): User
     {
@@ -123,6 +127,10 @@ class LeadAssignmentService
 
         if ($role === null) {
             return $holder;
+        }
+
+        if ($holder->role === 'salesperson') {
+            $role = 'salesperson';
         }
 
         return $this->pick($role, $projectId, claim: true) ?? $holder;
