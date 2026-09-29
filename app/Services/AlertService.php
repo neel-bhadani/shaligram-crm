@@ -158,6 +158,29 @@ class AlertService
         return Alert::where('type', $type)->unread()->update(['read_at' => now()]);
     }
 
+    /**
+     * Rewrite every alert of one type in place, read or not, without raising
+     * anything new.
+     *
+     * For the alerts that carry a running count — "a lead form with no project
+     * has sent 7 leads". The admin was told once; a second alert per lead
+     * would be the wallpaper the dedupe exists to prevent, and a count frozen
+     * at 1 would undersell it. `read_at` is untouched: a changed number is not
+     * a new notification.
+     *
+     * @return int how many were rewritten
+     */
+    public function revise(string $type, string $title, ?string $body = null): int
+    {
+        return Alert::where('type', $type)->update(['title' => $title, 'body' => $body]);
+    }
+
+    /** Whether anybody has ever been sent an alert of this type. */
+    public function everRaised(string $type): bool
+    {
+        return Alert::where('type', $type)->exists();
+    }
+
     /* ---------------- recipients ---------------- */
 
     /** Every active admin. */

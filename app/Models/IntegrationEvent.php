@@ -14,6 +14,11 @@ class IntegrationEvent extends Model
 {
     protected $guarded = [];
 
+    protected $casts = [
+        // null: not a created lead, or logged before form routing existed
+        'routed' => 'boolean',
+    ];
+
     public function lead()
     {
         return $this->belongsTo(Lead::class);

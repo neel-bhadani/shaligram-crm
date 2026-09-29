@@ -5,6 +5,7 @@ import { router } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import StageBadge from './StageBadge.vue'
 import LeadActivityTimeline from './LeadActivityTimeline.vue'
+import LeadWhatsAppPanel from './LeadWhatsAppPanel.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 import { pickable } from '@/composables/useTaxonomy.js'
 
@@ -34,6 +35,8 @@ const reassignCandidates = ref({})
 const reassignStage = ref('')
 const reassignTo = ref('')
 const reassigning = ref(false)
+// the Send WhatsApp panel, opened from the footer
+const showWhatsApp = ref(false)
 
 async function load() {
   if (!props.show || !props.leadId) {
@@ -66,6 +69,7 @@ async function load() {
 
 watch(() => props.show, v => {
   reassignTo.value = ''
+  showWhatsApp.value = false
   load()
 })
 
@@ -164,6 +168,8 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
         </ul>
       </div>
 
+      <LeadWhatsAppPanel v-if="showWhatsApp" :key="lead.id" :lead-id="lead.id" />
+
       <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
 
       <div v-if="allowEdit && canReassign" class="mt-6 border-t border-slate-100 pt-5">
@@ -187,6 +193,9 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
 
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Close</button>
+      <button v-if="lead" class="btn-ghost flex-1 sm:flex-none" @click="showWhatsApp = !showWhatsApp">
+        {{ showWhatsApp ? 'Hide WhatsApp' : 'Send WhatsApp' }}
+      </button>
       <button v-if="allowFollowUp && lead?.pending_todo" class="btn flex-1 sm:flex-none"
               @click="emit('followup', lead)">Update follow-up</button>
       <button v-if="allowEdit" class="btn flex-1 sm:flex-none" @click="emit('edit', leadId)">Edit lead</button>

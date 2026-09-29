@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -32,14 +33,14 @@ class MetaGraphClient
      */
     public function fieldData(string $leadgenId, string $pageAccessToken): array
     {
-        $base    = rtrim(config('integrations.meta.graph_base'), '/');
+        $base = rtrim(config('integrations.meta.graph_base'), '/');
         $version = config('integrations.meta.graph_version');
 
         $response = Http::timeout(config('integrations.meta.timeout'))
             ->retry(2, 200, throw: false)
             ->get("{$base}/{$version}/{$leadgenId}", [
                 'access_token' => $pageAccessToken,
-                'fields'       => 'id,created_time,field_data',
+                'fields' => 'id,created_time,field_data',
             ]);
 
         if ($response->failed()) {
@@ -62,5 +63,80 @@ class MetaGraphClient
         }
 
         return $fields;
+    }
+
+    /**
+     * A lead form's name as Ads Manager shows it, or null when Meta has none.
+     *
+     * @throws RuntimeException when Meta refuses
+     */
+    public function formName(string $formId, string $pageAccessToken): ?string
+    {
+        $response = $this->get($formId, $pageAccessToken, ['fields' => 'name']);
+
+        if ($response->failed()) {
+            throw new RuntimeException("Graph API refused the form lookup ({$response->status()}): ".$this->errorOf($response));
+        }
+
+        $name = trim((string) $response->json('name'));
+
+        return $name === '' ? null : $name;
+    }
+
+    /**
+     * Every lead form on the page, following Meta's paging.
+     *
+     * @return list<array{id: string, name: ?string}>
+     *
+     * @throws RuntimeException when Meta refuses
+     */
+    public function leadForms(string $pageId, string $pageAccessToken): array
+    {
+        $forms = [];
+        $after = null;
+
+        // a page with more than a thousand forms is not one this is built for;
+        // the cap stops a paging bug on Meta's side becoming an endless loop
+        for ($page = 0; $page < 10; $page++) {
+            $response = $this->get("{$pageId}/leadgen_forms", $pageAccessToken, array_filter([
+                'fields' => 'id,name',
+                'limit' => 100,
+                'after' => $after,
+            ]));
+
+            if ($response->failed()) {
+                throw new RuntimeException("Graph API refused the form list ({$response->status()}): ".$this->errorOf($response));
+            }
+
+            foreach ((array) $response->json('data', []) as $form) {
+                if (filled($form['id'] ?? null)) {
+                    $forms[] = ['id' => (string) $form['id'], 'name' => filled($form['name'] ?? null) ? (string) $form['name'] : null];
+                }
+            }
+
+            $after = $response->json('paging.cursors.after');
+
+            if (! $response->json('paging.next') || ! $after) {
+                break;
+            }
+        }
+
+        return $forms;
+    }
+
+    private function get(string $path, string $pageAccessToken, array $query): Response
+    {
+        $base = rtrim(config('integrations.meta.graph_base'), '/');
+        $version = config('integrations.meta.graph_version');
+
+        return Http::timeout(config('integrations.meta.timeout'))
+            ->retry(2, 200, throw: false)
+            ->get("{$base}/{$version}/{$path}", ['access_token' => $pageAccessToken] + $query);
+    }
+
+    /** Meta's own error message — see fieldData() for why it is passed on. */
+    private function errorOf(Response $response): string
+    {
+        return $response->json('error.message') ?? $response->body();
     }
 }

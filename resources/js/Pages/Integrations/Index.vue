@@ -79,6 +79,17 @@ const dateTime = v => v
   : null
 
 const lastReceived = card => dateTime(card.last_received_at) ?? 'No leads yet'
+
+/*
+ | A lead created in the fallback project because its form has no project. Its
+ | result is still "Lead created" — the lead exists — so without this chip it
+ | would look exactly like a routed one, and the alert would be the only sign a
+ | mapping is missing. `routed` is null on rows where it does not apply.
+ */
+const unrouted = e => e.result === 'created' && e.routed === false
+
+const unmappedForms = computed(() =>
+  (facebookCard.value?.forms ?? []).filter(f => !f.project_id).length)
 </script>
 
 <template>
@@ -135,9 +146,17 @@ const lastReceived = card => dateTime(card.last_received_at) ?? 'No leads yet'
     <div v-if="facebookCard && !facebookCard.connected" class="info-box mt-4">
       <strong>To switch Facebook on:</strong>
       configure it with the page access token and app secret from the client's Meta app,
-      choose the project and the person the leads should go to, then paste the callback URL and
+      choose the fallback project and the telecaller the leads should go to, then paste the callback URL and
       verify token into the Meta app dashboard under Webhooks → Page → <code>leadgen</code>.
       Use <em>Send test lead</em> to prove the whole path works before Meta approval lands.
+    </div>
+
+    <div v-if="unmappedForms" class="warn-box mt-4 flex flex-wrap items-center justify-between gap-2">
+      <span>
+        <strong>{{ unmappedForms }} Facebook lead {{ unmappedForms === 1 ? 'form has' : 'forms have' }} no project.</strong>
+        {{ unmappedForms === 1 ? 'Its' : 'Their' }} leads go to the fallback project until one is chosen.
+      </span>
+      <button class="btn-ghost !px-3 !py-1.5 !text-xs" @click="openConfigure(facebookCard)">Choose projects</button>
     </div>
 
     <!-- ---------------- activity log ---------------- -->
@@ -170,11 +189,17 @@ const lastReceived = card => dateTime(card.last_received_at) ?? 'No leads yet'
             <td class="whitespace-nowrap px-4 py-2.5 text-slate-600">{{ dateTime(e.created_at) }}</td>
             <td class="whitespace-nowrap px-4 py-2.5 text-slate-600">{{ e.provider_name }}</td>
             <td class="px-4 py-2.5">
-              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resultChip(e.result)">
-                {{ resultLabel(e.result) }}
-              </span>
+              <div class="flex flex-col items-start gap-1">
+                <span class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resultChip(e.result)">
+                  {{ resultLabel(e.result) }}
+                </span>
+                <span v-if="unrouted(e)" class="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                  Unrouted · fallback project
+                </span>
+              </div>
             </td>
             <td class="px-4 py-2.5 text-slate-600">
+              <span v-if="e.form_name" class="block text-xs text-slate-500">Form: {{ e.form_name }}</span>
               <span class="break-words">{{ e.message }}</span>
               <span v-if="e.external_id" class="mt-0.5 block font-mono text-[11px] text-slate-400">
                 {{ e.external_id }}
@@ -187,12 +212,19 @@ const lastReceived = card => dateTime(card.last_received_at) ?? 'No leads yet'
       <div v-if="events.length" class="divide-y divide-slate-100 lg:hidden">
         <div v-for="e in events" :key="e.id" class="px-4 py-3">
           <div class="mb-1 flex items-center justify-between gap-2">
-            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resultChip(e.result)">
-              {{ resultLabel(e.result) }}
+            <span class="flex flex-wrap gap-1">
+              <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resultChip(e.result)">
+                {{ resultLabel(e.result) }}
+              </span>
+              <span v-if="unrouted(e)" class="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                Unrouted · fallback project
+              </span>
             </span>
             <span class="text-xs text-slate-400">{{ dateTime(e.created_at) }}</span>
           </div>
-          <p class="text-xs font-medium text-slate-700">{{ e.provider_name }}</p>
+          <p class="text-xs font-medium text-slate-700">
+            {{ e.provider_name }}<template v-if="e.form_name"> · {{ e.form_name }}</template>
+          </p>
           <p class="mt-0.5 break-words text-xs text-slate-500">{{ e.message }}</p>
         </div>
       </div>

@@ -213,10 +213,11 @@ defineProps({
 
       <!-- ---------------- the queue ---------------- -->
       <section class="card p-5">
-        <h2 class="text-base font-semibold text-slate-900">The Queue, and why messages are not sent for you</h2>
+        <h2 class="text-base font-semibold text-slate-900">Click-to-send, and the Queue</h2>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
-          A rule can prepare a WhatsApp message — with the customer's name, project and your staff
-          member's number already filled in — and put it in the Queue. It does not send it.
+          A rule set to <strong>click-to-send</strong> prepares a WhatsApp message — with the
+          customer's name, project and your staff member's number already filled in — and puts it
+          in the Queue. It does not send it.
         </p>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
           Somebody opens the Queue, reads the message, and presses “Open in WhatsApp”. WhatsApp
@@ -226,7 +227,31 @@ defineProps({
           make the message log worthless.
         </p>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
-          This costs nothing and works right now.
+          This costs nothing and needs nothing set up. It is also where everything falls back to:
+          when API sending is off, or a message fails to send, it can still be opened from here.
+        </p>
+      </section>
+
+      <!-- ---------------- sending by API ---------------- -->
+      <section class="card p-5">
+        <h2 class="text-base font-semibold text-slate-900">Sending by API</h2>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          A rule set to <strong>send by API</strong> sends one of Meta's approved templates by
+          itself, in the background. If Meta refuses or cannot be reached it tries three times, then
+          marks the message failed and alerts every admin with Meta's reason. It never messages a
+          lead that is booked or lost, unless the rule says it may. The same rule never messages
+          the same lead twice within the cooldown.
+        </p>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          <strong>The 24-hour rule.</strong> WhatsApp only lets a business send an approved template
+          to somebody who has not replied. Once a customer replies, you can write to them freely for
+          24 hours. “Send WhatsApp” on a lead shows which applies and how long is left.
+        </p>
+        <p class="mt-2 text-sm leading-relaxed text-slate-600">
+          Templates are written and submitted in WhatsApp Manager. On the Templates tab, “Sync
+          templates from Meta” fetches them, and for each one you choose which detail fills
+          <code v-pre>{{1}}</code>, <code v-pre>{{2}}</code> and so on — Meta does not know, and the
+          CRM never guesses.
         </p>
       </section>
 
@@ -252,7 +277,8 @@ defineProps({
             <h3 class="text-sm font-semibold text-slate-800">WhatsApp Business Platform</h3>
             <p class="mt-1.5 text-xs leading-relaxed text-slate-600">
               The paid one. Applied for through Meta or through a provider. This is what lets
-              software send messages on its own, and what the “Send by API” button needs.
+              software send messages on its own: the phone number ID, the WhatsApp Business Account
+              ID and a System User token go into the settings on the Queue tab.
             </p>
           </div>
         </div>
@@ -285,11 +311,11 @@ defineProps({
         </p>
 
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Until all of that is in place, the “Send by API” button will tell you plainly that it is
-          not set up rather than appearing to work.
+          Until all of that is in place and API sending is switched on, every WhatsApp message goes
+          out by click-to-send, and the “Send by API” button says plainly that it is not set up.
         </p>
 
-        <p v-if="!whatsapp.configured" class="warn-box mt-4">{{ whatsapp.not_configured }}</p>
+        <p v-if="!whatsapp.api_ready" class="warn-box mt-4">{{ whatsapp.not_configured }}</p>
       </section>
 
       <!-- ---------------- safety ---------------- -->

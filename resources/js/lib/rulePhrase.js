@@ -145,7 +145,13 @@ export function actionPhrases(rule, catalog) {
         ? { ...meta.params, recipient: {} }   // already a phrase; do not re-label it
         : meta.params
 
-      return fill(catalog, meta.phrase, params, values)
+      // an action whose wording depends on one of its own choices — WhatsApp
+      // "queues" in click mode and "sends" in API mode
+      const phrase = meta.phrase_by
+        ? (meta.phrases || {})[a[meta.phrase_by]] ?? meta.phrase
+        : meta.phrase
+
+      return fill(catalog, phrase, params, values)
     })
     .filter(Boolean)
 }

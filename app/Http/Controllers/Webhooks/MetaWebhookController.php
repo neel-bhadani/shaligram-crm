@@ -39,7 +39,7 @@ class MetaWebhookController extends Controller
     public function verify(Request $request, string $provider): Response
     {
         $integration = Integration::forProvider($provider);
-        $expected    = (string) $integration->setting('verify_token');
+        $expected = (string) $integration->setting('verify_token');
 
         /*
          | `hub_verify_token`, not `hub.verify_token`. Meta sends the dotted
@@ -83,7 +83,7 @@ class MetaWebhookController extends Controller
     public function handle(Request $request, string $provider, IntegrationLogger $log): Response
     {
         $integration = Integration::forProvider($provider);
-        $secret      = (string) $integration->setting('app_secret');
+        $secret = (string) $integration->setting('app_secret');
 
         if ($secret === '' || ! $this->signatureIsValid($request, $secret)) {
             Log::warning("[integration:{$provider}] webhook signature rejected", ['ip' => $request->ip()]);
@@ -97,13 +97,17 @@ class MetaWebhookController extends Controller
          | than dropped silently, because "Meta is delivering and we are
          | ignoring it" is precisely the state an admin needs to be able to see.
          */
-        foreach ($this->leadgenIds($request) as $leadgenId) {
+        foreach ($this->leadgens($request) as $leadgenId => $formId) {
+            // a numeric id comes back out of an array key as an int
+            $leadgenId = (string) $leadgenId;
+
             if (! $integration->isReady()) {
                 $log->failed($provider, $leadgenId, 'Received while the integration was switched off or incomplete.');
+
                 continue;
             }
 
-            ProcessMetaLead::dispatch($provider, $leadgenId);
+            ProcessMetaLead::dispatch($provider, $leadgenId, formId: $formId);
         }
 
         return response('', 200);
@@ -129,22 +133,25 @@ class MetaWebhookController extends Controller
             return false;
         }
 
-        $expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), $secret);
+        $expected = 'sha256='.hash_hmac('sha256', $request->getContent(), $secret);
 
         return hash_equals($expected, $header);
     }
 
     /**
-     * Every leadgen_id in the payload.
+     * Every leadgen_id in the payload, with the lead form it came from.
      *
      * Meta batches: one delivery can carry several entries, each with several
      * changes, and a page that also subscribes to other fields will send those
      * down the same pipe. Anything that is not a `leadgen` change with an id is
      * skipped rather than treated as a malformed lead.
      *
-     * @return list<string>
+     * The form id is what LeadFormRouter files the lead by. Null when Meta
+     * left it out, which sends the lead to the fallback project.
+     *
+     * @return array<string, ?string> leadgen_id => form_id
      */
-    private function leadgenIds(Request $request): array
+    private function leadgens(Request $request): array
     {
         $ids = [];
 
@@ -157,12 +164,14 @@ class MetaWebhookController extends Controller
                 $id = $change['value']['leadgen_id'] ?? null;
 
                 if ($id !== null && $id !== '') {
-                    $ids[] = (string) $id;
+                    $formId = $change['value']['form_id'] ?? null;
+
+                    // keyed by id: the same id twice inside one delivery is one lead
+                    $ids[(string) $id] = filled($formId) ? (string) $formId : null;
                 }
             }
         }
 
-        // the same id twice inside one delivery is one lead
-        return array_values(array_unique($ids));
+        return $ids;
     }
 }

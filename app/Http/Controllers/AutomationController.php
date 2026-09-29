@@ -7,6 +7,7 @@ use App\Models\AutomationLog;
 use App\Models\AutomationRule;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Models\WhatsAppTemplate;
 use App\Services\Automation\RuleCatalog;
 use App\Services\WhatsApp\TemplateRenderer;
 use App\Services\WhatsApp\WhatsAppSender;
@@ -26,7 +27,7 @@ use Inertia\Inertia;
  * purpose is to let somebody see how the pieces fit together.
  *
  * THE SECRET. A WhatsApp access token is stored encrypted in `integrations` and
- * never leaves the server. This controller sends `configured`, `autoSend` and a
+ * never leaves the server. This controller sends `configured`, `is_active` and a
  * masked tail, and never `$integration->settings` — the cast decrypts on read,
  * so handing that array to Inertia would put a live token in the page source.
  */
@@ -52,6 +53,7 @@ class AutomationController extends Controller
             'tab' => $tab,
             'rules' => $this->rules(),
             'templates' => $this->templates(),
+            'whatsappTemplates' => $this->whatsappTemplates(),
             'queue' => $this->queue(),
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
@@ -89,45 +91,46 @@ class AutomationController extends Controller
      *
      * The token is only written when the admin actually typed a new one. The
      * form ships a masked value it cannot read back, so an admin correcting the
-     * phone number id must not blank the token by leaving the (empty) token
-     * box alone.
+     * phone number id — moving from Meta's test number to the live one, say —
+     * must not blank the token by leaving the (empty) token box alone.
      *
-     * Auto-send cannot be switched on while the API is unconfigured, and the
-     * refusal is here rather than only in the UI: it is the one setting that
-     * turns "a rule queues a message" into "a rule messages a customer", and it
-     * must not be reachable by posting to the route.
+     * Switching API sending on is refused while the credentials are missing,
+     * here rather than only in the UI: it is the setting that turns "a rule
+     * queues a message" into "a rule messages a customer".
      */
     public function updateWhatsApp(Request $request)
     {
         $data = $request->validate([
             'phone_number_id' => ['nullable', 'string', 'max:80'],
-            'access_token' => ['nullable', 'string', 'max:500'],
-            'auto_send' => ['boolean'],
+            'whatsapp_business_account_id' => ['nullable', 'string', 'max:80'],
+            'access_token' => ['nullable', 'string', 'max:1000'],
+            'is_active' => ['boolean'],
         ]);
 
         $integration = $this->whatsapp->integration();
 
-        $changes = ['phone_number_id' => $data['phone_number_id'] ?? null];
+        $changes = [
+            'phone_number_id' => trim((string) ($data['phone_number_id'] ?? '')) ?: null,
+            'whatsapp_business_account_id' => trim((string) ($data['whatsapp_business_account_id'] ?? '')) ?: null,
+        ];
 
         if (filled($data['access_token'] ?? null)) {
-            $changes['access_token'] = $data['access_token'];
+            $changes['access_token'] = trim($data['access_token']);
         }
 
         $integration->mergeSettings($changes);
+
+        // asked AFTER the merge: an admin pasting credentials and switching the
+        // API on in the same submission should get what they asked for
+        $wanted = (bool) ($data['is_active'] ?? false);
+        $integration->is_active = false;
         $integration->save();
 
-        // asked again AFTER the save: an admin pasting credentials and turning
-        // auto-send on in the same submission should get what they asked for
-        $wanted = (bool) ($data['auto_send'] ?? false);
-
         if ($wanted && ! $this->whatsapp->isConfigured()) {
-            $integration->mergeSettings(['auto_send' => false]);
-            $integration->save();
-
-            return back()->with('error', WhatsAppSender::NOT_CONFIGURED);
+            return back()->with('error', 'Add the phone number ID and the System User token before switching API sending on. Until then, messages go out by click-to-send.');
         }
 
-        $integration->mergeSettings(['auto_send' => $wanted]);
+        $integration->is_active = $wanted;
         $integration->save();
 
         return back()->with('success', 'WhatsApp settings saved.');
@@ -186,6 +189,35 @@ class AutomationController extends Controller
     }
 
     /**
+     * Meta's templates as last synced, approved ones first, each with the
+     * admin's variable mapping.
+     */
+    private function whatsappTemplates(): array
+    {
+        return WhatsAppTemplate::withCount('messages')
+            ->orderByRaw('status = ? desc', [WhatsAppTemplate::APPROVED])
+            ->orderBy('name')
+            ->orderBy('language')
+            ->get()
+            ->map(fn (WhatsAppTemplate $t) => [
+                'id' => $t->id,
+                'name' => $t->name,
+                'language' => $t->language,
+                'category' => $t->category,
+                'status' => $t->status,
+                'body' => $t->body,
+                'variables' => $t->variables ?? [],
+                'parameter_map' => (object) ($t->parameter_map ?? []),
+                'unsupported_reason' => $t->unsupported_reason,
+                'sendable' => $t->unsendableReason() === null,
+                'problem' => $t->unsendableReason(),
+                'messages_count' => $t->messages_count,
+                'synced_at' => $t->synced_at?->toIso8601String(),
+            ])
+            ->all();
+    }
+
+    /**
      * The review list: everything queued, plus what has recently left it.
      *
      * Recently-sent messages are included on purpose. The queue is the only
@@ -198,6 +230,7 @@ class AutomationController extends Controller
         return MessageLog::with([
             'lead:id,first_name,middle_name,last_name,mobile_number,assigned_to',
             'template:id,name,category',
+            'whatsappTemplate:id,name,language',
             'rule:id,name',
             'user:id,first_name,last_name',
         ])
@@ -211,18 +244,21 @@ class AutomationController extends Controller
                 'body' => $m->body,
                 'to_number' => $m->to_number,
                 'error' => $m->error,
+                'attempts' => $m->attempts,
+                'meta_message_id' => $m->meta_message_id,
                 'sent_at' => $m->sent_at?->toIso8601String(),
                 'created_at' => $m->created_at?->toIso8601String(),
                 'lead' => $m->lead ? [
                     'id' => $m->lead->id,
                     'name' => $m->lead->full_name,
                 ] : null,
-                'template' => $m->template?->name,
+                'template' => $m->template?->name ?? $m->whatsappTemplate?->label,
                 'rule' => $m->rule?->name,
                 'user' => $m->user?->display_name,
                 // built server-side so the browser never has to know the
-                // country code or the encoding rules
-                'click_url' => $m->status === 'queued' ? $this->whatsapp->clickUrlFor($m) : null,
+                // country code or the encoding rules. A failed API send keeps
+                // one too: click-to-send is its fallback
+                'click_url' => in_array($m->status, ['queued', 'failed'], true) ? $this->whatsapp->clickUrlFor($m) : null,
             ])
             ->all();
     }
@@ -259,8 +295,10 @@ class AutomationController extends Controller
 
         return [
             'configured' => $this->whatsapp->isConfigured(),
-            'auto_send' => $this->whatsapp->autoSends(),
+            'is_active' => (bool) $integration->is_active,
+            'api_ready' => $this->whatsapp->apiReady(),
             'phone_number_id' => $integration->setting('phone_number_id'),
+            'whatsapp_business_account_id' => $integration->setting('whatsapp_business_account_id'),
             'access_token_tail' => $integration->maskedSetting('access_token'),
             'not_configured' => WhatsAppSender::NOT_CONFIGURED,
         ];

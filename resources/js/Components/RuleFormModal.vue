@@ -79,7 +79,12 @@ watch(() => props.show, open => {
       trigger: props.rule.trigger,
       trigger_config: { ...(props.rule.trigger_config ?? {}) },
       conditions: (props.rule.conditions ?? []).map(c => ({ ...c })),
-      actions: (props.rule.actions ?? []).map(a => ({ ...a })),
+      // defaults under the saved values, so a rule written before a parameter
+      // existed opens with it filled — an old WhatsApp rule reads as click mode
+      actions: (props.rule.actions ?? []).map(a => ({
+        ...defaultsFor(props.catalog.actions?.[a.type]?.params),
+        ...a,
+      })),
     })
   } else {
     form.defaults(blank())
@@ -350,8 +355,10 @@ const err = key => form.errors[key]
           <HelpTip title="Actions">
             What the rule does, in the order you put them. They all happen together or not at all,
             so a rule can never half-run and leave a lead in a strange state.
-            A WhatsApp action <strong>queues</strong> a message for somebody to send — it never
-            sends one by itself.
+            A WhatsApp action either <strong>queues</strong> a message for somebody to send by hand,
+            or <strong>sends</strong> an approved Meta template through the API. API sending skips
+            booked and lost leads unless you say otherwise, and falls back to the queue whenever the
+            API is not set up or is switched off.
           </HelpTip>
         </div>
         <p class="mb-3 text-xs text-slate-400">At least one. They run in this order.</p>
