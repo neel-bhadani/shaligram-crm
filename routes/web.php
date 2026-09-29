@@ -11,7 +11,6 @@ use App\Http\Controllers\ExportDataController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadImportController;
-use App\Http\Controllers\LeadWhatsAppController;
 use App\Http\Controllers\MessageQueueController;
 use App\Http\Controllers\MessageTemplateController;
 use App\Http\Controllers\PipelineController;
@@ -19,7 +18,6 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\TodoController;
 use App\Http\Controllers\UserController;
-use App\Http\Controllers\WhatsAppTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/dashboard');
@@ -51,13 +49,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/leads/import/chunk', [LeadImportController::class, 'import'])->name('leads.import.chunk');
 
     Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
-
-    /*
-     | "Send WhatsApp" on the lead view. LeadPolicy::view() decides, in the
-     | controller and the FormRequest: whoever can open the lead can message it.
-     */
-    Route::get('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'show'])->name('leads.whatsapp.show');
-    Route::post('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'send'])->name('leads.whatsapp.send');
     Route::post('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])
         ->name('leads.check-duplicate');
 
@@ -486,12 +477,6 @@ Route::middleware(['auth'])->group(function () {
 
         Route::put('/automation/whatsapp', [AutomationController::class, 'updateWhatsApp'])
             ->name('automation.whatsapp.update');
-
-        // Meta's templates: ask Meta which exist, and map their variables
-        Route::post('/automation/whatsapp/templates/sync', [WhatsAppTemplateController::class, 'sync'])
-            ->name('automation.whatsapp.templates.sync');
-        Route::put('/automation/whatsapp/templates/{template}/map', [WhatsAppTemplateController::class, 'map'])
-            ->name('automation.whatsapp.templates.map');
     });
 
     /* ---------------- integrations (admin only) ---------------- */

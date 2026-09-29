@@ -5,7 +5,6 @@ namespace App\Services\Automation;
 use App\Models\MessageTemplate;
 use App\Models\Project;
 use App\Models\User;
-use App\Models\WhatsAppTemplate;
 use App\Support\CrmTaxonomy;
 
 /**
@@ -116,23 +115,6 @@ class RuleCatalog
                 ->orderBy('name')
                 ->get(['id', 'name', 'category'])
                 ->map(fn (MessageTemplate $t) => ['value' => $t->id, 'label' => $t->name])
-                ->all(),
-
-            'whatsapp_modes' => $this->fromMap(config('automation.whatsapp.modes')),
-            'whatsapp_terminal' => $this->fromMap(config('automation.whatsapp.terminal')),
-
-            /*
-             | Only what the API can actually send today: approved by Meta,
-             | nothing the CRM cannot fill, every variable mapped. A template
-             | that stops qualifying after a rule is saved is caught again at
-             | send time — see WhatsAppTemplate::unsendableReason().
-             */
-            'whatsapp_templates' => WhatsAppTemplate::usable()
-                ->orderBy('name')
-                ->get()
-                ->filter(fn (WhatsAppTemplate $t) => $t->unmappedVariables() === [])
-                ->map(fn (WhatsAppTemplate $t) => ['value' => $t->id, 'label' => $t->label])
-                ->values()
                 ->all(),
 
             'alert_recipients' => collect(config('automation.alert_recipients'))

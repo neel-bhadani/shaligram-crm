@@ -39,17 +39,15 @@ use Tests\TestCase;
  * no credentials — a request that tries gets the refusal, not just a hidden
  * toggle.
  *
- * @see TemplateRenderer
- * @see WhatsAppSender
+ * @see \App\Services\WhatsApp\TemplateRenderer
+ * @see \App\Services\WhatsApp\WhatsAppSender
  */
 class AutomationWhatsAppTest extends TestCase
 {
     use RefreshDatabase;
 
     private User $admin;
-
     private User $tele;
-
     private Project $project;
 
     protected function setUp(): void
@@ -58,8 +56,8 @@ class AutomationWhatsAppTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-09-08 11:00', 'Asia/Kolkata'));
 
-        $this->admin = $this->user('admin', 'Ann');
-        $this->tele = $this->user('telecaller', 'Tara');
+        $this->admin   = $this->user('admin', 'Ann');
+        $this->tele    = $this->user('telecaller', 'Tara');
         $this->project = Project::create(['name' => 'Skyline Residency']);
     }
 
@@ -120,7 +118,7 @@ class AutomationWhatsAppTest extends TestCase
 
         $rendered = app(TemplateRenderer::class)->render(
             'Hi {first_name}, thank you for visiting {project}. {owner_name} ({owner_phone}) will call you. '
-            .'Full name: {lead_name}. Stage: {stage}.',
+            . 'Full name: {lead_name}. Stage: {stage}.',
             $lead->fresh()->load('project', 'owner'),
         );
 
@@ -136,9 +134,9 @@ class AutomationWhatsAppTest extends TestCase
     {
         $this->actingAs($this->admin)
             ->post(route('automation.templates.store'), [
-                'name' => 'Welcome',
-                'category' => 'utility',
-                'body' => 'Hi {first_name}, welcome to {project}. {first_name}, we will call you soon.',
+                'name'      => 'Welcome',
+                'category'  => 'utility',
+                'body'      => 'Hi {first_name}, welcome to {project}. {first_name}, we will call you soon.',
                 'is_active' => true,
             ])
             ->assertSessionHasNoErrors();
@@ -239,10 +237,8 @@ class AutomationWhatsAppTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('error', WhatsAppSender::NOT_CONFIGURED);
 
-        // still in the queue, for click-to-send: nothing was tried, so nothing failed
         $message->refresh();
-        $this->assertSame('queued', $message->status);
-        $this->assertSame('click', $message->mode);
+        $this->assertSame('failed', $message->status);
         $this->assertSame(WhatsAppSender::NOT_CONFIGURED, $message->error);
         $this->assertStringContainsString('WhatsApp Business Platform', $message->error);
         $this->assertStringContainsString('not the same as the free WhatsApp Business app', $message->error);
@@ -250,42 +246,42 @@ class AutomationWhatsAppTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_api_sending_cannot_be_switched_on_without_credentials(): void
+    public function test_auto_send_cannot_be_switched_on_without_credentials(): void
     {
         $this->actingAs($this->admin)
             ->put(route('automation.whatsapp.update'), [
                 'phone_number_id' => '',
-                'access_token' => '',
-                'is_active' => true,
+                'access_token'    => '',
+                'auto_send'       => true,
             ])
             ->assertRedirect()
-            ->assertSessionHas('error');
+            ->assertSessionHas('error', WhatsAppSender::NOT_CONFIGURED);
 
-        $this->assertFalse(app(WhatsAppSender::class)->apiReady());
+        $this->assertFalse(app(WhatsAppSender::class)->autoSends());
     }
 
-    public function test_api_sending_is_off_even_once_credentials_exist(): void
+    public function test_auto_send_is_off_even_once_credentials_exist(): void
     {
         $this->actingAs($this->admin)
             ->put(route('automation.whatsapp.update'), [
                 'phone_number_id' => '123456789',
-                'access_token' => 'EAAG-secret-token-abcd',
-                'is_active' => false,
+                'access_token'    => 'EAAG-secret-token-abcd',
+                'auto_send'       => false,
             ])
             ->assertSessionHasNoErrors();
 
         $sender = app(WhatsAppSender::class);
 
         $this->assertTrue($sender->isConfigured());
-        $this->assertFalse($sender->apiReady(), 'configured is not the same as switched on');
+        $this->assertFalse($sender->autoSends(), 'configured is not the same as switched on');
     }
 
     public function test_the_access_token_never_reaches_the_browser(): void
     {
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
             'phone_number_id' => '123456789',
-            'access_token' => 'EAAG-secret-token-abcd',
-            'is_active' => false,
+            'access_token'    => 'EAAG-secret-token-abcd',
+            'auto_send'       => false,
         ]);
 
         /*
@@ -309,12 +305,12 @@ class AutomationWhatsAppTest extends TestCase
     public function test_editing_the_phone_id_does_not_blank_the_token(): void
     {
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
-            'phone_number_id' => '111', 'access_token' => 'EAAG-first-token', 'is_active' => false,
+            'phone_number_id' => '111', 'access_token' => 'EAAG-first-token', 'auto_send' => false,
         ]);
 
         // the form ships an empty token box, because it cannot show the real one
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
-            'phone_number_id' => '222', 'access_token' => '', 'is_active' => false,
+            'phone_number_id' => '222', 'access_token' => '', 'auto_send' => false,
         ]);
 
         $integration = Integration::forProvider('whatsapp');
@@ -343,51 +339,51 @@ class AutomationWhatsAppTest extends TestCase
         $lead = $this->lead(['assigned_to' => $this->tele->id]);
 
         return MessageLog::create([
-            'lead_id' => $lead->id,
-            'mode' => 'click',
+            'lead_id'   => $lead->id,
+            'mode'      => 'click',
             'to_number' => '919876543210',
-            'body' => 'Namaste Rahul',
-            'status' => 'queued',
+            'body'      => 'Namaste Rahul',
+            'status'    => 'queued',
         ]);
     }
 
     private function lead(array $attrs = []): Lead
     {
         return Lead::create($attrs + [
-            'first_name' => 'Rahul',
-            'last_name' => 'Mehta',
-            'mobile_number' => '9876543210',
-            'project_id' => $this->project->id,
-            'source' => 'walk_in',
-            'stage' => 'fresh',
-            'assigned_role' => 'telecaller',
+            'first_name'       => 'Rahul',
+            'last_name'        => 'Mehta',
+            'mobile_number'    => '9876543210',
+            'project_id'       => $this->project->id,
+            'source'           => 'walk_in',
+            'stage'            => 'fresh',
+            'assigned_role'    => 'telecaller',
             'stage_changed_at' => now(),
-            'created_by' => $this->admin->id,
+            'created_by'       => $this->admin->id,
         ]);
     }
 
     private function todoFor(Lead $lead): Todo
     {
         return Todo::create([
-            'lead_id' => $lead->id,
-            'assigned_to' => $lead->assigned_to,
-            'created_by' => $this->admin->id,
+            'lead_id'      => $lead->id,
+            'assigned_to'  => $lead->assigned_to,
+            'created_by'   => $this->admin->id,
             'scheduled_at' => now()->addDay(),
-            'type' => 'call',
-            'status' => 'pending',
+            'type'         => 'call',
+            'status'       => 'pending',
         ]);
     }
 
     private function user(string $role, string $first): User
     {
         return User::create([
-            'first_name' => $first,
-            'last_name' => 'User',
-            'email' => strtolower($first).'@example.test',
+            'first_name'    => $first,
+            'last_name'     => 'User',
+            'email'         => strtolower($first) . '@example.test',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'role' => $role,
-            'is_active' => true,
-            'password' => 'password',
+            'role'          => $role,
+            'is_active'     => true,
+            'password'      => 'password',
         ]);
     }
 }

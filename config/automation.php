@@ -345,58 +345,17 @@ return [
             ],
         ],
 
-        /*
-         | Two ways to send, chosen per rule. `click` is what this action has
-         | always done: the message waits in the Queue for a person to open.
-         | `api` sends an approved Meta template through the queue worker,
-         | and falls back to `click` whenever the API is not set up or is
-         | switched off — see ActionRunner::sendWhatsApp().
-         |
-         | `phrases` is keyed by the mode, because "queue the Welcome message"
-         | and "send the welcome_v2 template" are different promises.
-         */
         'queue_whatsapp' => [
-            'label' => 'Send a WhatsApp message',
+            'label' => 'Queue a WhatsApp message',
             'phrase' => 'queue the {template_id} WhatsApp message',
-            'phrase_by' => 'mode',
-            'phrases' => [
-                'click' => 'queue the {template_id} WhatsApp message',
-                'api' => 'send the {whatsapp_template_id} WhatsApp template',
-            ],
-            'hint' => 'Click-to-send puts the message in the Queue tab for somebody to open. API sends an approved template straight away — or queues it for click-to-send if the API is not set up.',
+            'hint' => 'Puts the message in the Queue tab for somebody to open and send. It is never sent on its own.',
             'params' => [
-                'mode' => [
-                    'label' => 'How',
-                    'type' => 'select',
-                    'options' => 'whatsapp_modes',
-                    'default' => 'click',
-                    'required' => true,
-                    'hint' => 'API sending only allows templates Meta has approved, until the customer replies.',
-                ],
                 'template_id' => [
                     'label' => 'Which message',
                     'type' => 'select',
                     'options' => 'templates',
                     'required' => true,
-                    'when' => ['mode' => 'click'],
                     'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued.',
-                ],
-                'whatsapp_template_id' => [
-                    'label' => 'Which approved template',
-                    'type' => 'select',
-                    'options' => 'whatsapp_templates',
-                    'required' => true,
-                    'when' => ['mode' => 'api'],
-                    'hint' => 'Only Meta-approved templates with every variable mapped are listed. Sync them on the Templates tab.',
-                ],
-                'terminal' => [
-                    'label' => 'Booked or lost leads',
-                    'type' => 'select',
-                    'options' => 'whatsapp_terminal',
-                    'default' => 'skip',
-                    'required' => true,
-                    'when' => ['mode' => 'api'],
-                    'hint' => 'By default a lead that is booked or lost is never messaged.',
                 ],
             ],
         ],
@@ -536,48 +495,36 @@ return [
         'link_base' => 'https://wa.me/',
 
         /*
-         | The API half: Meta's WhatsApp Cloud API, outbound only.
+         | The API half. Everything is built and nothing is switched on: there
+         | are no credentials yet, and there will not be until the client
+         | confirms which WhatsApp product they actually have.
          |
-         | Needs WhatsApp Business PLATFORM access — the free WhatsApp Business
-         | APP on a phone has no API at all. Credentials are the phone number
-         | ID, the WhatsApp Business Account ID and a System User token (not a
-         | Page token), all on the `integrations` row for this provider, where
-         | the settings column is `encrypted:array`, and switched on by that
-         | row's `is_active`. The phone number ID is a setting, not config, so
-         | moving from Meta's test number to the live one is a settings change.
+         | This matters more than it sounds. The free WhatsApp Business APP on
+         | a phone has no API at all — no amount of configuration makes it send
+         | programmatically. Sending from software needs WhatsApp Business
+         | PLATFORM access through Meta or a provider, which is an approval
+         | process and a monthly bill.
          |
-         | The token is never rendered to the browser — see
-         | AutomationController::whatsappCard() and Integration::maskedSetting().
+         | Credentials live in the `integrations` table under this provider,
+         | where the settings column is `encrypted:array`. They are never
+         | rendered to the browser — see MessageTemplateController and
+         | Integration::maskedSetting().
          */
         'provider' => 'whatsapp',
         'secret_keys' => ['access_token'],
         'api' => [
             'base' => env('WHATSAPP_API_BASE', 'https://graph.facebook.com'),
-            'version' => env('WHATSAPP_API_VERSION', 'v26.0'),
+            'version' => env('WHATSAPP_API_VERSION', 'v21.0'),
             'timeout' => 15,
-
-            // SendWhatsAppMessage: three attempts in all, then the message is
-            // marked failed and the admins are alerted. Seconds between them.
-            'tries' => 3,
-            'backoff' => [30, 120],
         ],
 
         /*
-         | Meta's customer-service window. Free-form text is allowed for this
-         | long after the customer's last message; outside it, only an
-         | approved template. Measured from leads.last_inbound_at.
+         | Auto-send is off, and off is the default in the code rather than
+         | only in the seeded row: a fresh install with no settings row at all
+         | must queue, not send. Flipping it is an admin setting on the Queue
+         | tab and it cannot be flipped while the API is unconfigured.
          */
-        'window_hours' => 24,
-
-        'modes' => [
-            'click' => 'Click-to-send (someone opens it from the Queue)',
-            'api' => 'Send automatically by API',
-        ],
-
-        'terminal' => [
-            'skip' => "Don't send to them",
-            'allow' => 'Send anyway',
-        ],
+        'auto_send_default' => false,
     ],
 
     /*

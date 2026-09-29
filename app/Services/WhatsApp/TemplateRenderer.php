@@ -4,7 +4,6 @@ namespace App\Services\WhatsApp;
 
 use App\Models\Lead;
 use App\Models\MessageTemplate;
-use App\Models\WhatsAppTemplate;
 use App\Support\CrmTaxonomy;
 
 /**
@@ -66,14 +65,14 @@ class TemplateRenderer
         $owner = $lead->owner;
 
         return [
-            'lead_name' => $lead->full_name,
-            'first_name' => (string) $lead->first_name,
-            'project' => (string) ($lead->project?->name ?? ''),
-            'owner_name' => (string) ($owner?->display_name ?? ''),
+            'lead_name'   => $lead->full_name,
+            'first_name'  => (string) $lead->first_name,
+            'project'     => (string) ($lead->project?->name ?? ''),
+            'owner_name'  => (string) ($owner?->display_name ?? ''),
             'owner_phone' => $owner?->mobile_number
-                ? config('crm.country_code').' '.$owner->mobile_number
+                ? config('crm.country_code') . ' ' . $owner->mobile_number
                 : '',
-            'stage' => CrmTaxonomy::stageLabel($lead->stage),
+            'stage'       => CrmTaxonomy::stageLabel($lead->stage),
         ];
     }
 
@@ -86,7 +85,7 @@ class TemplateRenderer
      * guessing the order for every template already written, so it is stored
      * the moment the body is saved. See MessageTemplate::$placeholder_map.
      *
-     * @return array<int, string> ['lead_name', 'project'] — {{1}}, {{2}}
+     * @return array<int, string>  ['lead_name', 'project'] — {{1}}, {{2}}
      */
     public function mapFor(string $body): array
     {
@@ -116,7 +115,7 @@ class TemplateRenderer
         $map = $map ?? $this->mapFor($body);
 
         foreach ($map as $index => $name) {
-            $body = str_replace('{'.$name.'}', '{{'.($index + 1).'}}', $body);
+            $body = str_replace('{' . $name . '}', '{{' . ($index + 1) . '}}', $body);
         }
 
         return $body;
@@ -133,7 +132,7 @@ class TemplateRenderer
      */
     public function unknownPlaceholders(string $body): array
     {
-        $known = array_keys($this->placeholders());
+        $known   = array_keys($this->placeholders());
         $unknown = [];
 
         if (preg_match_all('/\{([a-z_]+)\}/', $body, $matches)) {
@@ -174,9 +173,9 @@ class TemplateRenderer
         }
 
         $local = substr($digits, -10);
-        $code = preg_replace('/\D+/', '', (string) config('crm.country_code', '+91'));
+        $code  = preg_replace('/\D+/', '', (string) config('crm.country_code', '+91'));
 
-        return $code.$local;
+        return $code . $local;
     }
 
     /**
@@ -197,50 +196,8 @@ class TemplateRenderer
         }
 
         return config('automation.whatsapp.link_base', 'https://wa.me/')
-            .$number
-            .'?text='.rawurlencode($body);
-    }
-
-    /* ---------------- Meta templates ---------------- */
-
-    /**
-     * A Meta template filled in for one lead, through the admin's mapping.
-     *
-     * `parameters` is what goes to Meta, in the template's own variable order;
-     * `body` is the same text with the values in place, for the preview and
-     * for the message log. `empty` lists the variables whose placeholder came
-     * out blank for this lead — Meta refuses an empty parameter, and a
-     * "Namaste ," sent to a customer is worse than not sending.
-     *
-     * @return array{body: string, parameters: list<array{variable: string, placeholder: string, value: string}>, empty: list<string>}
-     */
-    public function fillMetaTemplate(WhatsAppTemplate $template, Lead $lead): array
-    {
-        $values = $this->valuesFor($lead);
-        $map = $template->parameter_map ?? [];
-        $body = (string) $template->body;
-        $parameters = [];
-        $empty = [];
-
-        foreach ($template->variables ?? [] as $variable) {
-            $placeholder = (string) ($map[$variable] ?? '');
-            $value = trim((string) ($values[$placeholder] ?? ''));
-
-            if ($value === '') {
-                $empty[] = $variable;
-            }
-
-            $parameters[] = ['variable' => (string) $variable, 'placeholder' => $placeholder, 'value' => $value];
-            // a callback, not a replacement string: a value with "$1" in it
-            // would otherwise be read as a backreference
-            $body = preg_replace_callback(
-                '/\{\{\s*'.preg_quote((string) $variable, '/').'\s*\}\}/',
-                fn () => $value,
-                $body,
-            );
-        }
-
-        return ['body' => $body, 'parameters' => $parameters, 'empty' => $empty];
+            . $number
+            . '?text=' . rawurlencode($body);
     }
 
     /* ---------------- internals ---------------- */
@@ -249,7 +206,7 @@ class TemplateRenderer
     private function replace(string $body, array $values): string
     {
         foreach ($this->placeholders() as $name => $meta) {
-            $body = str_replace('{'.$name.'}', (string) ($values[$name] ?? ''), $body);
+            $body = str_replace('{' . $name . '}', (string) ($values[$name] ?? ''), $body);
         }
 
         return $body;
@@ -265,9 +222,9 @@ class TemplateRenderer
         $body = $this->render($template->body, $lead);
 
         return [
-            'body' => $body,
+            'body'   => $body,
             'number' => $this->waNumber($lead->mobile_number),
-            'url' => $this->clickUrl($lead->mobile_number, $body),
+            'url'    => $this->clickUrl($lead->mobile_number, $body),
         ];
     }
 }

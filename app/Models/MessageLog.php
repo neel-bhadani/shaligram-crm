@@ -17,7 +17,6 @@ class MessageLog extends Model
 
     protected $casts = [
         'sent_at' => 'datetime',
-        'parameters' => 'array',
     ];
 
     public function lead()
@@ -28,12 +27,6 @@ class MessageLog extends Model
     public function template()
     {
         return $this->belongsTo(MessageTemplate::class, 'template_id');
-    }
-
-    /** The Meta template an API message went out as, when it went out as one. */
-    public function whatsappTemplate()
-    {
-        return $this->belongsTo(WhatsAppTemplate::class, 'whatsapp_template_id');
     }
 
     public function user()

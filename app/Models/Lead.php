@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Support\CrmTaxonomy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Illuminate\Support\Carbon;
 
 class Lead extends Model
 {
@@ -17,7 +16,6 @@ class Lead extends Model
         'stage_changed_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'booking_date' => 'date',
-        'last_inbound_at' => 'datetime',
     ];
 
     protected $appends = ['full_name', 'days_in_stage'];
@@ -124,26 +122,6 @@ class Lead extends Model
         $label = $this->channelPartner?->display_label ?? $this->broker_name;
 
         return $label !== null && $label !== '' ? $label : null;
-    }
-
-    /**
-     * When Meta stops allowing free-form WhatsApp text to this lead, or null
-     * when it does not allow it at all.
-     *
-     * Free text is allowed for 24 hours after the customer's last message.
-     * `last_inbound_at` is never set yet — the reply webhook comes later — so
-     * today this is null for every lead and every lead is template-only.
-     */
-    public function whatsAppWindowClosesAt(): ?Carbon
-    {
-        $closes = $this->last_inbound_at?->copy()->addHours((int) config('automation.whatsapp.window_hours', 24));
-
-        return $closes && $closes->isFuture() ? $closes : null;
-    }
-
-    public function inWhatsAppWindow(): bool
-    {
-        return $this->whatsAppWindowClosesAt() !== null;
     }
 
     public function isTerminal(): bool

@@ -31,7 +31,6 @@ const props = defineProps({
   tab: String,
   rules: Array,
   templates: Array,
-  whatsappTemplates: { type: Array, default: () => [] },
   queue: Array,
   activity: Array,
   catalog: Object,
@@ -203,50 +202,6 @@ const metaNumbering = template =>
     .map((name, i) => `{{${i + 1}}} = ${name}`)
     .join(', ')
 
-/* ---------------- Meta's templates ---------------- */
-
-/*
- | Meta's approved templates are the only thing API sending can put in front of
- | a lead who has not replied. They are written and approved in WhatsApp
- | Manager; here they are only fetched, and mapped.
- */
-const syncing = ref(false)
-
-const syncTemplates = () => router.post(route('automation.whatsapp.templates.sync'), {}, {
-  preserveScroll: true,
-  onStart: () => { syncing.value = true },
-  onFinish: () => { syncing.value = false },
-})
-
-/*
- | Which CRM placeholder fills each of Meta's variables. Never guessed: Meta's
- | {{1}} is whatever the template's author meant it to be, and only the admin
- | who read the template knows that. One template is mapped at a time.
- */
-const mappingId = ref(null)
-const mapForm = useForm({ parameter_map: {} })
-
-const startMapping = template => {
-  mapForm.clearErrors()
-  mapForm.parameter_map = Object.fromEntries(
-    template.variables.map(v => [v, template.parameter_map?.[v] ?? '']))
-  mappingId.value = template.id
-}
-
-const saveMapping = template => mapForm.put(route('automation.whatsapp.templates.map', template.id), {
-  preserveScroll: true,
-  onSuccess: () => { mappingId.value = null },
-})
-
-// built in script: a literal "{{" in the markup starts an interpolation
-const metaVariable = v => `{{${v}}}`
-
-const metaStatusChip = template => template.sendable
-  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  : template.status === 'APPROVED'
-    ? 'border-amber-200 bg-amber-50 text-amber-800'
-    : 'border-slate-200 bg-slate-50 text-slate-500'
-
 /* ================= queue ================= */
 
 const queued = computed(() => props.queue.filter(m => m.status === 'queued'))
@@ -292,9 +247,8 @@ const statusChip = status => ({
 /* the WhatsApp API settings form */
 const waForm = useForm({
   phone_number_id: props.whatsapp.phone_number_id ?? '',
-  whatsapp_business_account_id: props.whatsapp.whatsapp_business_account_id ?? '',
   access_token: '',
-  is_active: props.whatsapp.is_active ?? false,
+  auto_send: props.whatsapp.auto_send ?? false,
 })
 
 const saveWhatsApp = () => waForm.put(route('automation.whatsapp.update'), {
@@ -460,8 +414,8 @@ const whenShort = iso => iso
           in automatically when it is used.
         </p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          These go out by click-to-send: a rule puts one in the Queue and somebody opens it in
-          WhatsApp and sends it. Sending by API uses Meta's approved templates, further down.
+          Messages are never sent on their own. A rule puts one in the Queue and somebody opens it
+          in WhatsApp and sends it.
         </p>
         <button class="btn mt-5" @click="openTemplate(null)">Write your first message</button>
       </div>
@@ -510,87 +464,6 @@ const whenShort = iso => iso
           </p>
         </div>
       </div>
-
-      <!-- ---------------- Meta's templates, for API sending ---------------- -->
-      <div class="mt-8">
-        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5">
-            <h3 class="text-sm font-semibold text-slate-900">Approved WhatsApp templates</h3>
-            <HelpTip title="Why two kinds of message?" align="right">
-              The messages above go out by click-to-send, so they can say anything.
-              <br><br>
-              Sending through the API is different: until a customer has replied to you, WhatsApp
-              only lets a business send a template Meta has approved. Those are written and
-              submitted in WhatsApp Manager, then fetched here. After a customer replies you can
-              write freely for 24 hours.
-            </HelpTip>
-          </div>
-          <button class="btn-xs border-teal-600 text-teal-700" :disabled="syncing" @click="syncTemplates">
-            {{ syncing ? 'Syncing…' : 'Sync templates from Meta' }}
-          </button>
-        </div>
-
-        <p v-if="!whatsappTemplates.length" class="card px-4 py-6 text-center text-sm text-slate-500">
-          No templates fetched yet. Save the WhatsApp Business Account ID and the System User token
-          on the Queue tab, then press “Sync templates from Meta”.
-        </p>
-
-        <div v-else class="grid gap-3 lg:grid-cols-2">
-          <div v-for="template in whatsappTemplates" :key="template.id" class="card flex flex-col p-4">
-            <div class="flex flex-wrap items-center gap-2">
-              <h4 class="text-sm font-semibold text-slate-900">{{ template.name }}</h4>
-              <span class="text-[11px] text-slate-400">{{ template.language }}</span>
-              <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    :class="metaStatusChip(template)">{{ template.status }}</span>
-              <span v-if="template.category" class="text-[10px] uppercase tracking-wide text-slate-400">
-                {{ template.category }}
-              </span>
-            </div>
-
-            <div class="mt-3 flex-1 rounded-xl bg-slate-100 p-2.5">
-              <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs
-                          leading-relaxed text-slate-800 shadow-sm">{{ template.body || '(no text)' }}</div>
-            </div>
-
-            <p v-if="template.problem" class="mt-2 text-[11px] leading-relaxed text-amber-700">
-              {{ template.problem }}
-            </p>
-
-            <!-- the mapping: one select per variable -->
-            <div v-if="mappingId === template.id" class="mt-3 space-y-2">
-              <FormField
-                v-for="v in template.variables" :key="v"
-                :label="`${metaVariable(v)} is filled with`"
-                :error="mapForm.errors[`parameter_map.${v}`]"
-              >
-                <select v-model="mapForm.parameter_map[v]" class="w-full">
-                  <option value="" disabled>Choose…</option>
-                  <option v-for="(label, key) in placeholders" :key="key" :value="key">{{ label }}</option>
-                </select>
-              </FormField>
-              <div class="flex gap-1.5">
-                <button class="btn-xs border-teal-600 text-teal-700" :disabled="mapForm.processing"
-                        @click="saveMapping(template)">Save</button>
-                <button class="btn-xs" @click="mappingId = null">Cancel</button>
-              </div>
-            </div>
-
-            <div v-else class="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-              <span v-if="!template.variables.length">No variables</span>
-              <span v-for="v in template.variables" :key="v">
-                {{ metaVariable(v) }} = {{ template.parameter_map?.[v] ? placeholders[template.parameter_map[v]] ?? template.parameter_map[v] : 'not mapped' }}
-              </span>
-              <button v-if="template.variables.length && !template.unsupported_reason"
-                      class="btn-xs ml-auto" @click="startMapping(template)">Map variables</button>
-            </div>
-
-            <p class="mt-2 text-[11px] text-slate-400">
-              Used {{ template.messages_count }} time{{ template.messages_count === 1 ? '' : 's' }}
-              <template v-if="template.synced_at"> · synced {{ when(template.synced_at) }}</template>
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- ================= QUEUE ================= -->
@@ -598,18 +471,18 @@ const whenShort = iso => iso
 
       <div class="info-box mb-4 flex items-start gap-2">
         <span class="flex-1">
-          <strong>Every WhatsApp message the CRM writes is listed here.</strong>
-          A click-to-send rule puts its message here for you to open in WhatsApp and send yourself.
-          An API rule sends an approved template on its own, and shows up here as sent or failed —
-          a failed one can still be opened and sent by hand.
+          <strong>Nothing here is sent automatically.</strong>
+          A rule writes the message and puts it in this list. You open it in WhatsApp, check it,
+          and press send yourself.
         </span>
-        <HelpTip title="Click-to-send or the API?" align="right">
-          Each rule chooses. Click-to-send needs nothing set up, and a person reads every message
-          before it goes. API sending needs WhatsApp Business Platform access, which is not the
-          same thing as the free WhatsApp Business app on a phone.
+        <HelpTip title="Why not just send it?" align="right">
+          Two reasons. Sending from software needs a paid WhatsApp Business Platform account,
+          which is not the same thing as the free WhatsApp Business app on a phone — and that is
+          not set up yet.
           <br><br>
-          Whenever the API is not set up or is switched off, API rules fall back to this queue
-          instead of failing.
+          And even once it is, a person reading the message before it goes to a customer catches
+          the ones a rule got wrong. Automatic sending stays switched off until an admin turns it
+          on deliberately.
         </HelpTip>
       </div>
 
@@ -644,20 +517,13 @@ const whenShort = iso => iso
                   <template v-if="message.rule"> · queued by “{{ message.rule }}”</template>
                   · {{ when(message.created_at) }}
                 </p>
-                <p v-if="message.mode === 'api'" class="mt-1 text-[11px] text-teal-700">
-                  Sending through the API<template v-if="message.attempts">
-                    — attempt {{ message.attempts }} did not go through, trying again</template>.
-                </p>
-                <p v-else-if="message.error" class="mt-1 text-[11px] leading-relaxed text-amber-700">
-                  {{ message.error }}
-                </p>
               </div>
 
               <div class="flex flex-none flex-wrap gap-1.5">
                 <button class="btn-xs border-teal-600 text-teal-700" @click="openInWhatsApp(message)">
                   Open in WhatsApp
                 </button>
-                <button v-if="message.mode !== 'api'" class="btn-xs" @click="sendByApi(message)">Send by API</button>
+                <button class="btn-xs" @click="sendByApi(message)">Send by API</button>
                 <button class="btn-xs hover:border-rose-500 hover:text-rose-600"
                         @click="cancelMessage(message)">Cancel</button>
               </div>
@@ -677,15 +543,9 @@ const whenShort = iso => iso
               <span class="text-[11px] text-slate-400">
                 {{ message.template ?? '—' }}
                 <template v-if="message.user"> · by {{ message.user }}</template>
-                <template v-if="message.mode === 'api'"> · by API</template>
-                <template v-if="message.attempts > 1"> · {{ message.attempts }} attempts</template>
                 · {{ when(message.sent_at ?? message.created_at) }}
               </span>
-              <button v-if="message.status === 'failed' && message.click_url"
-                      class="btn-xs ml-auto border-teal-600 text-teal-700" @click="openInWhatsApp(message)">
-                Open in WhatsApp
-              </button>
-              <span v-if="message.error" class="w-full break-words text-[11px] leading-relaxed text-rose-600">
+              <span v-if="message.error" class="w-full text-[11px] leading-relaxed text-rose-600">
                 {{ message.error }}
               </span>
             </div>
@@ -703,44 +563,40 @@ const whenShort = iso => iso
             only record that it was <em>opened</em> — not whether you sent it.
             <br><br>
             <strong>API sending</strong> sends without anybody opening anything, and records that
-            it was really sent — or Meta's reason it was not. It needs WhatsApp Business Platform
-            access through Meta, and until a customer replies it can only send approved templates.
+            it was really sent. It needs a WhatsApp Business Platform account through Meta or a
+            provider, with a monthly cost and an approval process.
           </HelpTip>
         </div>
 
-        <p v-if="!whatsapp.api_ready" class="warn-box mt-2">{{ whatsapp.not_configured }}</p>
+        <p v-if="!whatsapp.configured" class="warn-box mt-2">{{ whatsapp.not_configured }}</p>
         <p v-else class="info-box mt-2">
-          API sending is <strong>on</strong>. Rules set to send by API, and “Send WhatsApp” on a lead,
-          go through Meta.
+          The API is configured. Automatic sending is
+          <strong>{{ whatsapp.auto_send ? 'ON' : 'off' }}</strong>.
         </p>
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
           <FormField label="Phone number ID" :error="waForm.errors.phone_number_id"
-                     hint="WhatsApp → API Setup in your Meta app. Meta's test number works; swap in the live one here later.">
+                     hint="From the WhatsApp section of your Meta app dashboard.">
             <input v-model="waForm.phone_number_id" type="text" class="w-full" />
           </FormField>
 
-          <FormField label="WhatsApp Business Account ID" :error="waForm.errors.whatsapp_business_account_id"
-                     hint="Same page. Needed to sync the approved templates.">
-            <input v-model="waForm.whatsapp_business_account_id" type="text" class="w-full" />
-          </FormField>
-
-          <FormField label="System User token" :error="waForm.errors.access_token" class="sm:col-span-2"
+          <FormField label="Access token" :error="waForm.errors.access_token"
                      :hint="whatsapp.access_token_tail
                        ? `A token ending ${whatsapp.access_token_tail} is saved. Leave empty to keep it.`
-                       : 'From Business Settings → System users, with whatsapp_business_messaging and whatsapp_business_management. Not a Page token. Stored encrypted and never shown again.'">
+                       : 'Stored encrypted. It is never shown again after saving.'">
             <input v-model="waForm.access_token" type="password" class="w-full"
                    autocomplete="new-password" placeholder="••••••••" />
           </FormField>
         </div>
 
         <label class="mt-4 flex items-start gap-2 text-sm text-slate-700">
-          <input v-model="waForm.is_active" type="checkbox" class="mt-0.5 h-4 w-4" />
+          <input v-model="waForm.auto_send" type="checkbox" class="mt-0.5 h-4 w-4"
+                 :disabled="!whatsapp.configured" />
           <span>
-            Send through the API
+            Send queued messages automatically
             <span class="block text-xs text-slate-400">
-              Needs the phone number ID and the token. While it is off, API rules and “Send WhatsApp”
-              fall back to click-to-send.
+              Off by default, and it cannot be switched on until the API is configured.
+              Leave it off if you want somebody to read every message before it goes out.
             </span>
           </span>
         </label>

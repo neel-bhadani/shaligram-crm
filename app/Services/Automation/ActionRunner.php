@@ -6,7 +6,6 @@ use App\Models\AutomationRule;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
 use App\Models\User;
-use App\Models\WhatsAppTemplate;
 use App\Services\AlertService;
 use App\Services\LeadAssignmentService;
 use App\Services\LeadFollowUpService;
@@ -259,25 +258,16 @@ class ActionRunner
     }
 
     /**
-     * Send the rule's WhatsApp message — by click-to-send or by API.
+     * QUEUE a WhatsApp message. Never send one.
      *
-     * A rule stored before the mode existed has none, and means click: the
-     * message waits in the Queue for a person to open, as it always did.
-     *
-     * In API mode the message goes to the queue worker, never inline, and only
-     * as an approved template — a rule cannot know whether the customer has
-     * replied in the last 24 hours. A booked or lost lead is skipped unless
-     * the rule says otherwise. When the API is not set up or is switched off
-     * the message is queued for click-to-send instead, and the activity log
-     * says so. The cooldown and the chain cap are RuleEngine's, and have
-     * already been passed by the time this runs.
+     * This is the hard line of the whole WhatsApp feature and it is enforced
+     * here rather than in a setting: a rule puts the message in the review list
+     * and a person opens it. There are no credentials yet, auto-send is off,
+     * and even when both change the switch belongs to an admin looking at the
+     * Queue tab — not to a rule written weeks earlier.
      */
     private function queueWhatsApp(AutomationRule $rule, Lead $lead, array $action): array
     {
-        if (($action['mode'] ?? 'click') === 'api') {
-            return $this->sendWhatsApp($rule, $lead, $action);
-        }
-
         $template = MessageTemplate::active()->find($action['template_id'] ?? null);
 
         if (! $template) {
@@ -288,30 +278,7 @@ class ActionRunner
 
         return $queued
             ? $this->ok()
-            : $this->skip(WhatsAppSender::NO_NUMBER);
-    }
-
-    private function sendWhatsApp(AutomationRule $rule, Lead $lead, array $action): array
-    {
-        if ($lead->isTerminal() && ($action['terminal'] ?? 'skip') !== 'allow') {
-            return $this->skip('The lead is booked or lost, and this rule does not message those.');
-        }
-
-        $template = WhatsAppTemplate::find($action['whatsapp_template_id'] ?? null);
-
-        if (! $template) {
-            return $this->skip('The WhatsApp template this rule sends has been deleted.');
-        }
-
-        $outcome = $this->whatsapp->queueTemplate($lead, $template, $rule);
-
-        if ($outcome['error']) {
-            return $this->skip($outcome['error']);
-        }
-
-        return $outcome['fallback']
-            ? ['result' => 'success', 'error' => 'The WhatsApp API is not set up or is switched off, so the message was queued for click-to-send instead.']
-            : $this->ok();
+            : $this->skip('This lead has no usable mobile number, so there is nothing to send to.');
     }
 
     /* ---------------- outcomes ---------------- */

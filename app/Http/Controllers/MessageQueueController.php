@@ -7,12 +7,11 @@ use App\Services\WhatsApp\WhatsAppSender;
 use Illuminate\Http\Request;
 
 /**
- * The review queue: every WhatsApp message the CRM has written.
+ * The review queue: messages a rule wrote, waiting for a person to send them.
  *
- * A click-mode rule puts a row here and nothing else; getting it to a customer
- * takes somebody opening it. An API-mode rule sends through the job, and its
- * row shows up here as sent or failed — a failed one can still be opened and
- * sent by hand, which is its fallback.
+ * This is where "automation never sends a message on its own" is actually
+ * enforced. A rule can put a row here and nothing else; getting it to a
+ * customer takes somebody opening it.
  *
  * Admin only on the route group, and `visibleTo` on top of that — the queue
  * prints lead names and mobile numbers, and an admin resolves see_all_leads, so
@@ -43,7 +42,7 @@ class MessageQueueController extends Controller
 
         if (! $url) {
             return response()->json([
-                'ok' => false,
+                'ok'      => false,
                 'message' => 'This lead has no usable mobile number, so there is nothing to open.',
             ], 422);
         }
@@ -56,10 +55,11 @@ class MessageQueueController extends Controller
     /**
      * Send through the API.
      *
-     * Sent now, in the request, so the admin sees the answer — sent, or Meta's
-     * reason — rather than waiting on the queue worker. With the API not set
-     * up or switched off it says so in a sentence the office admin can act on,
-     * and the row stays queued for click-to-send.
+     * Today this always comes back saying the API is not set up, and saying it
+     * in a sentence the office admin can act on rather than a stack trace in a
+     * log file. That is the whole reason the button exists now: an admin who
+     * presses it finds out what is missing, instead of watching nothing happen
+     * and pressing it four more times.
      */
     public function send(Request $request, MessageLog $message)
     {
