@@ -44,13 +44,24 @@ class IncomingLeadService
     /**
      * Create the lead and its first follow-up, or say why not.
      *
+     * The project and holder default to the integration's own settings; a
+     * caller that has routed the lead by its form — LeadFormRouter — passes
+     * the form's instead.
+     *
      * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
-    public function import(Integration $integration, string $externalId, array $attributes, string $source): array
-    {
-        $projectId = (int) $integration->setting('default_project_id');
-        $holder = User::find($integration->setting('assign_to_user_id'));
+    public function import(
+        Integration $integration,
+        string $externalId,
+        array $attributes,
+        string $source,
+        ?int $projectId = null,
+        ?int $holderId = null,
+        ?string $formId = null,
+    ): array {
+        $projectId ??= (int) $integration->setting('default_project_id');
+        $holder = User::find($holderId ?? $integration->setting('assign_to_user_id'));
 
         if (! $holder) {
             // configured against somebody who has since been deleted: a lead
@@ -76,13 +87,13 @@ class IncomingLeadService
          | redelivery that waited on the lock is still called a duplicate.
          */
         return Cache::lock("incoming-lead:{$projectId}:{$attributes['mobile_number']}", 30)
-            ->block(10, fn () => $this->importOnce($externalId, $attributes, $projectId, $holder, $source));
+            ->block(10, fn () => $this->importOnce($externalId, $attributes + ['source_form_id' => $formId], $projectId, $holder, $source));
     }
 
     /**
      * The repeat check and the insert, run while import() holds the lock.
      *
-     * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string}  $attributes
+     * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string, source_form_id: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
     private function importOnce(string $externalId, array $attributes, int $projectId, User $holder, string $source): array

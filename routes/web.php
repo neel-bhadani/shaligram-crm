@@ -519,6 +519,9 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/integrations/{provider}/test', [IntegrationController::class, 'test'])
             ->whereIn('provider', $built)
             ->name('integrations.test');
+        Route::post('/integrations/{provider}/forms/sync', [IntegrationController::class, 'syncForms'])
+            ->whereIn('provider', $built)
+            ->name('integrations.forms.sync');
     });
 
     /* ---------------- my profile (everyone) ---------------- */

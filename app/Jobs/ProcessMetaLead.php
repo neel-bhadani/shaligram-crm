@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Integration;
 use App\Services\IncomingLeadService;
 use App\Services\IntegrationLogger;
+use App\Services\LeadFormRouter;
 use App\Services\MetaGraphClient;
 use App\Services\MetaLeadNormaliser;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -42,14 +43,16 @@ class ProcessMetaLead implements ShouldQueue
     public $backoff = [10, 60];
 
     /**
-     * @param  string  $provider     which card on the Integrations page this is
-     * @param  string  $leadgenId    Meta's id for the enquiry, and our external_id
-     * @param  ?array  $fieldData    pre-supplied answers; null means fetch them from Graph
+     * @param  string  $provider  which card on the Integrations page this is
+     * @param  string  $leadgenId  Meta's id for the enquiry, and our external_id
+     * @param  ?array  $fieldData  pre-supplied answers; null means fetch them from Graph
+     * @param  ?string  $formId  the lead form it was submitted on, from the webhook payload
      */
     public function __construct(
         public string $provider,
         public string $leadgenId,
         public ?array $fieldData = null,
+        public ?string $formId = null,
     ) {}
 
     public function handle(
@@ -57,6 +60,7 @@ class ProcessMetaLead implements ShouldQueue
         MetaLeadNormaliser $normaliser,
         IncomingLeadService $leads,
         IntegrationLogger $log,
+        LeadFormRouter $router,
     ): void {
         $integration = Integration::forProvider($this->provider);
 
@@ -79,23 +83,35 @@ class ProcessMetaLead implements ShouldQueue
 
             $normalised = $normaliser->normalise($fieldData, $this->leadgenId);
 
+            // the form decides the project; an unmapped one falls back to the
+            // integration's default and is recorded as waiting to be mapped
+            $routing = $router->route($integration, $this->formId);
+            $form = array_intersect_key($routing, array_flip(['form_id', 'form_name', 'routed']));
+
             $outcome = $leads->import(
                 integration: $integration,
                 externalId: $this->leadgenId,
                 attributes: [
-                    'first_name'    => $normalised['first_name'],
-                    'last_name'     => $normalised['last_name'],
+                    'first_name' => $normalised['first_name'],
+                    'last_name' => $normalised['last_name'],
                     'mobile_number' => $normalised['mobile_number'],
-                    'email'         => $normalised['email'],
+                    'email' => $normalised['email'],
                 ],
                 source: $this->provider,
+                projectId: $routing['project_id'],
+                holderId: $routing['holder_id'],
+                formId: $routing['form_id'],
             );
 
             match ($outcome['result']) {
-                IncomingLeadService::DUPLICATE => $log->duplicate($this->provider, $this->leadgenId, $outcome['message']),
-                IncomingLeadService::REPEAT    => $log->repeatEnquiry($this->provider, $this->leadgenId, $outcome['message']),
-                default                        => $log->created($this->provider, $this->leadgenId, $outcome['lead']),
+                IncomingLeadService::DUPLICATE => $log->duplicate($this->provider, $this->leadgenId, $outcome['message'], $form),
+                IncomingLeadService::REPEAT => $log->repeatEnquiry($this->provider, $this->leadgenId, $outcome['message'], $form),
+                default => $log->created($this->provider, $this->leadgenId, $outcome['lead'], $form),
             };
+
+            if ($outcome['result'] === 'created' && ! $routing['routed']) {
+                $router->noteUnrouted($this->provider, $routing);
+            }
         } catch (Throwable $e) {
             /*
              | Logged as a readable failure and then rethrown.
