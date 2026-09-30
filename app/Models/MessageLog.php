@@ -17,7 +17,36 @@ class MessageLog extends Model
 
     protected $casts = [
         'sent_at' => 'datetime',
+        'params' => 'array',
     ];
+
+    /** Still somewhere between the rule and Meta. */
+    public const IN_FLIGHT = ['queued', 'sending', 'sent'];
+
+    public function whatsappTemplate()
+    {
+        return $this->belongsTo(WhatsAppTemplate::class, 'whatsapp_template_id');
+    }
+
+    /**
+     * What happened, in words that do not overclaim.
+     *
+     * `sent` is Meta accepting the message and handing back an id. Delivered
+     * and read need a webhook this CRM does not have, so neither word appears.
+     */
+    public function outcome(): string
+    {
+        return match ($this->status) {
+            'sent' => 'Accepted by Meta'.($this->wamid ? " ({$this->wamid})" : ''),
+            'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
+            'queued' => $this->mode === 'api' ? 'Waiting to be sent by API' : 'Waiting for somebody to open it',
+            'sending' => 'Being sent',
+            'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
+            'skipped' => 'Not sent',
+            'cancelled' => 'Cancelled',
+            default => $this->status,
+        };
+    }
 
     public function lead()
     {

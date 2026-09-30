@@ -31,7 +31,7 @@
  | the download uses — so the number is never an approximation.
  */
 import { reactive, ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { Head, usePage } from '@inertiajs/vue3'
+import { usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 
@@ -321,7 +321,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Head title="Export Data" />
 
   <AppLayout title="Export Data" subtitle="Export CRM data in PDF, Excel, or CSV format.">
     <div class="card overflow-hidden">

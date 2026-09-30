@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { Head, Link, router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import UserFormModal from '@/Components/UserFormModal.vue'
 import DeleteUserDialog from '@/Components/DeleteUserDialog.vue'
@@ -118,7 +118,6 @@ const showPending = () => {
 </script>
 
 <template>
-  <Head title="Users" />
 
   <AppLayout title="Users" subtitle="Staff accounts and what they can reach">
     <template #actions>

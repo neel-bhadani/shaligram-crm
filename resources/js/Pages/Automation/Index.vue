@@ -35,6 +35,7 @@ const props = defineProps({
   activity: Array,
   catalog: Object,
   whatsapp: Object,
+  whatsappTemplates: { type: Array, default: () => [] },
   placeholders: Object,
   categories: Object,
   thresholds: Object,
@@ -208,6 +209,22 @@ const queued = computed(() => props.queue.filter(m => m.status === 'queued'))
 const history = computed(() => props.queue.filter(m => m.status !== 'queued'))
 
 /*
+ | "Did Rahul get the site visit message?" — a filter over the log by name,
+ | number, message or rule. Client-side: it is the recent past, already here.
+ */
+const logSearch = ref('')
+
+const filteredHistory = computed(() => {
+  const term = logSearch.value.trim().toLowerCase()
+
+  if (!term) return history.value
+
+  return history.value.filter(m =>
+    [m.to_name, m.lead?.name, m.to_number, m.template, m.rule, m.wamid]
+      .some(v => (v ?? '').toString().toLowerCase().includes(term)))
+})
+
+/*
  | Open the message in WhatsApp.
  |
  | The tab is opened from inside the click handler, before the request goes out.
@@ -239,21 +256,69 @@ const cancelMessage = message =>
 const statusChip = status => ({
   queued: 'border-amber-200 bg-amber-50 text-amber-800',
   opened: 'border-teal-200 bg-teal-50 text-teal-700',
+  sending: 'border-sky-200 bg-sky-50 text-sky-700',
   sent: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
+  skipped: 'border-slate-200 bg-slate-50 text-slate-500',
   cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
+}[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
+
+const metaStatusChip = status => ({
+  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  PENDING: 'border-amber-200 bg-amber-50 text-amber-800',
+  REJECTED: 'border-rose-200 bg-rose-50 text-rose-700',
 }[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
 
 /* the WhatsApp API settings form */
 const waForm = useForm({
   phone_number_id: props.whatsapp.phone_number_id ?? '',
+  waba_id: props.whatsapp.waba_id ?? '',
   access_token: '',
+  api_enabled: props.whatsapp.api_enabled ?? false,
   auto_send: props.whatsapp.auto_send ?? false,
 })
 
 const saveWhatsApp = () => waForm.put(route('automation.whatsapp.update'), {
   preserveScroll: true,
-  onSuccess: () => { waForm.access_token = '' },
+  onSuccess: () => {
+    waForm.access_token = ''
+    // what was just saved is the new baseline for "unsaved changes"
+    waForm.defaults()
+  },
+})
+
+/*
+ | Test connection. Always ends with something on screen: Meta's answer, the
+ | server's refusal, or the fact that the request itself never came back. A
+ | button that goes quiet on failure is how a bad token hid for a week.
+ */
+const testing = ref(false)
+const testResult = ref(props.whatsapp.last_test ?? null)
+
+const testConnection = () => {
+  testing.value = true
+
+  axios.post(route('automation.whatsapp.test'))
+    .then(({ data }) => { testResult.value = data })
+    .catch(error => {
+      const data = error.response?.data
+      testResult.value = {
+        ok: false,
+        message: data?.message
+          ?? (error.response
+            ? `The server answered ${error.response.status} and no reason. Nothing was tested.`
+            : 'The request did not reach the server. Check your connection and try again.'),
+      }
+    })
+    .finally(() => { testing.value = false })
+}
+
+const syncing = ref(false)
+
+const syncTemplates = () => router.post(route('automation.whatsapp.sync'), {}, {
+  preserveScroll: true,
+  onStart: () => { syncing.value = true },
+  onFinish: () => { syncing.value = false },
 })
 
 /* ================= activity ================= */
@@ -406,6 +471,42 @@ const whenShort = iso => iso
 
     <!-- ================= TEMPLATES ================= -->
     <div v-show="tab === 'templates'">
+      <!-- ---------------- Meta's side ---------------- -->
+      <div class="card mb-4 p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <h3 class="text-sm font-semibold text-slate-900">Meta templates</h3>
+              <HelpTip title="Why link a message to a Meta template?" align="left">
+                Sending by API can only send a template Meta has approved. Write and submit the
+                template in Meta's WhatsApp Manager, sync it here, then link it to the message
+                with the same wording. Only <strong>approved</strong> templates are sent.
+              </HelpTip>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">
+              {{ whatsappTemplates.length
+                ? `${whatsappTemplates.filter(t => t.status === 'APPROVED').length} of ${whatsappTemplates.length} approved.`
+                : 'None synced yet.' }}
+            </p>
+          </div>
+          <button class="btn-xs" :disabled="syncing || !whatsapp.configured" @click="syncTemplates">
+            {{ syncing ? 'Syncing…' : 'Sync from Meta' }}
+          </button>
+        </div>
+
+        <div v-if="whatsappTemplates.length" class="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100">
+          <div v-for="t in whatsappTemplates" :key="t.id" class="flex flex-wrap items-center gap-2 px-3 py-2">
+            <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  :class="metaStatusChip(t.status)">{{ t.status }}</span>
+            <span class="text-xs font-medium text-slate-700">{{ t.label }}</span>
+            <span class="text-[11px] text-slate-400">
+              {{ t.category ?? '—' }} · {{ t.param_count }} variable{{ t.param_count === 1 ? '' : 's' }}
+            </span>
+            <span v-if="t.unsupported" class="w-full text-[11px] text-amber-700">{{ t.unsupported }}</span>
+          </div>
+        </div>
+      </div>
+
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">No messages written yet</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
@@ -414,8 +515,8 @@ const whenShort = iso => iso
           in automatically when it is used.
         </p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          Messages are never sent on their own. A rule puts one in the Queue and somebody opens it
-          in WhatsApp and sends it.
+          A rule puts a message in the Queue for somebody to open in WhatsApp — or, once the API
+          is set up and the message is linked to an approved Meta template, sends it by API.
         </p>
         <button class="btn mt-5" @click="openTemplate(null)">Write your first message</button>
       </div>
@@ -456,7 +557,17 @@ const whenShort = iso => iso
                         leading-relaxed text-slate-800 shadow-sm">{{ template.preview }}</div>
           </div>
 
-          <p class="mt-2 text-[11px] text-slate-400">
+          <p class="mt-2 text-[11px]"
+             :class="template.api_unsendable ? 'text-slate-500' : 'text-emerald-700'">
+            <template v-if="template.whatsapp_template">
+              Meta: {{ template.whatsapp_template }}
+              <span class="rounded border px-1 py-px text-[10px] font-semibold uppercase"
+                    :class="metaStatusChip(template.whatsapp_status)">{{ template.whatsapp_status }}</span>
+            </template>
+            {{ template.api_unsendable ? `By API: no. ${template.api_unsendable}` : '· Can be sent by API.' }}
+          </p>
+
+          <p class="mt-1 text-[11px] text-slate-400">
             Used {{ template.messages_count }} time{{ template.messages_count === 1 ? '' : 's' }}
             <template v-if="template.placeholder_map?.length">
               · Meta numbering: {{ metaNumbering(template) }}
@@ -471,26 +582,36 @@ const whenShort = iso => iso
 
       <div class="info-box mb-4 flex items-start gap-2">
         <span class="flex-1">
-          <strong>Nothing here is sent automatically.</strong>
-          A rule writes the message and puts it in this list. You open it in WhatsApp, check it,
-          and press send yourself.
+          <template v-if="!whatsapp.api_enabled">
+            <strong>Nothing here is sent automatically.</strong>
+            A rule writes the message and puts it in this list. You open it in WhatsApp, check it,
+            and press send yourself.
+          </template>
+          <template v-else-if="!whatsapp.auto_send">
+            <strong>API sending is on; automatic sending is off.</strong>
+            Messages a rule sends by API wait here until you press Send by API.
+          </template>
+          <template v-else>
+            <strong>API messages are sent automatically.</strong>
+            A rule's API message goes to the send worker straight away; the log below shows what
+            Meta said. Click-to-send messages still wait here for you.
+          </template>
         </span>
-        <HelpTip title="Why not just send it?" align="right">
-          Two reasons. Sending from software needs a paid WhatsApp Business Platform account,
-          which is not the same thing as the free WhatsApp Business app on a phone — and that is
-          not set up yet.
+        <HelpTip title="What “sent” means here" align="right">
+          “Accepted by Meta” means Meta took the message and gave it an id. Whether it was then
+          delivered or read is not recorded — that needs a connection back from Meta this CRM
+          does not have yet.
           <br><br>
-          And even once it is, a person reading the message before it goes to a customer catches
-          the ones a rule got wrong. Automatic sending stays switched off until an admin turns it
-          on deliberately.
+          API messages are sent by the background worker that runs every minute, so allow a
+          minute or two.
         </HelpTip>
       </div>
 
       <div v-if="!queue.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">Nothing waiting to be sent</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          When a rule with a “Queue a WhatsApp message” action fires, the message appears here
-          with the customer's details already filled in. You open it in WhatsApp and send it.
+          When a rule with a WhatsApp action fires, the message appears here with the customer's
+          details already filled in, along with what happened to it.
         </p>
         <button class="btn-ghost mt-5" @click="tab = 'rules'">See the rules</button>
       </div>
@@ -505,10 +626,10 @@ const whenShort = iso => iso
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-semibold text-slate-900">{{ message.lead?.name ?? 'Deleted lead' }}</span>
+                  <span class="text-sm font-semibold text-slate-900">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
                   <span class="text-xs text-slate-400">{{ message.to_number }}</span>
                   <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase
-                               tracking-wide" :class="statusChip(message.status)">{{ message.status }}</span>
+                               tracking-wide" :class="statusChip(message.status)">{{ message.outcome }}</span>
                 </div>
                 <div class="mt-2 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2
                             text-xs leading-relaxed text-slate-700">{{ message.body }}</div>
@@ -523,7 +644,8 @@ const whenShort = iso => iso
                 <button class="btn-xs border-teal-600 text-teal-700" @click="openInWhatsApp(message)">
                   Open in WhatsApp
                 </button>
-                <button class="btn-xs" @click="sendByApi(message)">Send by API</button>
+                <button v-if="!whatsapp.configured || (whatsapp.api_enabled && message.api_ready)"
+                        class="btn-xs" @click="sendByApi(message)">Send by API</button>
                 <button class="btn-xs hover:border-rose-500 hover:text-rose-600"
                         @click="cancelMessage(message)">Cancel</button>
               </div>
@@ -532,20 +654,28 @@ const whenShort = iso => iso
         </div>
 
         <template v-if="history.length">
-          <h3 class="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Recently handled
-          </h3>
+          <div class="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Message log</h3>
+            <input v-model="logSearch" type="search" class="w-64 text-xs"
+                   placeholder="Search name, number, message, rule…" />
+          </div>
           <div class="card divide-y divide-slate-100">
-            <div v-for="message in history" :key="message.id" class="flex flex-wrap items-center gap-2 px-4 py-2.5">
+            <div v-if="!filteredHistory.length" class="px-4 py-3 text-xs text-slate-400">
+              Nothing in the recent log matches “{{ logSearch }}”.
+            </div>
+            <div v-for="message in filteredHistory" :key="message.id" class="flex flex-wrap items-center gap-2 px-4 py-2.5">
               <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                     :class="statusChip(message.status)">{{ message.status }}</span>
-              <span class="text-xs font-medium text-slate-700">{{ message.lead?.name ?? 'Deleted lead' }}</span>
+              <span class="text-xs font-medium text-slate-700">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
+              <span class="text-[11px] text-slate-400">{{ message.to_number ?? 'no number' }}</span>
               <span class="text-[11px] text-slate-400">
                 {{ message.template ?? '—' }}
-                <template v-if="message.user"> · by {{ message.user }}</template>
+                <template v-if="message.rule"> · rule “{{ message.rule }}”</template>
+                <template v-else-if="message.user"> · by {{ message.user }}</template>
                 · {{ when(message.sent_at ?? message.created_at) }}
               </span>
-              <span v-if="message.error" class="w-full text-[11px] leading-relaxed text-rose-600">
+              <span class="w-full text-[11px] text-slate-600">{{ message.outcome }}</span>
+              <span v-if="message.error" class="w-full break-words text-[11px] leading-relaxed text-rose-600">
                 {{ message.error }}
               </span>
             </div>
@@ -562,50 +692,83 @@ const whenShort = iso => iso
             the message already typed and you press send. Because we hand it to WhatsApp, we can
             only record that it was <em>opened</em> — not whether you sent it.
             <br><br>
-            <strong>API sending</strong> sends without anybody opening anything, and records that
-            it was really sent. It needs a WhatsApp Business Platform account through Meta or a
+            <strong>API sending</strong> sends without anybody opening anything, and records
+            whether Meta accepted it (not whether it was delivered or read). It needs a WhatsApp Business Platform account through Meta or a
             provider, with a monthly cost and an approval process.
           </HelpTip>
         </div>
 
         <p v-if="!whatsapp.configured" class="warn-box mt-2">{{ whatsapp.not_configured }}</p>
         <p v-else class="info-box mt-2">
-          The API is configured. Automatic sending is
+          Credentials are saved. API sending is
+          <strong>{{ whatsapp.api_enabled ? 'ON' : 'off' }}</strong>; automatic sending is
           <strong>{{ whatsapp.auto_send ? 'ON' : 'off' }}</strong>.
+          Sending depends on the background worker running every minute.
         </p>
 
-        <div class="mt-4 grid gap-4 sm:grid-cols-2">
+        <div class="mt-4 grid gap-4 sm:grid-cols-3">
           <FormField label="Phone number ID" :error="waForm.errors.phone_number_id"
-                     hint="From the WhatsApp section of your Meta app dashboard.">
-            <input v-model="waForm.phone_number_id" type="text" class="w-full" />
+                     hint="Digits only. WhatsApp Manager → API Setup.">
+            <input v-model="waForm.phone_number_id" type="text" inputmode="numeric" class="w-full" />
+          </FormField>
+
+          <FormField label="WhatsApp Business Account ID" :error="waForm.errors.waba_id"
+                     hint="Digits only. Needed to sync templates and to test.">
+            <input v-model="waForm.waba_id" type="text" inputmode="numeric" class="w-full" />
           </FormField>
 
           <FormField label="Access token" :error="waForm.errors.access_token"
                      :hint="whatsapp.access_token_tail
                        ? `A token ending ${whatsapp.access_token_tail} is saved. Leave empty to keep it.`
-                       : 'Stored encrypted. It is never shown again after saving.'">
+                       : 'Starts with EAA. Stored encrypted; never shown again after saving.'">
             <input v-model="waForm.access_token" type="password" class="w-full"
                    autocomplete="new-password" placeholder="••••••••" />
           </FormField>
         </div>
 
         <label class="mt-4 flex items-start gap-2 text-sm text-slate-700">
-          <input v-model="waForm.auto_send" type="checkbox" class="mt-0.5 h-4 w-4"
+          <input v-model="waForm.api_enabled" type="checkbox" class="mt-0.5 h-4 w-4"
                  :disabled="!whatsapp.configured" />
           <span>
-            Send queued messages automatically
+            Use API sending
             <span class="block text-xs text-slate-400">
-              Off by default, and it cannot be switched on until the API is configured.
-              Leave it off if you want somebody to read every message before it goes out.
+              Off: every WhatsApp message is click-to-send. On: rules set to “By API”, and messages
+              sent from a lead, go through Meta — using approved templates only.
             </span>
           </span>
         </label>
 
-        <div class="mt-4">
+        <label class="mt-3 flex items-start gap-2 text-sm text-slate-700">
+          <input v-model="waForm.auto_send" type="checkbox" class="mt-0.5 h-4 w-4"
+                 :disabled="!whatsapp.configured || !waForm.api_enabled" />
+          <span>
+            Send queued messages automatically
+            <span class="block text-xs text-slate-400">
+              Off: a rule's API message waits in this Queue for somebody to press Send by API.
+              On: it is sent straight away. Leave it off if you want to read every message first.
+            </span>
+          </span>
+        </label>
+
+        <p v-if="waForm.isDirty" class="warn-box mt-4">
+          You have unsaved changes. Test connection checks the <strong>saved</strong> settings,
+          not what is typed here — save first.
+        </p>
+
+        <div class="mt-4 flex flex-wrap items-center gap-2">
           <button class="btn" :disabled="waForm.processing" @click="saveWhatsApp">
             {{ waForm.processing ? 'Saving…' : 'Save WhatsApp settings' }}
           </button>
+          <button class="btn-ghost" :disabled="testing" @click="testConnection">
+            {{ testing ? 'Testing…' : 'Test connection' }}
+          </button>
         </div>
+
+        <p v-if="testResult" class="mt-3 break-words text-xs leading-relaxed"
+           :class="testResult.ok ? 'info-box' : 'warn-box'">
+          {{ testResult.message }}
+          <span v-if="testResult.at" class="block text-[11px] text-slate-400">Tested {{ when(testResult.at) }}</span>
+        </p>
       </div>
     </div>
 
@@ -714,6 +877,7 @@ const whenShort = iso => iso
     <TemplateFormModal
       :show="templateModal" :template="editingTemplate"
       :placeholders="placeholders" :categories="categories"
+      :whatsapp-templates="whatsappTemplates"
       @close="templateModal = false"
     />
 

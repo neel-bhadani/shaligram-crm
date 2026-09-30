@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\WhatsAppTemplate;
 use App\Services\WhatsApp\TemplateRenderer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,15 +30,18 @@ class MessageTemplateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'     => ['required', 'string', 'max:120'],
+            'name' => ['required', 'string', 'max:120'],
             'category' => ['required', Rule::in(array_keys(config('automation.whatsapp.categories')))],
             /*
              | 1024 is the practical ceiling for a WhatsApp template body. The
              | limit is here rather than only in the column so the admin is told
              | while they are writing, instead of after Meta rejects it.
              */
-            'body'      => ['required', 'string', 'max:1024'],
+            'body' => ['required', 'string', 'max:1024'],
             'is_active' => ['boolean'],
+            // the Meta template this message is sent as by API; linking one
+            // that is not approved is allowed, sending by it is not
+            'whatsapp_template_id' => ['nullable', 'integer', Rule::exists('whatsapp_templates', 'id')],
         ];
     }
 
@@ -45,7 +49,7 @@ class MessageTemplateRequest extends FormRequest
     {
         return [
             'body.required' => 'Write the message. Use the placeholder buttons to drop in the customer\'s name.',
-            'body.max'      => 'WhatsApp templates cannot be longer than 1024 characters.',
+            'body.max' => 'WhatsApp templates cannot be longer than 1024 characters.',
         ];
     }
 
@@ -65,11 +69,28 @@ class MessageTemplateRequest extends FormRequest
         $body = trim($this->input('body'));
 
         return [
-            'name'            => trim($this->input('name')),
-            'category'        => $this->input('category'),
-            'body'            => $body,
+            'name' => trim($this->input('name')),
+            'category' => $this->input('category'),
+            'body' => $body,
             'placeholder_map' => app(TemplateRenderer::class)->mapFor($body),
-            'is_active'       => $this->boolean('is_active'),
+            'is_active' => $this->boolean('is_active'),
+        ] + $this->metaLink();
+    }
+
+    /**
+     * The link, with Meta's name and status copied beside it so everything
+     * reading `approval_status` agrees with the last sync.
+     *
+     * @return array{whatsapp_template_id: ?int, meta_template_name: ?string, approval_status: string}
+     */
+    private function metaLink(): array
+    {
+        $meta = WhatsAppTemplate::find($this->input('whatsapp_template_id'));
+
+        return [
+            'whatsapp_template_id' => $meta?->id,
+            'meta_template_name' => $meta?->name,
+            'approval_status' => $meta ? strtolower($meta->status) : 'draft',
         ];
     }
 }

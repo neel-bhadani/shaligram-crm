@@ -45,6 +45,7 @@ class ActionRunner
         private WhatsAppSender $whatsapp,
         private TemplateRenderer $renderer,
         private RuleCatalog $catalogue,
+        private LoopGuard $loopGuard,
     ) {}
 
     /**
@@ -258,13 +259,16 @@ class ActionRunner
     }
 
     /**
-     * QUEUE a WhatsApp message. Never send one.
+     * Queue a WhatsApp message for one lead — by hand, or by API.
      *
-     * This is the hard line of the whole WhatsApp feature and it is enforced
-     * here rather than in a setting: a rule puts the message in the review list
-     * and a person opens it. There are no credentials yet, auto-send is off,
-     * and even when both change the switch belongs to an admin looking at the
-     * Queue tab — not to a rule written weeks earlier.
+     * Click mode is what it always was: a row in the Queue for a person to
+     * open. API mode never sends inline either; it writes the row and hands
+     * it to the queue worker, and when the API is off or unconfigured it
+     * quietly becomes click mode rather than failing the rule.
+     *
+     * API mode guards: booked and lost leads only when the rule says so, and
+     * the same rendered message to the same number at most once per the
+     * rule's cooldown — whichever lead it came through.
      */
     private function queueWhatsApp(AutomationRule $rule, Lead $lead, array $action): array
     {
@@ -274,11 +278,25 @@ class ActionRunner
             return $this->skip('The message this rule queues has been deleted or switched off.');
         }
 
-        $queued = $this->whatsapp->queue($lead, $template, $rule);
+        if (($action['mode'] ?? 'click') !== 'api') {
+            $queued = $this->whatsapp->queue($lead, $template, $rule);
 
-        return $queued
-            ? $this->ok()
-            : $this->skip('This lead has no usable mobile number, so there is nothing to send to.');
+            return $queued
+                ? $this->ok()
+                : $this->skip('This lead has no usable mobile number, so there is nothing to send to.');
+        }
+
+        $outcome = $this->whatsapp->queueTemplate(
+            $lead,
+            $template,
+            $rule,
+            allowTerminal: ($action['terminal'] ?? 'skip') === 'send',
+            dedupeMinutes: $this->loopGuard->cooldownFor($rule),
+        );
+
+        return $outcome['result'] === 'skipped'
+            ? $this->skip($outcome['reason'])
+            : ['result' => 'success', 'error' => $outcome['reason']];
     }
 
     /* ---------------- outcomes ---------------- */

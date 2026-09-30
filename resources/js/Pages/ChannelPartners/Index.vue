@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { Head, Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ChannelPartnerFormModal from '@/Components/ChannelPartnerFormModal.vue'
 import DeleteChannelPartnerDialog from '@/Components/DeleteChannelPartnerDialog.vue'
@@ -146,7 +146,6 @@ onMounted(() => { if (props.adding) openAdd() })
 </script>
 
 <template>
-  <Head title="Channel Partners" />
 
   <AppLayout title="Channel Partners" subtitle="The firms and brokers your leads come through">
     <template #actions>

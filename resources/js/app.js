@@ -51,7 +51,8 @@ router.on('exception', event => {
 router.on('success', event => flashToasts(event.detail.page.props.flash));
 
 createInertiaApp({
-    title: (title) => `${title} - ${appName}`,
+    // a page that sets no title gets the bare app name, never " - Shaligram CRM"
+    title: (title) => (title ? `${title} - ${appName}` : appName),
     resolve: (name) =>
         resolvePageComponent(
             `./Pages/${name}.vue`,

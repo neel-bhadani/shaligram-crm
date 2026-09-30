@@ -1,5 +1,5 @@
 <script setup>
-import { Head, useForm } from '@inertiajs/vue3'
+import { useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FormField from '@/Components/FormField.vue'
 
@@ -35,7 +35,6 @@ const submit = () => form.put(route('account.update'), {
 </script>
 
 <template>
-  <Head title="My profile" />
 
   <AppLayout title="My profile" subtitle="Your name, contact details and password">
     <div class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">

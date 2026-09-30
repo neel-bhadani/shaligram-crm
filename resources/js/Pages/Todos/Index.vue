@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, watch, computed } from 'vue'
-import { Head, Link, usePage } from '@inertiajs/vue3'
+import { Link, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import StageBadge from '@/Components/StageBadge.vue'
@@ -317,7 +317,6 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
 </script>
 
 <template>
-  <Head title="Follow-ups" />
 
   <AppLayout title="Follow-ups" subtitle="Your calls and site visits">
     <template #actions>

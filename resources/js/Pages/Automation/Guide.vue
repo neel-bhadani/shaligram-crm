@@ -213,10 +213,11 @@ defineProps({
 
       <!-- ---------------- the queue ---------------- -->
       <section class="card p-5">
-        <h2 class="text-base font-semibold text-slate-900">The Queue, and why messages are not sent for you</h2>
+        <h2 class="text-base font-semibold text-slate-900">The Queue, and click-to-send</h2>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
           A rule can prepare a WhatsApp message — with the customer's name, project and your staff
-          member's number already filled in — and put it in the Queue. It does not send it.
+          member's number already filled in — and put it in the Queue. In click-to-send mode, which
+          is the default, it does not send it.
         </p>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
           Somebody opens the Queue, reads the message, and presses “Open in WhatsApp”. WhatsApp
@@ -226,7 +227,8 @@ defineProps({
           make the message log worthless.
         </p>
         <p class="mt-2 text-sm leading-relaxed text-slate-600">
-          This costs nothing and works right now.
+          This costs nothing and always works — it is also what every message falls back to while
+          API sending is switched off.
         </p>
       </section>
 
@@ -285,8 +287,11 @@ defineProps({
         </p>
 
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Until all of that is in place, the “Send by API” button will tell you plainly that it is
-          not set up rather than appearing to work.
+          Once it is: save the IDs and token on the Queue tab and press Test connection, sync your
+          templates on the Templates tab, link each message to its approved Meta template, and
+          switch on “Use API sending”. A rule set to “By API” then sends that template; “Accepted
+          by Meta” in the log means Meta took it — delivery and read receipts are not recorded.
+          Until then, the “Send by API” button tells you plainly that it is not set up.
         </p>
 
         <p v-if="!whatsapp.configured" class="warn-box mt-4">{{ whatsapp.not_configured }}</p>
@@ -317,8 +322,12 @@ defineProps({
             and quietly doing nothing will never stay a mystery.
           </p>
           <p>
-            <strong class="text-slate-800">Nothing is sent to a customer automatically.</strong>
-            Not in this version. Messages wait in the Queue for a person.
+            <strong class="text-slate-800">Nothing is sent to a customer automatically unless you
+              switch it on.</strong>
+            API sending and automatic sending are two separate switches, both off to begin with.
+            Even then a rule sends one approved template to one lead, never to a booked or lost
+            lead unless the rule says so, and never the same message to the same number twice
+            within its cooldown.
           </p>
           <p>
             <strong class="text-slate-800">Everything is written down.</strong>

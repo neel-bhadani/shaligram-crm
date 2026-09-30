@@ -1,6 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { Head, router, usePage } from '@inertiajs/vue3'
+import { router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Modal from '@/Components/Modal.vue'
 import StageBadge from '@/Components/StageBadge.vue'
@@ -225,7 +225,6 @@ const hasFilters = computed(() => Boolean(f.status || f.assigned_to || f.project
 </script>
 
 <template>
-  <Head title="Calendar" />
 
   <AppLayout title="Calendar" subtitle="Follow-ups by the day they are due">
     <!--

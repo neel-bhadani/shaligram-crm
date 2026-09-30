@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import StageFormModal from '@/Components/StageFormModal.vue'
 import SourceFormModal from '@/Components/SourceFormModal.vue'
@@ -253,9 +253,8 @@ const misroutedTitle = 'Past the site visit, but new leads here go to a telecall
 </script>
 
 <template>
-  <Head title="Stages & sources" />
 
-  <AppLayout title="Stages &amp; sources" subtitle="The pipeline every lead moves through, and where leads come from">
+  <AppLayout title="Stages &amp; Sources" subtitle="The pipeline every lead moves through, and where leads come from">
     <template #actions>
       <button class="btn w-full sm:w-auto" @click="openAdd">
         {{ isStages ? 'Add stage' : 'Add source' }}
