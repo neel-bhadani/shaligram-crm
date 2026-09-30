@@ -270,7 +270,7 @@ Instagram, WhatsApp and Website cards appear on the page but are marked `built =
 **(a) No cron means no leads.** The webhook only queues the lead. A worker must process the queue (`QUEUE_CONNECTION=database`). If no worker is running, leads sit in the `jobs` table forever. Meta shows the delivery as successful, the webhook returned 200, and nothing errors anywhere. The server needs **both**:
 
 - `php artisan schedule:run` every minute. Hourly automation (`automation:run`) and `leads:prune-imports` depend on it.
-- A queue worker (`php artisan queue:work`). Leads, test leads and anything else queued depend on it.
+- A queue worker (`php artisan queue:work`). Leads, test leads, WhatsApp API sends and anything else queued depend on it.
 
 To check: if `SELECT COUNT(*) FROM jobs` keeps growing, the worker is not running.
 
@@ -278,10 +278,17 @@ To check: if `SELECT COUNT(*) FROM jobs` keeps growing, the worker is not runnin
 
 ### WhatsApp
 
-- **Outbound only.** Nothing receives WhatsApp messages.
-- **What works today is click-to-send.** Automation rules and users can queue a message rendered from a `MessageTemplate`. On the Automation → Queue tab, "Open" builds a `wa.me` link, and a person presses send in WhatsApp. The log records `opened`, never `sent`, because the app cannot see whether the message was actually sent.
-- **API sending is not live.** `WhatsAppSender::send()` exists but returns `NOT_CONFIGURED` until an access token and phone number ID are stored. `dispatchIfAutomatic()` is not called from anywhere. The WhatsApp Cloud API client and Meta-approved template sync were **removed** in `dc1f28d`.
-- **The 24-hour rule.** Outside the 24-hour customer-service window, WhatsApp only accepts approved *template* messages. The remaining `send()` posts `type: text`, so it would only work inside that window. It cannot send templates. Anyone who switches the API on must add template sending first.
+- **Outbound only.** Nothing receives WhatsApp messages. There is no webhook, so the CRM never knows about delivered, read, or the customer's 24-hour window. The log says **"Accepted by Meta (wamid …)"**, and never "delivered" or "read". The per-lead panel shows the window as "unknown, template required".
+- **Click-to-send.** Always available. Rules and users queue a message rendered from a `MessageTemplate`. "Open in WhatsApp" builds a `wa.me` link and a person presses send. The log records `opened`, never `sent`.
+- **API sending** (Graph v26.0; Facebook Lead Ads stays on its own version). Settings are on Automation → Queue: Phone Number ID, WABA ID and access token (encrypted), plus two switches:
+  - **Use API sending off:** everything is click-to-send, and API-mode rules fall back to it.
+  - **On, automatic sending off:** API messages from rules wait in the Queue for "Send by API".
+  - **On, automatic sending on:** the worker sends them straight away.
+  - A user sending from a lead's WhatsApp panel is sending on purpose, and does not wait for the second switch.
+- **Templates only.** "Sync from Meta" pulls `{waba}/message_templates` into `whatsapp_templates`. A `MessageTemplate` is sent by API only when it is linked to an **APPROVED** Meta template with the same number of `{{n}}` variables. Parameters come from the stored `placeholder_map` order, rendered when queued and stored on the row.
+- **Guards on API-mode rules.** A rule can't be saved on an unapproved or mismatched template. Terminal stages (booked, lost) are skipped unless the rule opts in. The same message with the same values to the same number is skipped inside the rule's cooldown, even when it comes through a different lead. Leads without a usable number are logged as skipped, with the reason.
+- **Errors.** 190 (token), 131026 (not on WhatsApp) and 131047 (window) fail once, with a plain-English reason. Rate limits, 5xx and timeouts retry with backoff. Anything else stores Meta's raw error.
+- **Depends on the queue worker.** Sends never happen inline; they go through `SendWhatsAppMessage` on the queue. Without the worker (the second cron entry in §11), API messages sit at "Waiting to be sent by API" forever and nothing errors.
 
 ---
 
@@ -355,7 +362,11 @@ Required cron entries (see §8, trap a):
 * * * * * cd <app-path> && php artisan schedule:run >> /dev/null 2>&1
 ```
 
-You also need a queue worker that is always running, or is restarted by cron if the host has no supervisor. Without it, no Facebook lead is ever imported.
+You also need a queue worker that is always running, or is restarted by cron if the host has no supervisor. Without it, no Facebook lead is ever imported and no WhatsApp API message is ever sent. Production runs it from cron:
+
+```cron
+* * * * * cd <app-path> && php artisan queue:work --stop-when-empty --tries=3 --max-time=55 >> /dev/null 2>&1
+```
 
 `public/build/` is committed to git. Run `npm run build` and commit the result with any frontend change, or production will serve the old assets.
 

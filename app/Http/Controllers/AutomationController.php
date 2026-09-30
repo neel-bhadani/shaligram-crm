@@ -7,9 +7,12 @@ use App\Models\AutomationLog;
 use App\Models\AutomationRule;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Models\WhatsAppTemplate;
 use App\Services\Automation\RuleCatalog;
 use App\Services\WhatsApp\TemplateRenderer;
 use App\Services\WhatsApp\WhatsAppSender;
+use App\Services\WhatsApp\WhatsAppTemplateSync;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -56,6 +59,7 @@ class AutomationController extends Controller
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
             'whatsapp' => $this->whatsappCard(),
+            'whatsappTemplates' => $this->whatsappTemplates(),
             'placeholders' => $this->renderer->placeholders(),
             'categories' => config('automation.whatsapp.categories'),
             'thresholds' => config('crm.alerts'),
@@ -92,22 +96,38 @@ class AutomationController extends Controller
      * phone number id must not blank the token by leaving the (empty) token
      * box alone.
      *
-     * Auto-send cannot be switched on while the API is unconfigured, and the
-     * refusal is here rather than only in the UI: it is the one setting that
-     * turns "a rule queues a message" into "a rule messages a customer", and it
-     * must not be reachable by posting to the route.
+     * The shape checks are here because Meta's own answer to a wrong value
+     * arrives weeks later, as every message failing: a Phone Number ID pasted
+     * into the token box was once accepted without a word.
+     *
+     * Neither switch can be switched on while the API is unconfigured, and the
+     * refusal is here rather than only in the UI: they turn "a rule queues a
+     * message" into "a rule messages a customer", and that must not be
+     * reachable by posting to the route.
      */
     public function updateWhatsApp(Request $request)
     {
         $data = $request->validate([
-            'phone_number_id' => ['nullable', 'string', 'max:80'],
-            'access_token' => ['nullable', 'string', 'max:500'],
+            'phone_number_id' => ['nullable', 'string', 'regex:/^\d+$/', 'max:30'],
+            'waba_id' => ['nullable', 'string', 'regex:/^\d+$/', 'max:30', 'different:phone_number_id'],
+            'access_token' => ['nullable', 'string', 'min:16', 'max:1000', 'starts_with:EAA', 'regex:/^\S+$/'],
+            'api_enabled' => ['boolean'],
             'auto_send' => ['boolean'],
+        ], [
+            'phone_number_id.regex' => 'The Phone Number ID is digits only — copy it from API Setup in Meta\'s WhatsApp Manager.',
+            'waba_id.regex' => 'The WhatsApp Business Account ID is digits only.',
+            'waba_id.different' => 'The WhatsApp Business Account ID and the Phone Number ID are two different numbers. One of them is in the wrong box.',
+            'access_token.starts_with' => 'That does not look like an access token. Meta tokens start with "EAA" — if you pasted a long number, that is probably the Phone Number ID.',
+            'access_token.min' => 'That is too short to be an access token. Meta tokens start with "EAA" and run to well over a hundred characters.',
+            'access_token.regex' => 'The access token cannot contain spaces or line breaks. Copy it again without them.',
         ]);
 
         $integration = $this->whatsapp->integration();
 
-        $changes = ['phone_number_id' => $data['phone_number_id'] ?? null];
+        $changes = [
+            'phone_number_id' => $data['phone_number_id'] ?? null,
+            'waba_id' => $data['waba_id'] ?? null,
+        ];
 
         if (filled($data['access_token'] ?? null)) {
             $changes['access_token'] = $data['access_token'];
@@ -117,20 +137,38 @@ class AutomationController extends Controller
         $integration->save();
 
         // asked again AFTER the save: an admin pasting credentials and turning
-        // auto-send on in the same submission should get what they asked for
-        $wanted = (bool) ($data['auto_send'] ?? false);
+        // a switch on in the same submission should get what they asked for
+        $apiWanted = (bool) ($data['api_enabled'] ?? false);
+        $autoWanted = (bool) ($data['auto_send'] ?? false);
 
-        if ($wanted && ! $this->whatsapp->isConfigured()) {
-            $integration->mergeSettings(['auto_send' => false]);
+        if (($apiWanted || $autoWanted) && ! $this->whatsapp->isConfigured()) {
+            $integration->mergeSettings(['api_enabled' => false, 'auto_send' => false]);
             $integration->save();
 
             return back()->with('error', WhatsAppSender::NOT_CONFIGURED);
         }
 
-        $integration->mergeSettings(['auto_send' => $wanted]);
+        $integration->mergeSettings(['api_enabled' => $apiWanted, 'auto_send' => $autoWanted]);
         $integration->save();
 
         return back()->with('success', 'WhatsApp settings saved.');
+    }
+
+    /**
+     * Test connection. JSON, so the card can show the answer where the button
+     * is, and always an answer — success names the number, failure carries
+     * Meta's own code and words. It tests what is SAVED, not what is typed.
+     */
+    public function testWhatsApp(): JsonResponse
+    {
+        return response()->json($this->whatsapp->testConnection());
+    }
+
+    public function syncWhatsAppTemplates(WhatsAppTemplateSync $sync)
+    {
+        $result = $sync->run();
+
+        return back()->with($result['ok'] ? 'success' : 'error', $result['message']);
     }
 
     /* ---------------- the tabs ---------------- */
@@ -164,6 +202,7 @@ class AutomationController extends Controller
     private function templates(): array
     {
         return MessageTemplate::withCount('messages')
+            ->with('whatsappTemplate')
             ->orderBy('name')
             ->get()
             ->map(fn (MessageTemplate $t) => [
@@ -177,6 +216,11 @@ class AutomationController extends Controller
                 'meta_body' => $this->renderer->toMetaBody($t->body, $t->placeholder_map),
                 'meta_template_name' => $t->meta_template_name,
                 'approval_status' => $t->approval_status,
+                'whatsapp_template_id' => $t->whatsapp_template_id,
+                'whatsapp_template' => $t->whatsappTemplate?->label,
+                'whatsapp_status' => $t->whatsappTemplate?->status,
+                // null means it can go by API; anything else is the reason not
+                'api_unsendable' => $t->apiUnsendableReason(),
                 'is_active' => $t->is_active,
                 'messages_count' => $t->messages_count,
                 'preview' => $this->renderer->preview($t->body),
@@ -186,18 +230,21 @@ class AutomationController extends Controller
     }
 
     /**
-     * The review list: everything queued, plus what has recently left it.
+     * The review list and the message log: everything queued, plus what has
+     * recently left it, newest first.
      *
-     * Recently-sent messages are included on purpose. The queue is the only
-     * place a message log is visible, and "did that welcome message actually go
-     * out" is the question somebody asks five minutes after pressing the
-     * button.
+     * Recently-sent messages are included on purpose. This is where an admin
+     * answers "did Rahul get the site visit message?" — recipient, number,
+     * template, rule, outcome in words that do not overclaim, Meta's id, and
+     * the error when there was one.
      */
     private function queue(): array
     {
         return MessageLog::with([
             'lead:id,first_name,middle_name,last_name,mobile_number,assigned_to',
-            'template:id,name,category',
+            'template:id,name,category,whatsapp_template_id,placeholder_map',
+            'template.whatsappTemplate',
+            'whatsappTemplate:id,name,language',
             'rule:id,name',
             'user:id,first_name,last_name',
         ])
@@ -208,9 +255,13 @@ class AutomationController extends Controller
                 'id' => $m->id,
                 'status' => $m->status,
                 'mode' => $m->mode,
+                'outcome' => $m->outcome(),
                 'body' => $m->body,
                 'to_number' => $m->to_number,
+                'to_name' => $m->to_name ?? $m->lead?->full_name,
+                'wamid' => $m->wamid,
                 'error' => $m->error,
+                'error_code' => $m->error_code,
                 'sent_at' => $m->sent_at?->toIso8601String(),
                 'created_at' => $m->created_at?->toIso8601String(),
                 'lead' => $m->lead ? [
@@ -218,11 +269,15 @@ class AutomationController extends Controller
                     'name' => $m->lead->full_name,
                 ] : null,
                 'template' => $m->template?->name,
+                'whatsapp_template' => $m->whatsappTemplate?->label,
                 'rule' => $m->rule?->name,
                 'user' => $m->user?->display_name,
                 // built server-side so the browser never has to know the
                 // country code or the encoding rules
                 'click_url' => $m->status === 'queued' ? $this->whatsapp->clickUrlFor($m) : null,
+                // whether Send by API is worth offering on this row at all
+                'api_ready' => $m->status === 'queued' && $m->template && $m->params !== null
+                    && ! $m->template->apiUnsendableReason(),
             ])
             ->all();
     }
@@ -259,11 +314,35 @@ class AutomationController extends Controller
 
         return [
             'configured' => $this->whatsapp->isConfigured(),
+            'api_enabled' => $this->whatsapp->apiEnabled(),
             'auto_send' => $this->whatsapp->autoSends(),
             'phone_number_id' => $integration->setting('phone_number_id'),
+            'waba_id' => $integration->setting('waba_id'),
             'access_token_tail' => $integration->maskedSetting('access_token'),
+            'last_test' => $integration->setting('last_test'),
             'not_configured' => WhatsAppSender::NOT_CONFIGURED,
         ];
+    }
+
+    /** The templates Meta has for this account, as of the last sync. */
+    private function whatsappTemplates(): array
+    {
+        return WhatsAppTemplate::orderBy('name')
+            ->orderBy('language')
+            ->get()
+            ->map(fn (WhatsAppTemplate $t) => [
+                'id' => $t->id,
+                'name' => $t->name,
+                'language' => $t->language,
+                'label' => $t->label,
+                'status' => $t->status,
+                'category' => $t->category,
+                'body' => $t->body,
+                'param_count' => $t->bodyParamCount(),
+                'unsupported' => $t->unsupportedReason(),
+                'synced_at' => $t->synced_at?->toIso8601String(),
+            ])
+            ->all();
     }
 
     /**

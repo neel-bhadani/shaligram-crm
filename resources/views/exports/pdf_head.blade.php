@@ -40,6 +40,13 @@
         .header .brand span {
             color: #0f766e;
         }
+        /* inlined as a data URI: dompdf runs chrooted to the temp dir with remote loading off */
+        .header .brand img {
+            width: 18px;
+            height: 18px;
+            vertical-align: -3px;
+            margin-right: 5px;
+        }
         .header .sub {
             font-size: 9px;
             color: #64748b;
@@ -107,7 +114,7 @@
     <div class="page-num">{PAGE_NUM} / {PAGE_COUNT}</div>
 
     <div class="header">
-        <div class="brand">Shaligram <span>CRM</span></div>
+        <div class="brand"><img src="data:image/png;base64,{{ base64_encode(file_get_contents(public_path('images/brand/shaligram-mark.png'))) }}" alt="">Shaligram <span>CRM</span></div>
         <div class="sub">Export · {{ $type }}</div>
     </div>
 

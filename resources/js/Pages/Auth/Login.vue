@@ -75,7 +75,7 @@ const submitSignup = () => signup.post(route('signup.store'), {
                   bg-[radial-gradient(circle_at_30%_30%,rgba(15,118,110,.55),transparent_62%)]" />
 
       <div class="relative flex items-center gap-2.5 font-bold">
-        <span class="block h-6 w-6 rounded border-2 border-teal-500"></span> Shaligram CRM
+        <img src="/images/brand/shaligram-mark.png" alt="" class="h-7 w-7 shrink-0" /> Shaligram CRM
       </div>
 
       <div class="relative">
@@ -98,6 +98,10 @@ const submitSignup = () => signup.post(route('signup.store'), {
     <!-- right: the forms -->
     <div class="flex flex-1 items-center justify-center bg-white px-6 py-10">
       <div class="w-full max-w-sm">
+
+        <!-- the full lockup only ever sits on white: its tagline is black and vanishes on navy -->
+        <img src="/images/brand/shaligram-logo.png" alt="Shaligram — Promising Excellence"
+             class="mx-auto mb-8 h-auto w-full max-w-[220px]" />
 
         <div class="mb-7 flex gap-1 border-b border-slate-100" role="tablist">
           <Link v-for="t in tabs" :key="t.key" :href="t.href()" preserve-state

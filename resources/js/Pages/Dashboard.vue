@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Head, Link, router, usePage } from '@inertiajs/vue3'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ChartCard from '@/Components/ChartCard.vue'
 import CrossFilterChips from '@/Components/CrossFilterChips.vue'
@@ -730,7 +730,6 @@ onBeforeUnmount(() => { stopBefore(); stopSuccess() })
 </script>
 
 <template>
-  <Head title="Dashboard" />
 
   <AppLayout title="Dashboard" subtitle="Overview of leads and follow-ups">
     <template #actions>

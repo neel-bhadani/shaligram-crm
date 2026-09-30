@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Head, router } from '@inertiajs/vue3'
+import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FacebookSettingsModal from '@/Components/FacebookSettingsModal.vue'
 
@@ -93,7 +93,6 @@ const unmappedForms = computed(() =>
 </script>
 
 <template>
-  <Head title="Integrations" />
 
   <AppLayout title="Integrations" subtitle="Where leads come in from">
 

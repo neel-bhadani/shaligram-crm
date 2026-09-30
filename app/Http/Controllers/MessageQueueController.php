@@ -9,9 +9,9 @@ use Illuminate\Http\Request;
 /**
  * The review queue: messages a rule wrote, waiting for a person to send them.
  *
- * This is where "automation never sends a message on its own" is actually
- * enforced. A rule can put a row here and nothing else; getting it to a
- * customer takes somebody opening it.
+ * With the API off, this is where every rule's message ends up and getting it
+ * to a customer takes somebody opening it. With the API on and automatic
+ * sending off, API messages wait here for Send by API.
  *
  * Admin only on the route group, and `visibleTo` on top of that — the queue
  * prints lead names and mobile numbers, and an admin resolves see_all_leads, so
@@ -42,7 +42,7 @@ class MessageQueueController extends Controller
 
         if (! $url) {
             return response()->json([
-                'ok'      => false,
+                'ok' => false,
                 'message' => 'This lead has no usable mobile number, so there is nothing to open.',
             ], 422);
         }
@@ -53,13 +53,11 @@ class MessageQueueController extends Controller
     }
 
     /**
-     * Send through the API.
+     * Send by API — handed to the queue worker, never sent inline.
      *
-     * Today this always comes back saying the API is not set up, and saying it
-     * in a sentence the office admin can act on rather than a stack trace in a
-     * log file. That is the whole reason the button exists now: an admin who
-     * presses it finds out what is missing, instead of watching nothing happen
-     * and pressing it four more times.
+     * An unconfigured API still gets its answer here, in a sentence the office
+     * admin can act on and on the row itself: an admin who presses the button
+     * finds out what is missing, instead of watching nothing happen.
      */
     public function send(Request $request, MessageLog $message)
     {
@@ -69,7 +67,13 @@ class MessageQueueController extends Controller
             return back()->with('error', 'That message has already left the queue.');
         }
 
-        $outcome = $this->whatsapp->send($message);
+        if (! $this->whatsapp->isConfigured()) {
+            $outcome = $this->whatsapp->send($message);
+
+            return back()->with('error', $outcome['message']);
+        }
+
+        $outcome = $this->whatsapp->dispatchQueued($message, $request->user());
 
         return back()->with($outcome['ok'] ? 'success' : 'error', $outcome['message']);
     }

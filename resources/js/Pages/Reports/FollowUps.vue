@@ -19,7 +19,7 @@
  | how this page white-screened once already.
  */
 import { computed } from 'vue'
-import { Head } from '@inertiajs/vue3'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ReportFilterBar from '@/Components/ReportFilterBar.vue'
 import ReportKpis from '@/Components/ReportKpis.vue'
@@ -124,7 +124,6 @@ const columns = computed(() => [
 </script>
 
 <template>
-  <Head title="Follow-ups report" />
 
   <AppLayout title="Follow-ups report"
              :subtitle="`Grouped by ${dimension.toLowerCase()} · ${status} · ${range.label}`">

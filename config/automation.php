@@ -346,16 +346,37 @@ return [
         ],
 
         'queue_whatsapp' => [
-            'label' => 'Queue a WhatsApp message',
+            'label' => 'Send a WhatsApp message',
             'phrase' => 'queue the {template_id} WhatsApp message',
-            'hint' => 'Puts the message in the Queue tab for somebody to open and send. It is never sent on its own.',
+            'phrase_by' => 'mode',
+            'phrases' => [
+                'click' => 'queue the {template_id} WhatsApp message',
+                'api' => 'send the {template_id} WhatsApp message by API',
+            ],
+            'hint' => 'Click-to-send puts the message in the Queue tab for somebody to open. By API sends an approved Meta template through the queue worker, and falls back to click-to-send while the API is off.',
             'params' => [
+                'mode' => [
+                    'label' => 'How',
+                    'type' => 'select',
+                    'options' => 'whatsapp_modes',
+                    'default' => 'click',
+                    // not required: a rule saved before this existed has no
+                    // mode, and no mode is click-to-send
+                ],
                 'template_id' => [
                     'label' => 'Which message',
                     'type' => 'select',
                     'options' => 'templates',
                     'required' => true,
-                    'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued.',
+                    'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued. By API needs a message linked to an APPROVED Meta template.',
+                ],
+                'terminal' => [
+                    'label' => 'Booked and lost leads',
+                    'type' => 'select',
+                    'options' => 'whatsapp_terminal',
+                    'default' => 'skip',
+                    'when' => ['mode' => 'api'],
+                    'hint' => 'Off unless you say so: a rule does not message a lead who has booked or been lost.',
                 ],
             ],
         ],
@@ -495,9 +516,9 @@ return [
         'link_base' => 'https://wa.me/',
 
         /*
-         | The API half. Everything is built and nothing is switched on: there
-         | are no credentials yet, and there will not be until the client
-         | confirms which WhatsApp product they actually have.
+         | The API half. Built, and off until an admin saves credentials and
+         | switches on "Use API sending". The client must first confirm which
+         | WhatsApp product they actually have.
          |
          | This matters more than it sounds. The free WhatsApp Business APP on
          | a phone has no API at all — no amount of configuration makes it send
@@ -514,8 +535,25 @@ return [
         'secret_keys' => ['access_token'],
         'api' => [
             'base' => env('WHATSAPP_API_BASE', 'https://graph.facebook.com'),
-            'version' => env('WHATSAPP_API_VERSION', 'v21.0'),
+            // WhatsApp only. Facebook Lead Ads keeps its own version in
+            // config/integrations.php.
+            'version' => env('WHATSAPP_API_VERSION', 'v26.0'),
             'timeout' => 15,
+
+            // rate limits and Meta outages: tries in all, and the pause
+            // before each retry, in seconds
+            'tries' => 3,
+            'backoff' => [30, 120],
+        ],
+
+        'modes' => [
+            'click' => ['label' => 'Click-to-send (somebody opens it)'],
+            'api' => ['label' => 'By API (approved Meta template)'],
+        ],
+
+        'terminal' => [
+            'skip' => ['label' => 'Do not message them'],
+            'send' => ['label' => 'Message them too'],
         ],
 
         /*
@@ -523,6 +561,9 @@ return [
          | only in the seeded row: a fresh install with no settings row at all
          | must queue, not send. Flipping it is an admin setting on the Queue
          | tab and it cannot be flipped while the API is unconfigured.
+         |
+         | Sending needs the queue worker. Production runs it from cron every
+         | minute (see README); without it, API messages sit at "Waiting".
          */
         'auto_send_default' => false,
     ],

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { Head, Link, router } from '@inertiajs/vue3'
+import { Link, router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ProjectFormModal from '@/Components/ProjectFormModal.vue'
 import ConfirmDialog from '@/Components/ConfirmDialog.vue'
@@ -96,7 +96,6 @@ const conversion = p => p.leads_count > 0
 </script>
 
 <template>
-  <Head title="Projects" />
 
   <AppLayout title="Projects" subtitle="The developments every lead is filed against">
     <template #actions>

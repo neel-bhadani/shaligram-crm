@@ -111,21 +111,31 @@ class RuleCatalog
                 ])
                 ->all(),
 
+            /*
+             | The Meta status rides on the label, so an admin choosing "By API"
+             | sees which messages can actually go that way before pressing Save
+             | refuses the others.
+             */
             'templates' => MessageTemplate::active()
+                ->with('whatsappTemplate')
                 ->orderBy('name')
-                ->get(['id', 'name', 'category'])
-                ->map(fn (MessageTemplate $t) => ['value' => $t->id, 'label' => $t->name])
+                ->get(['id', 'name', 'category', 'whatsapp_template_id'])
+                ->map(fn (MessageTemplate $t) => [
+                    'value' => $t->id,
+                    'label' => $t->name.match (true) {
+                        ! $t->whatsappTemplate => '',
+                        $t->whatsappTemplate->isApproved() => ' · Meta approved',
+                        default => ' · Meta '.strtolower($t->whatsappTemplate->status),
+                    },
+                ])
                 ->all(),
 
-            'alert_recipients' => collect(config('automation.alert_recipients'))
-                ->map(fn (array $meta, string $key) => ['value' => $key, 'label' => $meta['label']])
-                ->values()
-                ->all(),
+            'whatsapp_modes' => $this->labelled(config('automation.whatsapp.modes')),
+            'whatsapp_terminal' => $this->labelled(config('automation.whatsapp.terminal')),
 
-            'severities' => collect(config('automation.severities'))
-                ->map(fn (array $meta, string $key) => ['value' => $key, 'label' => $meta['label']])
-                ->values()
-                ->all(),
+            'alert_recipients' => $this->labelled(config('automation.alert_recipients')),
+
+            'severities' => $this->labelled(config('automation.severities')),
         ];
     }
 
@@ -149,6 +159,18 @@ class RuleCatalog
         }
 
         return (string) $value;
+    }
+
+    /**
+     * @param  array<string, array{label: string}>|null  $map
+     * @return array<int, array{value: string, label: string}>
+     */
+    private function labelled(?array $map): array
+    {
+        return collect($map ?? [])
+            ->map(fn (array $meta, string $key) => ['value' => $key, 'label' => $meta['label']])
+            ->values()
+            ->all();
     }
 
     /** @param array<string, string> $map */

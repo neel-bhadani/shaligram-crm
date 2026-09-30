@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { Head, Link, useForm } from '@inertiajs/vue3'
+import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ProjectFormModal from '@/Components/ProjectFormModal.vue'
 
@@ -84,7 +84,6 @@ const when = iso => iso
 </script>
 
 <template>
-  <Head :title="project.name" />
 
   <AppLayout :title="project.name"
              :subtitle="[project.location, project.type_label].filter(Boolean).join(' · ')">

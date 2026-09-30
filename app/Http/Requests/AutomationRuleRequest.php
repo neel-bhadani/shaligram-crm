@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\MessageTemplate;
 use App\Services\Automation\RuleCatalog;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
@@ -53,21 +54,21 @@ class AutomationRuleRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'        => ['required', 'string', 'max:120'],
+            'name' => ['required', 'string', 'max:120'],
             'description' => ['nullable', 'string', 'max:500'],
 
-            'trigger'        => ['required', 'string', 'in:' . implode(',', array_keys(config('automation.triggers')))],
+            'trigger' => ['required', 'string', 'in:'.implode(',', array_keys(config('automation.triggers')))],
             'trigger_config' => ['array'],
 
-            'conditions'         => ['array', 'max:6'],
-            'conditions.*.field' => ['required', 'string', 'in:' . implode(',', array_keys(config('automation.conditions')))],
+            'conditions' => ['array', 'max:6'],
+            'conditions.*.field' => ['required', 'string', 'in:'.implode(',', array_keys(config('automation.conditions')))],
             'conditions.*.value' => ['required'],
 
             // at least one: a rule with a trigger and no action is a rule that
             // fires, logs, and does nothing, which reads on the Activity tab as
             // a bug in the engine
-            'actions'        => ['required', 'array', 'min:1', 'max:6'],
-            'actions.*.type' => ['required', 'string', 'in:' . implode(',', array_keys(config('automation.actions')))],
+            'actions' => ['required', 'array', 'min:1', 'max:6'],
+            'actions.*.type' => ['required', 'string', 'in:'.implode(',', array_keys(config('automation.actions')))],
         ];
     }
 
@@ -75,8 +76,8 @@ class AutomationRuleRequest extends FormRequest
     {
         return [
             'actions.required' => 'A rule has to do something. Add at least one action.',
-            'actions.min'      => 'A rule has to do something. Add at least one action.',
-            'name.required'    => 'Give the rule a name you will recognise in a list.',
+            'actions.min' => 'A rule has to do something. Add at least one action.',
+            'name.required' => 'Give the rule a name you will recognise in a list.',
         ];
     }
 
@@ -107,6 +108,10 @@ class AutomationRuleRequest extends FormRequest
                         config("automation.actions.$type.params", []),
                         $action,
                     );
+
+                    if ($type === 'queue_whatsapp') {
+                        $this->checkApiTemplate($validator, "actions.$index", $action);
+                    }
                 }
 
                 $this->checkConditionValues($validator);
@@ -130,11 +135,12 @@ class AutomationRuleRequest extends FormRequest
                 continue;
             }
 
-            $value   = $values[$key] ?? null;
+            $value = $values[$key] ?? null;
             $missing = $value === null || $value === '' || $value === [];
 
             if (($meta['required'] ?? false) && $missing) {
                 $validator->errors()->add("$prefix.$key", "Choose {$this->lower($meta['label'])}.");
+
                 continue;
             }
 
@@ -155,8 +161,8 @@ class AutomationRuleRequest extends FormRequest
 
             if (($meta['type'] ?? null) === 'number') {
                 $number = filter_var($value, FILTER_VALIDATE_INT);
-                $min    = $meta['min'] ?? 1;
-                $max    = $meta['max'] ?? PHP_INT_MAX;
+                $min = $meta['min'] ?? 1;
+                $max = $meta['max'] ?? PHP_INT_MAX;
 
                 if ($number === false || $number < $min || $number > $max) {
                     $validator->errors()->add(
@@ -165,6 +171,29 @@ class AutomationRuleRequest extends FormRequest
                     );
                 }
             }
+        }
+    }
+
+    /**
+     * An API-mode WhatsApp action has to name a message Meta will accept:
+     * linked to an APPROVED template, with the same number of variables.
+     *
+     * Refused here, at Save, because the alternative is a rule that looks
+     * fine and fails on every lead it fires for.
+     *
+     * @param  array<string, mixed>  $action
+     */
+    private function checkApiTemplate(Validator $validator, string $prefix, array $action): void
+    {
+        if (($action['mode'] ?? 'click') !== 'api' || blank($action['template_id'] ?? null)) {
+            return;
+        }
+
+        $template = MessageTemplate::with('whatsappTemplate')->find($action['template_id']);
+        $reason = $template?->apiUnsendableReason();
+
+        if ($reason) {
+            $validator->errors()->add("$prefix.template_id", "{$reason} Choose another message or use click-to-send.");
         }
     }
 
@@ -179,7 +208,7 @@ class AutomationRuleRequest extends FormRequest
     {
         foreach ((array) $this->input('conditions', []) as $index => $condition) {
             $field = $condition['field'] ?? null;
-            $meta  = config("automation.conditions.$field");
+            $meta = config("automation.conditions.$field");
 
             if (! $meta) {
                 continue;
@@ -211,7 +240,7 @@ class AutomationRuleRequest extends FormRequest
     /** "Which stage" reads badly mid-sentence; "which stage" reads fine. */
     private function lower(string $label): string
     {
-        return mb_strtolower(mb_substr($label, 0, 1)) . mb_substr($label, 1);
+        return mb_strtolower(mb_substr($label, 0, 1)).mb_substr($label, 1);
     }
 
     /**
@@ -229,9 +258,9 @@ class AutomationRuleRequest extends FormRequest
         $trigger = $this->input('trigger');
 
         return [
-            'name'        => trim($this->input('name')),
+            'name' => trim($this->input('name')),
             'description' => $this->filled('description') ? trim($this->input('description')) : null,
-            'trigger'     => $trigger,
+            'trigger' => $trigger,
 
             'trigger_config' => $this->pickParams(
                 config("automation.triggers.$trigger.params", []),

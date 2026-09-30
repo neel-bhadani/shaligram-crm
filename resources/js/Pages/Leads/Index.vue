@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, computed, ref } from 'vue'
-import { Head, Link, router, usePage } from '@inertiajs/vue3'
+import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import StageBadge from '@/Components/StageBadge.vue'
 import LeadFormModal from '@/Components/LeadFormModal.vue'
@@ -174,7 +174,6 @@ const ageClass = d => d === null ? 'text-slate-400'
 </script>
 
 <template>
-  <Head title="Leads" />
 
   <AppLayout title="Leads" subtitle="All enquiries across projects">
     <template #actions>

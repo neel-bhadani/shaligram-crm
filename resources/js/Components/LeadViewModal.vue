@@ -1,10 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
-import { router } from '@inertiajs/vue3'
+import { Head, router } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import StageBadge from './StageBadge.vue'
 import LeadActivityTimeline from './LeadActivityTimeline.vue'
+import LeadWhatsAppPanel from './LeadWhatsAppPanel.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 import { pickable } from '@/composables/useTaxonomy.js'
 
@@ -120,6 +121,8 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
 
 <template>
   <Modal :show="show" :title="lead?.full_name ?? 'Lead'" @close="emit('close')">
+    <!-- names the tab after the open lead; unmounting on close hands it back to the page -->
+    <Head v-if="show && lead" :title="lead.full_name" />
 
     <div v-if="loading" class="py-10 text-center text-sm text-slate-500">Loading…</div>
 
@@ -165,6 +168,8 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
       </div>
 
       <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
+
+      <LeadWhatsAppPanel :lead-id="lead.id" />
 
       <div v-if="allowEdit && canReassign" class="mt-6 border-t border-slate-100 pt-5">
         <h4 class="text-xs font-semibold text-slate-500">Reassign</h4>

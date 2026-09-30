@@ -79,7 +79,12 @@ watch(() => props.show, open => {
       trigger: props.rule.trigger,
       trigger_config: { ...(props.rule.trigger_config ?? {}) },
       conditions: (props.rule.conditions ?? []).map(c => ({ ...c })),
-      actions: (props.rule.actions ?? []).map(a => ({ ...a })),
+      // defaults under the saved values: an action saved before a parameter
+      // existed (a WhatsApp action from before "How") shows its default
+      actions: (props.rule.actions ?? []).map(a => ({
+        ...defaultsFor(props.catalog.actions?.[a.type]?.params),
+        ...a,
+      })),
     })
   } else {
     form.defaults(blank())

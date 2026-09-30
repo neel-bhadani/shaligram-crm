@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { Link, router, usePage } from '@inertiajs/vue3'
+import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import AlertBell from '../Components/AlertBell.vue'
 
 defineProps({ title: String, subtitle: String })
@@ -249,6 +249,11 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
 
 <template>
   <div class="min-h-screen bg-slate-100">
+    <!--
+      The tab title comes from the same prop as the heading below, so the two
+      cannot drift apart and no page can forget one. Pages do not set their own.
+    -->
+    <Head :title="title" />
 
     <!-- scrim behind the mobile drawer -->
     <div v-show="open" class="fixed inset-0 z-30 bg-slate-900/45 lg:hidden" @click="open = false" />
@@ -275,7 +280,7 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
       :class="open ? 'translate-x-0' : '-translate-x-full'"
     >
       <div class="flex shrink-0 items-center gap-2 border-b border-white/10 px-5 pb-4 pt-5 font-bold">
-        <span class="block h-6 w-6 rounded border-2 border-teal-500"></span>
+        <img src="/images/brand/shaligram-mark.png" alt="" class="h-7 w-7 shrink-0" />
         Shaligram CRM
         <button class="ml-auto text-xl text-slate-400 lg:hidden" @click="open = false">&times;</button>
       </div>

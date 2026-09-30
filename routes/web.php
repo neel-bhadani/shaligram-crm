@@ -11,6 +11,7 @@ use App\Http\Controllers\ExportDataController;
 use App\Http\Controllers\IntegrationController;
 use App\Http\Controllers\LeadController;
 use App\Http\Controllers\LeadImportController;
+use App\Http\Controllers\LeadWhatsAppController;
 use App\Http\Controllers\MessageQueueController;
 use App\Http\Controllers\MessageTemplateController;
 use App\Http\Controllers\PipelineController;
@@ -49,6 +50,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/leads/import/chunk', [LeadImportController::class, 'import'])->name('leads.import.chunk');
 
     Route::get('/leads/{lead}', [LeadController::class, 'show'])->name('leads.show');
+
+    // one message to one lead; LeadPolicy@view is checked in the controller
+    Route::get('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'show'])->name('leads.whatsapp.show');
+    Route::post('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'send'])->name('leads.whatsapp.send');
     Route::post('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])
         ->name('leads.check-duplicate');
 
@@ -477,6 +482,10 @@ Route::middleware(['auth'])->group(function () {
 
         Route::put('/automation/whatsapp', [AutomationController::class, 'updateWhatsApp'])
             ->name('automation.whatsapp.update');
+        Route::post('/automation/whatsapp/test', [AutomationController::class, 'testWhatsApp'])
+            ->name('automation.whatsapp.test');
+        Route::post('/automation/whatsapp/sync', [AutomationController::class, 'syncWhatsAppTemplates'])
+            ->name('automation.whatsapp.sync');
     });
 
     /* ---------------- integrations (admin only) ---------------- */

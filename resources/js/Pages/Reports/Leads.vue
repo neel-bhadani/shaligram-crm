@@ -21,7 +21,7 @@
  | conversion column has a note under it saying what it divides by.
  */
 import { computed } from 'vue'
-import { Head } from '@inertiajs/vue3'
+
 import AppLayout from '@/Layouts/AppLayout.vue'
 import ReportFilterBar from '@/Components/ReportFilterBar.vue'
 import ReportKpis from '@/Components/ReportKpis.vue'
@@ -105,7 +105,6 @@ const columns = computed(() => [
 </script>
 
 <template>
-  <Head title="Leads report" />
 
   <AppLayout title="Leads report" :subtitle="`Grouped by ${dimension.toLowerCase()} · ${range.label}`">
     <ReportFilterBar :range="range" :presets="options.ranges"

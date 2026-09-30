@@ -1,6 +1,5 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
-import { Head } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FormField from '@/Components/FormField.vue'
@@ -280,11 +279,10 @@ function cancel() {
 </script>
 
 <template>
-  <AppLayout title="Import Leads">
-    <Head title="Import Leads" />
+  <AppLayout title="Bulk Import Leads">
     <div class="space-y-5">
       <div class="flex items-center justify-between">
-        <div><h1 class="text-xl font-semibold text-slate-800">Import Leads</h1><p class="mt-1 text-sm text-slate-500">Upload a file, review how it was understood, set follow-ups, confirm.</p></div>
+        <div><h1 class="text-xl font-semibold text-slate-800">Bulk Import Leads</h1><p class="mt-1 text-sm text-slate-500">Upload a file, review how it was understood, set follow-ups, confirm.</p></div>
         <button v-if="upload && step < 5" class="btn-ghost" :disabled="busy" @click="cancel">Cancel import</button>
       </div>
       <ol class="card flex flex-wrap gap-3 p-4 text-sm" aria-label="Import steps">
