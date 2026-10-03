@@ -112,21 +112,16 @@ class RuleCatalog
                 ->all(),
 
             /*
-             | The Meta status rides on the label, so an admin choosing "By API"
-             | sees which messages can actually go that way before pressing Save
-             | refuses the others.
+             | The 11za template name rides on the label, so an admin choosing
+             | "By API" sees which messages can actually go that way before
+             | pressing Save refuses the others.
              */
             'templates' => MessageTemplate::active()
-                ->with('whatsappTemplate')
                 ->orderBy('name')
-                ->get(['id', 'name', 'category', 'whatsapp_template_id'])
+                ->get(['id', 'name', 'category', 'provider_template_name', 'provider_template_language'])
                 ->map(fn (MessageTemplate $t) => [
                     'value' => $t->id,
-                    'label' => $t->name.match (true) {
-                        ! $t->whatsappTemplate => '',
-                        $t->whatsappTemplate->isApproved() => ' · Meta approved',
-                        default => ' · Meta '.strtolower($t->whatsappTemplate->status),
-                    },
+                    'label' => $t->name.($t->provider_template_name ? " · 11za {$t->providerTemplateLabel()}" : ''),
                 ])
                 ->all(),
 

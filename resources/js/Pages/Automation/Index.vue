@@ -35,7 +35,6 @@ const props = defineProps({
   activity: Array,
   catalog: Object,
   whatsapp: Object,
-  whatsappTemplates: { type: Array, default: () => [] },
   placeholders: Object,
   categories: Object,
   thresholds: Object,
@@ -190,12 +189,12 @@ const confirmDeleteTemplate = () => {
 }
 
 /*
- | "{{1}} = first_name, {{2}} = project" — what Meta will be sent.
+ | "{{1}} = first_name, {{2}} = project" — how the 11za template is numbered.
  |
  | Built here rather than in the markup because Vue's template parser reads a
  | literal "{{" inside an interpolation as the start of another one, whatever it
  | is nested in. Showing it at all is deliberate: the numbering is stored the
- | moment a message is saved, and an admin who submits a template to Meta later
+ | moment a message is saved, and an admin setting the template up in 11za
  | should not be meeting it for the first time.
  */
 const metaNumbering = template =>
@@ -220,7 +219,7 @@ const filteredHistory = computed(() => {
   if (!term) return history.value
 
   return history.value.filter(m =>
-    [m.to_name, m.lead?.name, m.to_number, m.template, m.rule, m.wamid]
+    [m.to_name, m.lead?.name, m.to_number, m.template, m.rule, m.provider_message_id]
       .some(v => (v ?? '').toString().toLowerCase().includes(term)))
 })
 
@@ -263,17 +262,11 @@ const statusChip = status => ({
   cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
 }[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
 
-const metaStatusChip = status => ({
-  APPROVED: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  PENDING: 'border-amber-200 bg-amber-50 text-amber-800',
-  REJECTED: 'border-rose-200 bg-rose-50 text-rose-700',
-}[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
-
 /* the WhatsApp API settings form */
 const waForm = useForm({
-  phone_number_id: props.whatsapp.phone_number_id ?? '',
-  waba_id: props.whatsapp.waba_id ?? '',
-  access_token: '',
+  auth_token: '',
+  origin_website: props.whatsapp.origin_website ?? '',
+  base_url: props.whatsapp.base_url ?? '',
   api_enabled: props.whatsapp.api_enabled ?? false,
   auto_send: props.whatsapp.auto_send ?? false,
 })
@@ -281,24 +274,31 @@ const waForm = useForm({
 const saveWhatsApp = () => waForm.put(route('automation.whatsapp.update'), {
   preserveScroll: true,
   onSuccess: () => {
-    waForm.access_token = ''
+    waForm.auth_token = ''
     // what was just saved is the new baseline for "unsaved changes"
     waForm.defaults()
   },
 })
 
 /*
- | Test connection. Always ends with something on screen: Meta's answer, the
- | server's refusal, or the fact that the request itself never came back. A
- | button that goes quiet on failure is how a bad token hid for a week.
+ | Test connection. 11za has no way to check credentials without sending, so
+ | this sends one real message to the number typed here. Always ends with
+ | something on screen: 11za's raw answer, the server's refusal, or the fact
+ | that the request itself never came back. A button that goes quiet on
+ | failure is how a bad token hid for a week.
  */
 const testing = ref(false)
 const testResult = ref(props.whatsapp.last_test ?? null)
+const testMobile = ref('')
+const testTemplateId = ref('')
+
+// only messages with an 11za template name can be sent as the test
+const testableTemplates = computed(() => props.templates.filter(t => t.provider_template_name))
 
 const testConnection = () => {
   testing.value = true
 
-  axios.post(route('automation.whatsapp.test'))
+  axios.post(route('automation.whatsapp.test'), { mobile: testMobile.value, template_id: testTemplateId.value || null })
     .then(({ data }) => { testResult.value = data })
     .catch(error => {
       const data = error.response?.data
@@ -312,14 +312,6 @@ const testConnection = () => {
     })
     .finally(() => { testing.value = false })
 }
-
-const syncing = ref(false)
-
-const syncTemplates = () => router.post(route('automation.whatsapp.sync'), {}, {
-  preserveScroll: true,
-  onStart: () => { syncing.value = true },
-  onFinish: () => { syncing.value = false },
-})
 
 /* ================= activity ================= */
 
@@ -471,40 +463,19 @@ const whenShort = iso => iso
 
     <!-- ================= TEMPLATES ================= -->
     <div v-show="tab === 'templates'">
-      <!-- ---------------- Meta's side ---------------- -->
-      <div class="card mb-4 p-4">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-1.5">
-              <h3 class="text-sm font-semibold text-slate-900">Meta templates</h3>
-              <HelpTip title="Why link a message to a Meta template?" align="left">
-                Sending by API can only send a template Meta has approved. Write and submit the
-                template in Meta's WhatsApp Manager, sync it here, then link it to the message
-                with the same wording. Only <strong>approved</strong> templates are sent.
-              </HelpTip>
-            </div>
-            <p class="mt-1 text-xs text-slate-500">
-              {{ whatsappTemplates.length
-                ? `${whatsappTemplates.filter(t => t.status === 'APPROVED').length} of ${whatsappTemplates.length} approved.`
-                : 'None synced yet.' }}
-            </p>
-          </div>
-          <button class="btn-xs" :disabled="syncing || !whatsapp.configured" @click="syncTemplates">
-            {{ syncing ? 'Syncing…' : 'Sync from Meta' }}
-          </button>
-        </div>
-
-        <div v-if="whatsappTemplates.length" class="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-100">
-          <div v-for="t in whatsappTemplates" :key="t.id" class="flex flex-wrap items-center gap-2 px-3 py-2">
-            <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                  :class="metaStatusChip(t.status)">{{ t.status }}</span>
-            <span class="text-xs font-medium text-slate-700">{{ t.label }}</span>
-            <span class="text-[11px] text-slate-400">
-              {{ t.category ?? '—' }} · {{ t.param_count }} variable{{ t.param_count === 1 ? '' : 's' }}
-            </span>
-            <span v-if="t.unsupported" class="w-full text-[11px] text-amber-700">{{ t.unsupported }}</span>
-          </div>
-        </div>
+      <div class="info-box mb-4 flex items-start gap-2">
+        <span class="flex-1">
+          <strong>Sending by API uses templates set up in 11za.</strong>
+          Give a message its 11za template name and language to send it by API. Without one, it is
+          click-to-send only.
+        </span>
+        <HelpTip title="Why the 11za name matters" align="right">
+          WhatsApp only lets a business message a customer with a template approved in advance.
+          Those templates live in your 11za panel. The CRM sends the name you type here and fills
+          in its variables in the numbering shown on each message. The CRM cannot check the name
+          against 11za — if it is wrong, the first send fails and 11za's answer appears in the
+          Queue's message log.
+        </HelpTip>
       </div>
 
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
@@ -516,7 +487,7 @@ const whenShort = iso => iso
         </p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           A rule puts a message in the Queue for somebody to open in WhatsApp — or, once the API
-          is set up and the message is linked to an approved Meta template, sends it by API.
+          is set up and the message has its 11za template name, sends it by API.
         </p>
         <button class="btn mt-5" @click="openTemplate(null)">Write your first message</button>
       </div>
@@ -559,18 +530,14 @@ const whenShort = iso => iso
 
           <p class="mt-2 text-[11px]"
              :class="template.api_unsendable ? 'text-slate-500' : 'text-emerald-700'">
-            <template v-if="template.whatsapp_template">
-              Meta: {{ template.whatsapp_template }}
-              <span class="rounded border px-1 py-px text-[10px] font-semibold uppercase"
-                    :class="metaStatusChip(template.whatsapp_status)">{{ template.whatsapp_status }}</span>
-            </template>
+            <template v-if="template.provider_template">11za: {{ template.provider_template }}</template>
             {{ template.api_unsendable ? `By API: no. ${template.api_unsendable}` : '· Can be sent by API.' }}
           </p>
 
           <p class="mt-1 text-[11px] text-slate-400">
             Used {{ template.messages_count }} time{{ template.messages_count === 1 ? '' : 's' }}
             <template v-if="template.placeholder_map?.length">
-              · Meta numbering: {{ metaNumbering(template) }}
+              · Template numbering: {{ metaNumbering(template) }}
             </template>
           </p>
         </div>
@@ -594,12 +561,12 @@ const whenShort = iso => iso
           <template v-else>
             <strong>API messages are sent automatically.</strong>
             A rule's API message goes to the send worker straight away; the log below shows what
-            Meta said. Click-to-send messages still wait here for you.
+            11za said. Click-to-send messages still wait here for you.
           </template>
         </span>
         <HelpTip title="What “sent” means here" align="right">
-          “Accepted by Meta” means Meta took the message and gave it an id. Whether it was then
-          delivered or read is not recorded — that needs a connection back from Meta this CRM
+          “Accepted by 11za” means 11za took the message and gave it an id. Whether it was then
+          delivered or read is not recorded — that needs a connection back from 11za this CRM
           does not have yet.
           <br><br>
           API messages are sent by the background worker that runs every minute, so allow a
@@ -664,8 +631,11 @@ const whenShort = iso => iso
               Nothing in the recent log matches “{{ logSearch }}”.
             </div>
             <div v-for="message in filteredHistory" :key="message.id" class="flex flex-wrap items-center gap-2 px-4 py-2.5">
+              <!-- unconfirmed is neutral, not green and not red: 11za said yes,
+                   only the id lookup came up empty -->
               <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    :class="statusChip(message.status)">{{ message.status }}</span>
+                    :class="message.unconfirmed ? 'border-slate-300 bg-white text-slate-600' : statusChip(message.status)"
+              >{{ message.unconfirmed ? 'Sent (unconfirmed)' : message.status }}</span>
               <span class="text-xs font-medium text-slate-700">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
               <span class="text-[11px] text-slate-400">{{ message.to_number ?? 'no number' }}</span>
               <span class="text-[11px] text-slate-400">
@@ -678,6 +648,11 @@ const whenShort = iso => iso
               <span v-if="message.error" class="w-full break-words text-[11px] leading-relaxed text-rose-600">
                 {{ message.error }}
               </span>
+              <details v-if="message.provider_response" class="w-full text-[11px] text-slate-500"
+                       :open="message.unconfirmed">
+                <summary class="cursor-pointer">11za's response{{ message.provider_template ? ` · sent as ${message.provider_template}` : '' }}</summary>
+                <pre class="mt-1 whitespace-pre-wrap break-all rounded bg-slate-50 p-2 font-mono text-[10px]">{{ message.provider_response }}</pre>
+              </details>
             </div>
           </div>
         </template>
@@ -693,8 +668,8 @@ const whenShort = iso => iso
             only record that it was <em>opened</em> — not whether you sent it.
             <br><br>
             <strong>API sending</strong> sends without anybody opening anything, and records
-            whether Meta accepted it (not whether it was delivered or read). It needs a WhatsApp Business Platform account through Meta or a
-            provider, with a monthly cost and an approval process.
+            whether 11za accepted it (not whether it was delivered or read). It goes through your
+            11za WhatsApp Business API account, using templates set up in the 11za panel.
           </HelpTip>
         </div>
 
@@ -707,22 +682,22 @@ const whenShort = iso => iso
         </p>
 
         <div class="mt-4 grid gap-4 sm:grid-cols-3">
-          <FormField label="Phone number ID" :error="waForm.errors.phone_number_id"
-                     hint="Digits only. WhatsApp Manager → API Setup.">
-            <input v-model="waForm.phone_number_id" type="text" inputmode="numeric" class="w-full" />
-          </FormField>
-
-          <FormField label="WhatsApp Business Account ID" :error="waForm.errors.waba_id"
-                     hint="Digits only. Needed to sync templates and to test.">
-            <input v-model="waForm.waba_id" type="text" inputmode="numeric" class="w-full" />
-          </FormField>
-
-          <FormField label="Access token" :error="waForm.errors.access_token"
-                     :hint="whatsapp.access_token_tail
-                       ? `A token ending ${whatsapp.access_token_tail} is saved. Leave empty to keep it.`
-                       : 'Starts with EAA. Stored encrypted; never shown again after saving.'">
-            <input v-model="waForm.access_token" type="password" class="w-full"
+          <FormField label="11za auth token" :error="waForm.errors.auth_token"
+                     :hint="whatsapp.auth_token_tail
+                       ? `A token ending ${whatsapp.auth_token_tail} is saved. Leave empty to keep it.`
+                       : 'From the 11za panel. Stored encrypted; never shown again after saving.'">
+            <input v-model="waForm.auth_token" type="password" class="w-full"
                    autocomplete="new-password" placeholder="••••••••" />
+          </FormField>
+
+          <FormField label="Origin website" :error="waForm.errors.origin_website"
+                     hint="The website registered with your 11za account.">
+            <input v-model="waForm.origin_website" type="text" class="w-full" />
+          </FormField>
+
+          <FormField label="Base URL" :error="waForm.errors.base_url"
+                     :hint="`Leave empty for ${whatsapp.default_base_url}. Only 11za addresses are accepted.`">
+            <input v-model="waForm.base_url" type="url" class="w-full" :placeholder="whatsapp.default_base_url" />
           </FormField>
         </div>
 
@@ -733,7 +708,7 @@ const whenShort = iso => iso
             Use API sending
             <span class="block text-xs text-slate-400">
               Off: every WhatsApp message is click-to-send. On: rules set to “By API”, and messages
-              sent from a lead, go through Meta — using approved templates only.
+              sent from a lead, go through 11za — using the template named on each message.
             </span>
           </span>
         </label>
@@ -759,16 +734,37 @@ const whenShort = iso => iso
           <button class="btn" :disabled="waForm.processing" @click="saveWhatsApp">
             {{ waForm.processing ? 'Saving…' : 'Save WhatsApp settings' }}
           </button>
-          <button class="btn-ghost" :disabled="testing" @click="testConnection">
-            {{ testing ? 'Testing…' : 'Test connection' }}
-          </button>
         </div>
 
-        <p v-if="testResult" class="mt-3 break-words text-xs leading-relaxed"
-           :class="testResult.ok ? 'info-box' : 'warn-box'">
+        <div class="mt-5 border-t border-slate-100 pt-4">
+          <h4 class="text-xs font-semibold text-slate-500">Test connection</h4>
+          <p class="mt-1 text-xs text-slate-400">
+            11za has no way to check the settings without sending, so this
+            <strong>sends one real WhatsApp message</strong> to the number you type, using the saved
+            settings and the sample values (“Rahul Mehta”, “Skyline Residency”). Use your own phone.
+          </p>
+          <div class="mt-3 flex flex-wrap items-end gap-2">
+            <FormField label="Send to mobile">
+              <input v-model="testMobile" type="tel" class="w-44" placeholder="98765 43210" />
+            </FormField>
+            <FormField label="As message">
+              <select v-model="testTemplateId" class="w-64">
+                <option value="">{{ testableTemplates.length ? 'Choose a message…' : 'No message has an 11za name yet' }}</option>
+                <option v-for="t in testableTemplates" :key="t.id" :value="t.id">{{ t.name }} · {{ t.provider_template }}</option>
+              </select>
+            </FormField>
+            <button class="btn-ghost" :disabled="testing" @click="testConnection">
+              {{ testing ? 'Sending…' : 'Send test message' }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="testResult" class="mt-3 break-words text-xs leading-relaxed"
+             :class="testResult.ok ? 'info-box' : 'warn-box'">
           {{ testResult.message }}
+          <pre v-if="testResult.response" class="mt-1.5 whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[10px]">11za said: {{ testResult.response }}</pre>
           <span v-if="testResult.at" class="block text-[11px] text-slate-400">Tested {{ when(testResult.at) }}</span>
-        </p>
+        </div>
       </div>
     </div>
 
@@ -877,7 +873,6 @@ const whenShort = iso => iso
     <TemplateFormModal
       :show="templateModal" :template="editingTemplate"
       :placeholders="placeholders" :categories="categories"
-      :whatsapp-templates="whatsappTemplates"
       @close="templateModal = false"
     />
 

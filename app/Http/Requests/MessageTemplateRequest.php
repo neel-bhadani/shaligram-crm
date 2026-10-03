@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-use App\Models\WhatsAppTemplate;
 use App\Services\WhatsApp\TemplateRenderer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -16,9 +15,10 @@ use Illuminate\Validation\Rule;
  * would leave the admin with no way to write the message they meant. The editor
  * shows the misspelling beside a live preview where the gap is obvious.
  *
- * `approval_status` and `meta_template_name` are not here either. They belong
- * to Meta's side of the template and are only meaningful once somebody has
- * submitted one, which nothing can do until there are credentials.
+ * The 11za template name is typed, not picked: templates live in 11za's panel
+ * and there is nothing to list them from. A name that does not exist there is
+ * found out when 11za answers the first send, and that answer is kept on the
+ * message.
  */
 class MessageTemplateRequest extends FormRequest
 {
@@ -39,9 +39,11 @@ class MessageTemplateRequest extends FormRequest
              */
             'body' => ['required', 'string', 'max:1024'],
             'is_active' => ['boolean'],
-            // the Meta template this message is sent as by API; linking one
-            // that is not approved is allowed, sending by it is not
-            'whatsapp_template_id' => ['nullable', 'integer', Rule::exists('whatsapp_templates', 'id')],
+            // the template this message is sent as by API, exactly as it is
+            // named in 11za's panel; empty means click-to-send only
+            'provider_template_name' => ['nullable', 'string', 'max:255', 'regex:/^\S+$/'],
+            // WhatsApp's language code: en, hi, en_US
+            'provider_template_language' => ['nullable', 'required_with:provider_template_name', 'string', 'regex:/^[a-z]{2,3}(_[A-Z]{2})?$/'],
         ];
     }
 
@@ -50,15 +52,18 @@ class MessageTemplateRequest extends FormRequest
         return [
             'body.required' => 'Write the message. Use the placeholder buttons to drop in the customer\'s name.',
             'body.max' => 'WhatsApp templates cannot be longer than 1024 characters.',
+            'provider_template_name.regex' => 'An 11za template name has no spaces in it. Copy it exactly as it appears in the 11za panel.',
+            'provider_template_language.required_with' => 'Give the template\'s language code too — usually "en".',
+            'provider_template_language.regex' => 'The language is a code like "en", "hi" or "en_US", as shown in the 11za panel.',
         ];
     }
 
     /**
-     * What gets stored, including the numbering Meta will ask for.
+     * What gets stored, including the numbering the WhatsApp template uses.
      *
-     * The map is worked out here, at save time, and not at submission time.
-     * Meta wants {{1}} and {{2}}; only this application knows that {{1}} was
-     * meant to be the customer's first name. Deriving it later would mean
+     * The map is worked out here, at save time, and not at send time. The
+     * template wants {{1}} and {{2}}; only this application knows that {{1}}
+     * was meant to be the customer's first name. Deriving it later would mean
      * re-deriving it for every template already written and hoping the order
      * had not changed in the meantime.
      *
@@ -67,6 +72,7 @@ class MessageTemplateRequest extends FormRequest
     public function templateAttributes(): array
     {
         $body = trim($this->input('body'));
+        $providerName = trim((string) $this->input('provider_template_name')) ?: null;
 
         return [
             'name' => trim($this->input('name')),
@@ -74,23 +80,8 @@ class MessageTemplateRequest extends FormRequest
             'body' => $body,
             'placeholder_map' => app(TemplateRenderer::class)->mapFor($body),
             'is_active' => $this->boolean('is_active'),
-        ] + $this->metaLink();
-    }
-
-    /**
-     * The link, with Meta's name and status copied beside it so everything
-     * reading `approval_status` agrees with the last sync.
-     *
-     * @return array{whatsapp_template_id: ?int, meta_template_name: ?string, approval_status: string}
-     */
-    private function metaLink(): array
-    {
-        $meta = WhatsAppTemplate::find($this->input('whatsapp_template_id'));
-
-        return [
-            'whatsapp_template_id' => $meta?->id,
-            'meta_template_name' => $meta?->name,
-            'approval_status' => $meta ? strtolower($meta->status) : 'draft',
+            'provider_template_name' => $providerName,
+            'provider_template_language' => $providerName ? $this->input('provider_template_language') : null,
         ];
     }
 }

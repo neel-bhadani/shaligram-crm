@@ -8,8 +8,8 @@ use Illuminate\Database\Eloquent\Model;
  * A WhatsApp message written once and sent many times.
  *
  * The body carries named placeholders. Rendering it against a lead is
- * App\Services\WhatsApp\TemplateRenderer — this model holds the text and the
- * numbering Meta will want, and nothing else.
+ * App\Services\WhatsApp\TemplateRenderer — this model holds the text, the
+ * numbering the WhatsApp template uses, and the 11za template it goes out as.
  */
 class MessageTemplate extends Model
 {
@@ -44,45 +44,36 @@ class MessageTemplate extends Model
         return $query->where('is_active', true);
     }
 
-    /** The approved Meta template this message goes out as by API, if any. */
-    public function whatsappTemplate()
+    /** "site_visit (en)" — the 11za template this message goes out as by API. */
+    public function providerTemplateLabel(): ?string
     {
-        return $this->belongsTo(WhatsAppTemplate::class, 'whatsapp_template_id');
+        if (blank($this->provider_template_name)) {
+            return null;
+        }
+
+        return "{$this->provider_template_name} ({$this->provider_template_language})";
     }
 
     /**
      * Why this message cannot be sent by API, or null when it can.
      *
      * Asked at rule-save time, which is where an admin can do something about
-     * the answer, and again at send time, because a template Meta pauses next
-     * week stops qualifying without anybody touching the rule.
+     * the answer, and again at send time.
      *
-     * The count check is the one that matters most. The CRM fills {{1}}, {{2}}
-     * from `placeholder_map` in order; a Meta body with three variables and a
-     * map with two would be refused by Meta on every single send.
+     * Only the name and language are checked. Templates live in 11za's panel
+     * and there is nothing to read them back from, so whether the name exists,
+     * is approved, and has as many variables as `placeholder_map` fills in is
+     * only found out when 11za answers — and that answer is stored on the
+     * message, not swallowed.
      */
     public function apiUnsendableReason(): ?string
     {
-        $meta = $this->whatsappTemplate;
-
-        if (! $meta) {
-            return "\"{$this->name}\" is not linked to a Meta template. Link it on the Templates tab.";
+        if (blank($this->provider_template_name)) {
+            return "\"{$this->name}\" has no 11za template name. Add it on the Templates tab.";
         }
 
-        if (! $meta->isApproved()) {
-            return "\"{$this->name}\" is linked to {$meta->label}, which Meta has not approved (status: {$meta->status}).";
-        }
-
-        if ($reason = $meta->unsupportedReason()) {
-            return "{$meta->label} cannot be sent by the CRM. {$reason}";
-        }
-
-        $mapped = count($this->placeholder_map ?? []);
-        $wanted = $meta->bodyParamCount();
-
-        if ($mapped !== $wanted) {
-            return "{$meta->label} has {$wanted} variable".($wanted === 1 ? '' : 's')
-                ." but \"{$this->name}\" fills in {$mapped}. Make the message use the same number of placeholders, in the same order.";
+        if (blank($this->provider_template_language)) {
+            return "\"{$this->name}\" has no template language. Add it on the Templates tab.";
         }
 
         return null;

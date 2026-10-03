@@ -287,10 +287,11 @@ defineProps({
         </p>
 
         <p class="mt-3 text-sm leading-relaxed text-slate-600">
-          Once it is: save the IDs and token on the Queue tab and press Test connection, sync your
-          templates on the Templates tab, link each message to its approved Meta template, and
-          switch on “Use API sending”. A rule set to “By API” then sends that template; “Accepted
-          by Meta” in the log means Meta took it — delivery and read receipts are not recorded.
+          This CRM sends through 11za. Save the 11za auth token and origin website on the Queue
+          tab, type each message's 11za template name and language on the Templates tab, send a
+          test message to your own phone, and switch on “Use API sending”. A rule set to “By API”
+          then sends that template; “Accepted by 11za” in the log means 11za took it — delivery and
+          read receipts are not recorded.
           Until then, the “Send by API” button tells you plainly that it is not set up.
         </p>
 

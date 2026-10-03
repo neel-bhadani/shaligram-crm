@@ -422,7 +422,7 @@ Route::middleware(['auth'])->group(function () {
      | Admin only, on the group so a route added here later cannot be forgotten.
      | This is a real boundary and not a tidy sidebar: what is behind it writes
      | rules that reassign leads, move stages and message customers, and it
-     | holds the WhatsApp access token.
+     | holds the 11za auth token.
      |
      | A non-admin typing /automation gets a 403 from the middleware, not a
      | hidden link and an empty page. AutomationRuleRequest and
@@ -484,8 +484,6 @@ Route::middleware(['auth'])->group(function () {
             ->name('automation.whatsapp.update');
         Route::post('/automation/whatsapp/test', [AutomationController::class, 'testWhatsApp'])
             ->name('automation.whatsapp.test');
-        Route::post('/automation/whatsapp/sync', [AutomationController::class, 'syncWhatsAppTemplates'])
-            ->name('automation.whatsapp.sync');
     });
 
     /* ---------------- integrations (admin only) ---------------- */

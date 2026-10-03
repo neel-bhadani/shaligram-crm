@@ -2,92 +2,74 @@
 
 namespace App\Services\WhatsApp;
 
-use Illuminate\Http\Client\Response;
 use RuntimeException;
 
 /**
- * Meta said no, or did not answer. Carries Meta's own code and words.
+ * 11za said no, or did not answer.
  *
- * Three kinds of failure, because they want three different reactions:
+ * 11za's error shape is not documented, so nothing here reads a code out of
+ * the response. What is kept is the HTTP status and the raw body, with the
+ * auth token already removed by ElevenZaClient — the body is shown to the
+ * admin verbatim, because an unknown error is better stored as it came than
+ * paraphrased wrongly.
  *
- *   final      the message cannot go and trying again changes nothing: the
- *              token expired (190), the number is not on WhatsApp (131026),
- *              the customer is outside the 24-hour window (131047). Failed
- *              once, with a sentence the admin can act on.
- *   retryable  Meta is busy or down: rate limits, throughput caps, 5xx, a
- *              timeout. Worth another go after a pause.
- *   anything   else is failed once, with Meta's raw error kept — an unknown
- *              code is better stored verbatim than paraphrased wrongly.
+ * Two reactions:
+ *
+ *   retryable  nothing came back (timeout, DNS, TLS), or 11za is busy or
+ *              down: 408, 429, 5xx. Worth another go after a pause.
+ *   final      any other 4xx. Trying again changes nothing — a wrong
+ *              template name stays wrong.
+ *
+ * A 2xx is never one of these, with or without a message id: see
+ * ElevenZaClient::sendTemplate().
  */
 class WhatsAppApiException extends RuntimeException
 {
-    /** Codes with a known, plain-English meaning. Never retried. */
-    public const EXPLAINED = [
-        190 => 'The WhatsApp access token has expired or been revoked. Paste a new one in the WhatsApp settings.',
-        131026 => 'This number is not on WhatsApp, or cannot receive messages from businesses.',
-        131047 => 'The customer has not messaged in the last 24 hours, so only an approved template can be sent.',
-    ];
-
-    /** Rate limits and Meta-side outages: pause and try again. */
-    public const RETRYABLE = [1, 2, 4, 80007, 130429, 131000, 131016, 131048, 131056];
+    /** How much of 11za's response goes into the sentence the admin reads. */
+    private const EXCERPT = 300;
 
     public function __construct(
         string $message,
-        public readonly ?int $metaCode = null,
         public readonly ?int $httpStatus = null,
         public readonly ?string $raw = null,
+        private readonly bool $retryable = false,
     ) {
         parent::__construct($message);
     }
 
-    /** From a failed Graph response, keeping Meta's message, code and detail. */
-    public static function fromResponse(Response $response): self
+    /** A non-2xx answer. $raw must already be redacted. */
+    public static function fromResponse(int $status, string $raw): self
     {
-        $code = $response->json('error.code');
-        $text = (string) ($response->json('error.message') ?? '');
-        $detail = (string) ($response->json('error.error_data.details') ?? '');
-
-        if ($detail !== '' && ! str_contains($text, $detail)) {
-            $text = trim("{$text} {$detail}");
-        }
-
         return new self(
-            $text !== '' ? $text : "Meta answered HTTP {$response->status()} with no error message.",
-            is_numeric($code) ? (int) $code : null,
-            $response->status(),
-            $response->body(),
+            "11za answered HTTP {$status}.",
+            $status,
+            $raw,
+            $status === 408 || $status === 429 || $status >= 500,
         );
     }
 
-    /** Nothing came back at all: DNS, TLS, a timeout. */
+    /** Nothing came back at all. $why must already be redacted. */
     public static function unreachable(string $why): self
     {
-        return new self("Could not reach Meta: {$why}");
+        return new self("Could not reach 11za: {$why}", retryable: true);
     }
 
     public function isRetryable(): bool
     {
-        if ($this->metaCode !== null && isset(self::EXPLAINED[$this->metaCode])) {
-            return false;
-        }
-
-        return $this->httpStatus === null
-            || $this->httpStatus >= 500
-            || in_array($this->metaCode, self::RETRYABLE, true);
+        return $this->retryable;
     }
 
-    /**
-     * What the admin reads: the plain-English sentence where there is one,
-     * always followed by Meta's own words and code.
-     */
+    /** What the admin reads: our sentence, then the start of 11za's own words. */
     public function explain(): string
     {
-        $meta = $this->metaCode !== null
-            ? "Meta said (error {$this->metaCode}): {$this->getMessage()}"
-            : $this->getMessage();
+        if ($this->raw === null || trim($this->raw) === '') {
+            return $this->getMessage();
+        }
 
-        $plain = self::EXPLAINED[$this->metaCode] ?? null;
+        $excerpt = mb_strlen($this->raw) > self::EXCERPT
+            ? mb_substr($this->raw, 0, self::EXCERPT).'…'
+            : $this->raw;
 
-        return $plain ? "{$plain} {$meta}" : $meta;
+        return "{$this->getMessage()} 11za said: {$excerpt}";
     }
 }

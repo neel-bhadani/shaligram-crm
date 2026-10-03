@@ -16,28 +16,35 @@ class MessageLog extends Model
     protected $guarded = [];
 
     protected $casts = [
+        'confirmed' => 'boolean',
         'sent_at' => 'datetime',
         'params' => 'array',
     ];
 
-    /** Still somewhere between the rule and Meta. */
-    public const IN_FLIGHT = ['queued', 'sending', 'sent'];
+    /**
+     * Said beside a `sent` row whose id was not recognised. Advice, not an
+     * error: the id lookup is a guess, and the message may well have arrived.
+     */
+    public const UNCONFIRMED_ADVICE =
+        'Check the 11za panel before resending — it may well have been delivered.';
 
-    public function whatsappTemplate()
-    {
-        return $this->belongsTo(WhatsAppTemplate::class, 'whatsapp_template_id');
-    }
+    /** Still somewhere between the rule and 11za. */
+    public const IN_FLIGHT = ['queued', 'sending', 'sent'];
 
     /**
      * What happened, in words that do not overclaim.
      *
-     * `sent` is Meta accepting the message and handing back an id. Delivered
+     * `sent` is 11za accepting the message. With an id it is "Accepted by
+     * 11za"; without one it is "Sent (unconfirmed)", because 11za said yes and
+     * the id lookup — a guess at its response shape — found nothing. Delivered
      * and read need a webhook this CRM does not have, so neither word appears.
      */
     public function outcome(): string
     {
         return match ($this->status) {
-            'sent' => 'Accepted by Meta'.($this->wamid ? " ({$this->wamid})" : ''),
+            'sent' => $this->isUnconfirmed()
+                ? 'Sent (unconfirmed) — 11za accepted it but no message id was recognised. '.self::UNCONFIRMED_ADVICE
+                : 'Accepted by 11za'.($this->provider_message_id ? " ({$this->provider_message_id})" : ''),
             'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
             'queued' => $this->mode === 'api' ? 'Waiting to be sent by API' : 'Waiting for somebody to open it',
             'sending' => 'Being sent',
@@ -46,6 +53,12 @@ class MessageLog extends Model
             'cancelled' => 'Cancelled',
             default => $this->status,
         };
+    }
+
+    /** An API send 11za answered 2xx to, without a message id the CRM recognised. */
+    public function isUnconfirmed(): bool
+    {
+        return $this->status === 'sent' && $this->mode === 'api' && ! $this->confirmed;
     }
 
     public function lead()

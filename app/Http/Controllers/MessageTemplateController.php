@@ -10,10 +10,9 @@ use Illuminate\Http\Request;
 /**
  * The WhatsApp templates. Admin only, on the route group.
  *
- * Nothing here talks to Meta. A template is a piece of text with placeholders
- * in it, and click-to-send needs no approval from anybody — the whole Meta
- * approval story is `meta_template_name` and `approval_status` sitting unused
- * until there are credentials to submit with.
+ * Nothing here talks to 11za. A template is a piece of text with placeholders
+ * in it, and click-to-send needs no approval from anybody. Sending by API
+ * needs the 11za template name and language typed in beside it.
  */
 class MessageTemplateController extends Controller
 {
@@ -73,8 +72,8 @@ class MessageTemplateController extends Controller
 
         if ($used->isNotEmpty()) {
             return back()->with('error',
-                "\"{$template->name}\" is used by " . $used->join(', ', ' and ')
-                . '. Change or delete those rules first, or switch the message off instead.');
+                "\"{$template->name}\" is used by ".$used->join(', ', ' and ')
+                .'. Change or delete those rules first, or switch the message off instead.');
         }
 
         $name = $template->name;

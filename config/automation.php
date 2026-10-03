@@ -353,7 +353,7 @@ return [
                 'click' => 'queue the {template_id} WhatsApp message',
                 'api' => 'send the {template_id} WhatsApp message by API',
             ],
-            'hint' => 'Click-to-send puts the message in the Queue tab for somebody to open. By API sends an approved Meta template through the queue worker, and falls back to click-to-send while the API is off.',
+            'hint' => 'Click-to-send puts the message in the Queue tab for somebody to open. By API sends the 11za template through the queue worker, and falls back to click-to-send while the API is off.',
             'params' => [
                 'mode' => [
                     'label' => 'How',
@@ -368,7 +368,7 @@ return [
                     'type' => 'select',
                     'options' => 'templates',
                     'required' => true,
-                    'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued. By API needs a message linked to an APPROVED Meta template.',
+                    'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued. By API needs a message with its 11za template name filled in.',
                 ],
                 'terminal' => [
                     'label' => 'Booked and lost leads',
@@ -516,39 +516,38 @@ return [
         'link_base' => 'https://wa.me/',
 
         /*
-         | The API half. Built, and off until an admin saves credentials and
-         | switches on "Use API sending". The client must first confirm which
-         | WhatsApp product they actually have.
+         | The API half, through 11za — the client's WhatsApp Business API
+         | provider. Built, and off until an admin saves credentials and
+         | switches on "Use API sending".
          |
-         | This matters more than it sounds. The free WhatsApp Business APP on
-         | a phone has no API at all — no amount of configuration makes it send
-         | programmatically. Sending from software needs WhatsApp Business
-         | PLATFORM access through Meta or a provider, which is an approval
-         | process and a monthly bill.
+         | The free WhatsApp Business APP on a phone has no API at all; this
+         | needs the WhatsApp Business Platform account the client holds with
+         | 11za.
          |
          | Credentials live in the `integrations` table under this provider,
-         | where the settings column is `encrypted:array`. They are never
-         | rendered to the browser — see MessageTemplateController and
-         | Integration::maskedSetting().
+         | where the settings column is `encrypted:array`. The auth token is
+         | never rendered to the browser, and because 11za takes it in the
+         | request BODY rather than a header, nothing that stores a request or
+         | a response may hold it — see ElevenZaClient::redact().
          */
         'provider' => 'whatsapp',
-        'secret_keys' => ['access_token'],
+        'secret_keys' => ['auth_token'],
         'api' => [
-            'base' => env('WHATSAPP_API_BASE', 'https://graph.facebook.com'),
-            // WhatsApp only. Facebook Lead Ads keeps its own version in
-            // config/integrations.php.
-            'version' => env('WHATSAPP_API_VERSION', 'v26.0'),
+            // 11za's docs show both api.11za.in and app.11za.in. This is the
+            // default; an admin can override it in the WhatsApp settings.
+            'base' => env('WHATSAPP_API_BASE', 'https://api.11za.in'),
+            'send_path' => '/apis/template/sendTemplate',
             'timeout' => 15,
 
-            // rate limits and Meta outages: tries in all, and the pause
-            // before each retry, in seconds
+            // timeouts, 429 and 5xx: tries in all, and the pause before each
+            // retry, in seconds
             'tries' => 3,
             'backoff' => [30, 120],
         ],
 
         'modes' => [
             'click' => ['label' => 'Click-to-send (somebody opens it)'],
-            'api' => ['label' => 'By API (approved Meta template)'],
+            'api' => ['label' => 'By API (11za template)'],
         ],
 
         'terminal' => [

@@ -9,7 +9,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
 
 /**
- * One queued message, sent through the Cloud API. The only thing that calls
+ * One queued message, sent through 11za. The only thing that calls
  * WhatsAppSender::send() once the API is configured.
  *
  * Takes an id rather than a model: the message can be cancelled or opened by
@@ -17,11 +17,11 @@ use Throwable;
  * stale row.
  *
  * The row is claimed (queued → sending) in one UPDATE before anything goes
- * to Meta, so two workers, or a worker and a retry, cannot both send it.
+ * to 11za, so two workers, or a worker and a retry, cannot both send it.
  *
- * Retries only what is worth retrying — rate limits and Meta outages, as
- * decided by WhatsAppApiException. An expired token, a number not on
- * WhatsApp or a closed 24-hour window fail once, with the reason on the row.
+ * Retries only what is worth retrying — timeouts, 429 and 5xx, as decided by
+ * WhatsAppApiException. Any other refusal from 11za fails once, with 11za's
+ * raw response on the row.
  */
 class SendWhatsAppMessage implements ShouldQueue
 {

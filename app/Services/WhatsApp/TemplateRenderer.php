@@ -65,27 +65,27 @@ class TemplateRenderer
         $owner = $lead->owner;
 
         return [
-            'lead_name'   => $lead->full_name,
-            'first_name'  => (string) $lead->first_name,
-            'project'     => (string) ($lead->project?->name ?? ''),
-            'owner_name'  => (string) ($owner?->display_name ?? ''),
+            'lead_name' => $lead->full_name,
+            'first_name' => (string) $lead->first_name,
+            'project' => (string) ($lead->project?->name ?? ''),
+            'owner_name' => (string) ($owner?->display_name ?? ''),
             'owner_phone' => $owner?->mobile_number
-                ? config('crm.country_code') . ' ' . $owner->mobile_number
+                ? config('crm.country_code').' '.$owner->mobile_number
                 : '',
-            'stage'       => CrmTaxonomy::stageLabel($lead->stage),
+            'stage' => CrmTaxonomy::stageLabel($lead->stage),
         ];
     }
 
     /**
      * Which placeholders a body actually uses, in the order they first appear.
      *
-     * This is the numbering Meta will want. A submitted template carries {{1}},
-     * {{2}} and so on, and Meta has no idea what they mean — the mapping is the
-     * application's to keep. Working it out at submission time would mean
+     * This is the numbering the WhatsApp template uses. A template set up in
+     * 11za carries {{1}}, {{2}} and so on, and neither 11za nor WhatsApp knows
+     * what they mean — the mapping is the application's to keep. Working it out at submission time would mean
      * guessing the order for every template already written, so it is stored
      * the moment the body is saved. See MessageTemplate::$placeholder_map.
      *
-     * @return array<int, string>  ['lead_name', 'project'] — {{1}}, {{2}}
+     * @return array<int, string> ['lead_name', 'project'] — {{1}}, {{2}}
      */
     public function mapFor(string $body): array
     {
@@ -104,18 +104,15 @@ class TemplateRenderer
     }
 
     /**
-     * The body as Meta would receive it: {{1}}, {{2}}, numbered by that map.
-     *
-     * Nothing submits templates yet — there are no credentials — but the
-     * numbering is stored now precisely so that nothing has to be rewritten
-     * when there are.
+     * The body as the WhatsApp template is numbered: {{1}}, {{2}}, by that
+     * map. Shown to the admin so the template set up in 11za matches it.
      */
     public function toMetaBody(string $body, ?array $map = null): string
     {
         $map = $map ?? $this->mapFor($body);
 
         foreach ($map as $index => $name) {
-            $body = str_replace('{' . $name . '}', '{{' . ($index + 1) . '}}', $body);
+            $body = str_replace('{'.$name.'}', '{{'.($index + 1).'}}', $body);
         }
 
         return $body;
@@ -132,7 +129,7 @@ class TemplateRenderer
      */
     public function unknownPlaceholders(string $body): array
     {
-        $known   = array_keys($this->placeholders());
+        $known = array_keys($this->placeholders());
         $unknown = [];
 
         if (preg_match_all('/\{([a-z_]+)\}/', $body, $matches)) {
@@ -173,9 +170,9 @@ class TemplateRenderer
         }
 
         $local = substr($digits, -10);
-        $code  = preg_replace('/\D+/', '', (string) config('crm.country_code', '+91'));
+        $code = preg_replace('/\D+/', '', (string) config('crm.country_code', '+91'));
 
-        return $code . $local;
+        return $code.$local;
     }
 
     /**
@@ -196,8 +193,8 @@ class TemplateRenderer
         }
 
         return config('automation.whatsapp.link_base', 'https://wa.me/')
-            . $number
-            . '?text=' . rawurlencode($body);
+            .$number
+            .'?text='.rawurlencode($body);
     }
 
     /* ---------------- internals ---------------- */
@@ -206,7 +203,7 @@ class TemplateRenderer
     private function replace(string $body, array $values): string
     {
         foreach ($this->placeholders() as $name => $meta) {
-            $body = str_replace('{' . $name . '}', (string) ($values[$name] ?? ''), $body);
+            $body = str_replace('{'.$name.'}', (string) ($values[$name] ?? ''), $body);
         }
 
         return $body;
@@ -222,9 +219,9 @@ class TemplateRenderer
         $body = $this->render($template->body, $lead);
 
         return [
-            'body'   => $body,
+            'body' => $body,
             'number' => $this->waNumber($lead->mobile_number),
-            'url'    => $this->clickUrl($lead->mobile_number, $body),
+            'url' => $this->clickUrl($lead->mobile_number, $body),
         ];
     }
 }

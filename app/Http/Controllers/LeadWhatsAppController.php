@@ -38,7 +38,6 @@ class LeadWhatsAppController extends Controller
         $apiEnabled = $this->whatsapp->apiEnabled();
 
         $templates = MessageTemplate::active()
-            ->with('whatsappTemplate')
             ->orderBy('name')
             ->get()
             ->map(function (MessageTemplate $t) use ($lead, $apiEnabled) {
@@ -53,8 +52,7 @@ class LeadWhatsAppController extends Controller
                     'values' => collect(array_values($t->placeholder_map ?? []))
                         ->map(fn (string $name, int $i) => ['position' => $i + 1, 'name' => $name, 'value' => $params[$i]])
                         ->all(),
-                    'meta_template' => $t->whatsappTemplate?->label,
-                    'meta_status' => $t->whatsappTemplate?->status,
+                    'provider_template' => $t->providerTemplateLabel(),
                     'by_api' => $apiEnabled && $reason === null,
                     'api_reason' => $reason,
                 ];
@@ -73,8 +71,7 @@ class LeadWhatsAppController extends Controller
     /**
      * Send one message to this lead.
      *
-     * By API when the API is on and the message is linked to an approved
-     * template — queued for the worker, never sent inline. Otherwise
+     * By API when the API is on and the message has an 11za template name — queued for the worker, never sent inline. Otherwise
      * click-to-send: the row is written and the wa.me link handed back for
      * the browser to open.
      */
@@ -86,7 +83,7 @@ class LeadWhatsAppController extends Controller
             'template_id' => ['required', 'integer'],
         ]);
 
-        $template = MessageTemplate::active()->with('whatsappTemplate')->find($data['template_id']);
+        $template = MessageTemplate::active()->find($data['template_id']);
 
         if (! $template) {
             return response()->json(['ok' => false, 'message' => 'That message has been deleted or switched off.'], 422);
@@ -142,6 +139,10 @@ class LeadWhatsAppController extends Controller
                 'by' => $m->rule ? null : $m->user?->display_name,
                 'to_number' => $m->to_number,
                 'status' => $m->status,
+                'unconfirmed' => $m->isUnconfirmed(),
+                // shown beside an unconfirmed send so whoever is looking can
+                // judge it before resending; already token-free
+                'provider_response' => $m->isUnconfirmed() ? $m->provider_response : null,
                 'outcome' => $m->outcome(),
                 'error' => $m->error,
                 'at' => ($m->sent_at ?? $m->created_at)?->toIso8601String(),

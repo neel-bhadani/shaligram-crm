@@ -7,11 +7,9 @@ use App\Models\AutomationLog;
 use App\Models\AutomationRule;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
-use App\Models\WhatsAppTemplate;
 use App\Services\Automation\RuleCatalog;
 use App\Services\WhatsApp\TemplateRenderer;
 use App\Services\WhatsApp\WhatsAppSender;
-use App\Services\WhatsApp\WhatsAppTemplateSync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -28,7 +26,7 @@ use Inertia\Inertia;
  * templates — and the alternative is five spinners on a page whose whole
  * purpose is to let somebody see how the pieces fit together.
  *
- * THE SECRET. A WhatsApp access token is stored encrypted in `integrations` and
+ * THE SECRET. The 11za auth token is stored encrypted in `integrations` and
  * never leaves the server. This controller sends `configured`, `autoSend` and a
  * masked tail, and never `$integration->settings` — the cast decrypts on read,
  * so handing that array to Inertia would put a live token in the page source.
@@ -59,7 +57,6 @@ class AutomationController extends Controller
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
             'whatsapp' => $this->whatsappCard(),
-            'whatsappTemplates' => $this->whatsappTemplates(),
             'placeholders' => $this->renderer->placeholders(),
             'categories' => config('automation.whatsapp.categories'),
             'thresholds' => config('crm.alerts'),
@@ -93,12 +90,13 @@ class AutomationController extends Controller
      *
      * The token is only written when the admin actually typed a new one. The
      * form ships a masked value it cannot read back, so an admin correcting the
-     * phone number id must not blank the token by leaving the (empty) token
-     * box alone.
+     * origin website must not blank the token by leaving the (empty) token box
+     * alone.
      *
-     * The shape checks are here because Meta's own answer to a wrong value
-     * arrives weeks later, as every message failing: a Phone Number ID pasted
-     * into the token box was once accepted without a word.
+     * The base URL is held to 11za's own hosts over https. The auth token
+     * travels in the body of every request to it, so a mistyped or pasted
+     * host is a token sent to a stranger, not just a failed send. Empty means
+     * the default in config.
      *
      * Neither switch can be switched on while the API is unconfigured, and the
      * refusal is here rather than only in the UI: they turn "a rule queues a
@@ -108,29 +106,25 @@ class AutomationController extends Controller
     public function updateWhatsApp(Request $request)
     {
         $data = $request->validate([
-            'phone_number_id' => ['nullable', 'string', 'regex:/^\d+$/', 'max:30'],
-            'waba_id' => ['nullable', 'string', 'regex:/^\d+$/', 'max:30', 'different:phone_number_id'],
-            'access_token' => ['nullable', 'string', 'min:16', 'max:1000', 'starts_with:EAA', 'regex:/^\S+$/'],
+            'auth_token' => ['nullable', 'string', 'max:2000', 'regex:/^\S+$/'],
+            'origin_website' => ['nullable', 'string', 'max:255'],
+            'base_url' => ['nullable', 'string', 'max:255', 'regex:#^https://([a-z0-9-]+\.)*11za\.in/?$#i'],
             'api_enabled' => ['boolean'],
             'auto_send' => ['boolean'],
         ], [
-            'phone_number_id.regex' => 'The Phone Number ID is digits only — copy it from API Setup in Meta\'s WhatsApp Manager.',
-            'waba_id.regex' => 'The WhatsApp Business Account ID is digits only.',
-            'waba_id.different' => 'The WhatsApp Business Account ID and the Phone Number ID are two different numbers. One of them is in the wrong box.',
-            'access_token.starts_with' => 'That does not look like an access token. Meta tokens start with "EAA" — if you pasted a long number, that is probably the Phone Number ID.',
-            'access_token.min' => 'That is too short to be an access token. Meta tokens start with "EAA" and run to well over a hundred characters.',
-            'access_token.regex' => 'The access token cannot contain spaces or line breaks. Copy it again without them.',
+            'auth_token.regex' => 'The auth token cannot contain spaces or line breaks. Copy it again without them.',
+            'base_url.regex' => 'The base URL must be an 11za address starting with https://, such as https://api.11za.in. Leave it empty for the default.',
         ]);
 
         $integration = $this->whatsapp->integration();
 
         $changes = [
-            'phone_number_id' => $data['phone_number_id'] ?? null,
-            'waba_id' => $data['waba_id'] ?? null,
+            'origin_website' => filled($data['origin_website'] ?? null) ? trim($data['origin_website']) : null,
+            'base_url' => filled($data['base_url'] ?? null) ? rtrim($data['base_url'], '/') : null,
         ];
 
-        if (filled($data['access_token'] ?? null)) {
-            $changes['access_token'] = $data['access_token'];
+        if (filled($data['auth_token'] ?? null)) {
+            $changes['auth_token'] = $data['auth_token'];
         }
 
         $integration->mergeSettings($changes);
@@ -155,20 +149,25 @@ class AutomationController extends Controller
     }
 
     /**
-     * Test connection. JSON, so the card can show the answer where the button
-     * is, and always an answer — success names the number, failure carries
-     * Meta's own code and words. It tests what is SAVED, not what is typed.
+     * Test connection — which, with 11za, means sending one real message to a
+     * number the admin types, with the SAVED settings. JSON, so the card can
+     * show the answer where the button is, and always an answer: 11za's raw
+     * response, or why nothing was sent.
      */
-    public function testWhatsApp(): JsonResponse
+    public function testWhatsApp(Request $request): JsonResponse
     {
-        return response()->json($this->whatsapp->testConnection());
-    }
+        $data = $request->validate([
+            'mobile' => ['required', 'string', 'max:30'],
+            'template_id' => ['required', 'integer', 'exists:message_templates,id'],
+        ], [
+            'mobile.required' => 'Type the mobile number the test message should go to.',
+            'template_id.required' => 'Choose which message to send as the test.',
+        ]);
 
-    public function syncWhatsAppTemplates(WhatsAppTemplateSync $sync)
-    {
-        $result = $sync->run();
-
-        return back()->with($result['ok'] ? 'success' : 'error', $result['message']);
+        return response()->json($this->whatsapp->testConnection(
+            MessageTemplate::findOrFail($data['template_id']),
+            $data['mobile'],
+        ));
     }
 
     /* ---------------- the tabs ---------------- */
@@ -202,7 +201,6 @@ class AutomationController extends Controller
     private function templates(): array
     {
         return MessageTemplate::withCount('messages')
-            ->with('whatsappTemplate')
             ->orderBy('name')
             ->get()
             ->map(fn (MessageTemplate $t) => [
@@ -211,14 +209,12 @@ class AutomationController extends Controller
                 'category' => $t->category,
                 'body' => $t->body,
                 'placeholder_map' => $t->placeholder_map ?? [],
-                // what Meta would be sent, shown read-only so the numbering is
-                // not a surprise the week somebody submits a template
+                // the body as the WhatsApp template is numbered, shown read-only
+                // so the numbering is not a surprise when it is set up in 11za
                 'meta_body' => $this->renderer->toMetaBody($t->body, $t->placeholder_map),
-                'meta_template_name' => $t->meta_template_name,
-                'approval_status' => $t->approval_status,
-                'whatsapp_template_id' => $t->whatsapp_template_id,
-                'whatsapp_template' => $t->whatsappTemplate?->label,
-                'whatsapp_status' => $t->whatsappTemplate?->status,
+                'provider_template_name' => $t->provider_template_name,
+                'provider_template_language' => $t->provider_template_language,
+                'provider_template' => $t->providerTemplateLabel(),
                 // null means it can go by API; anything else is the reason not
                 'api_unsendable' => $t->apiUnsendableReason(),
                 'is_active' => $t->is_active,
@@ -235,16 +231,14 @@ class AutomationController extends Controller
      *
      * Recently-sent messages are included on purpose. This is where an admin
      * answers "did Rahul get the site visit message?" — recipient, number,
-     * template, rule, outcome in words that do not overclaim, Meta's id, and
-     * the error when there was one.
+     * template, rule, outcome in words that do not overclaim, 11za's id and
+     * raw response, and the error when there was one.
      */
     private function queue(): array
     {
         return MessageLog::with([
             'lead:id,first_name,middle_name,last_name,mobile_number,assigned_to',
-            'template:id,name,category,whatsapp_template_id,placeholder_map',
-            'template.whatsappTemplate',
-            'whatsappTemplate:id,name,language',
+            'template:id,name,category,provider_template_name,provider_template_language,placeholder_map',
             'rule:id,name',
             'user:id,first_name,last_name',
         ])
@@ -259,7 +253,9 @@ class AutomationController extends Controller
                 'body' => $m->body,
                 'to_number' => $m->to_number,
                 'to_name' => $m->to_name ?? $m->lead?->full_name,
-                'wamid' => $m->wamid,
+                'provider_message_id' => $m->provider_message_id,
+                'unconfirmed' => $m->isUnconfirmed(),
+                'provider_response' => $m->provider_response,
                 'error' => $m->error,
                 'error_code' => $m->error_code,
                 'sent_at' => $m->sent_at?->toIso8601String(),
@@ -269,7 +265,9 @@ class AutomationController extends Controller
                     'name' => $m->lead->full_name,
                 ] : null,
                 'template' => $m->template?->name,
-                'whatsapp_template' => $m->whatsappTemplate?->label,
+                'provider_template' => $m->provider_template_name
+                    ? "{$m->provider_template_name} ({$m->provider_template_language})"
+                    : null,
                 'rule' => $m->rule?->name,
                 'user' => $m->user?->display_name,
                 // built server-side so the browser never has to know the
@@ -316,33 +314,13 @@ class AutomationController extends Controller
             'configured' => $this->whatsapp->isConfigured(),
             'api_enabled' => $this->whatsapp->apiEnabled(),
             'auto_send' => $this->whatsapp->autoSends(),
-            'phone_number_id' => $integration->setting('phone_number_id'),
-            'waba_id' => $integration->setting('waba_id'),
-            'access_token_tail' => $integration->maskedSetting('access_token'),
+            'origin_website' => $integration->setting('origin_website'),
+            'base_url' => $integration->setting('base_url'),
+            'default_base_url' => config('automation.whatsapp.api.base'),
+            'auth_token_tail' => $integration->maskedSetting('auth_token'),
             'last_test' => $integration->setting('last_test'),
             'not_configured' => WhatsAppSender::NOT_CONFIGURED,
         ];
-    }
-
-    /** The templates Meta has for this account, as of the last sync. */
-    private function whatsappTemplates(): array
-    {
-        return WhatsAppTemplate::orderBy('name')
-            ->orderBy('language')
-            ->get()
-            ->map(fn (WhatsAppTemplate $t) => [
-                'id' => $t->id,
-                'name' => $t->name,
-                'language' => $t->language,
-                'label' => $t->label,
-                'status' => $t->status,
-                'category' => $t->category,
-                'body' => $t->body,
-                'param_count' => $t->bodyParamCount(),
-                'unsupported' => $t->unsupportedReason(),
-                'synced_at' => $t->synced_at?->toIso8601String(),
-            ])
-            ->all();
     }
 
     /**

@@ -31,13 +31,8 @@ const props = defineProps({
   placeholders: { type: Object, required: true },
   // { utility: { label, cost_note, hint } }
   categories: { type: Object, required: true },
-  // synced from Meta: [{ id, label, status, body, param_count }]
-  whatsappTemplates: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close'])
-
-const linkedMeta = computed(() =>
-  props.whatsappTemplates.find(t => t.id === form.whatsapp_template_id) ?? null)
 
 const editing = computed(() => !!props.template)
 const bodyRef = ref(null)
@@ -47,7 +42,8 @@ const form = useForm({
   category: 'utility',
   body: '',
   is_active: true,
-  whatsapp_template_id: null,
+  provider_template_name: '',
+  provider_template_language: 'en',
 })
 
 watch(() => props.show, open => {
@@ -59,9 +55,10 @@ watch(() => props.show, open => {
         category: props.template.category,
         body: props.template.body,
         is_active: props.template.is_active,
-        whatsapp_template_id: props.template.whatsapp_template_id ?? null,
+        provider_template_name: props.template.provider_template_name ?? '',
+        provider_template_language: props.template.provider_template_language ?? 'en',
       }
-    : { name: '', category: 'utility', body: '', is_active: true, whatsapp_template_id: null })
+    : { name: '', category: 'utility', body: '', is_active: true, provider_template_name: '', provider_template_language: 'en' })
 
   form.reset()
   form.clearErrors()
@@ -237,20 +234,17 @@ const submit = () => {
         </div>
       </div>
 
-      <FormField label="Meta template (for sending by API)" :error="form.errors.whatsapp_template_id"
-                 :hint="whatsappTemplates.length
-                   ? 'The approved Meta template with the same wording. Its variables are filled in the order the placeholders appear above.'
-                   : 'None synced yet — use Sync from Meta on the Templates tab. Without one, this message is click-to-send only.'">
-        <select v-model="form.whatsapp_template_id" class="w-full">
-          <option :value="null">Not linked — click-to-send only</option>
-          <option v-for="t in whatsappTemplates" :key="t.id" :value="t.id">
-            {{ t.label }} · {{ t.status }} · {{ t.param_count }} variable{{ t.param_count === 1 ? '' : 's' }}
-          </option>
-        </select>
-        <p v-if="linkedMeta?.body" class="mt-1.5 whitespace-pre-wrap text-[11px] text-slate-500">
-          Meta's wording: {{ linkedMeta.body }}
-        </p>
-      </FormField>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <FormField class="sm:col-span-2" label="11za template name (for sending by API)"
+                   :error="form.errors.provider_template_name"
+                   hint="Exactly as it is named in the 11za panel. Its variables are filled in the order the placeholders appear above. Leave empty for click-to-send only.">
+          <input v-model="form.provider_template_name" type="text" class="w-full" placeholder="site_visit_thanks" />
+        </FormField>
+        <FormField label="Language" :error="form.errors.provider_template_language"
+                   hint="The template's language code in 11za — usually en.">
+          <input v-model="form.provider_template_language" type="text" class="w-full" placeholder="en" />
+        </FormField>
+      </div>
 
       <label class="flex items-center gap-2 text-sm text-slate-700">
         <input v-model="form.is_active" type="checkbox" class="h-4 w-4" />

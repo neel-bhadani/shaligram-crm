@@ -7,8 +7,8 @@ import axios from 'axios'
  | real values, send it. There is no list of leads anywhere in here, on
  | purpose — this is a per-lead action, not a broadcast.
  |
- | By API when the API is on and the message is linked to an approved Meta
- | template; otherwise click-to-send, which opens WhatsApp with the text typed.
+ | By API when the API is on and the message has an 11za template name;
+ | otherwise click-to-send, which opens WhatsApp with the text typed.
  |
  | The 24-hour window is always "unknown, template required". Knowing it needs
  | the inbound webhook, which is not built; the panel never claims the lead is
@@ -96,7 +96,7 @@ const when = iso => iso
       <template v-else-if="data.templates.length">
         <p class="mt-0.5 text-xs text-slate-400">
           {{ data.api_enabled
-            ? 'Messages marked “by API” are sent through Meta. The rest open in WhatsApp for you to send.'
+            ? 'Messages marked “by API” are sent through 11za. The rest open in WhatsApp for you to send.'
             : 'Opens in WhatsApp with the message typed, for you to send.' }}
         </p>
 
@@ -113,7 +113,7 @@ const when = iso => iso
                         leading-relaxed text-slate-800 shadow-sm">{{ picked.preview }}</div>
           </div>
           <p v-if="picked.by_api && picked.values.length" class="mt-1.5 text-[11px] text-slate-400">
-            Sent as {{ picked.meta_template }} with
+            Sent as {{ picked.provider_template }} with
             <span v-for="(v, i) in picked.values" :key="v.position">
               {{ i ? ', ' : '' }}{{ variable(v.position) }} = “{{ v.value || '(empty)' }}”
             </span>
@@ -144,6 +144,10 @@ const when = iso => iso
           <span class="block" :class="m.status === 'failed' ? 'text-rose-600' : 'text-slate-500'">
             {{ m.outcome }}<template v-if="m.error"> — {{ m.error }}</template>
           </span>
+          <details v-if="m.provider_response" class="text-slate-500">
+            <summary class="cursor-pointer">11za's response</summary>
+            <pre class="mt-1 whitespace-pre-wrap break-all rounded bg-slate-50 p-2 font-mono text-[10px]">{{ m.provider_response }}</pre>
+          </details>
         </li>
       </ul>
     </template>

@@ -21,7 +21,7 @@ use App\Support\CrmTaxonomy;
  *                  what happens after the browser hands the text over is not
  *                  observable from here.
  *
- *   API            queueTemplate() writes a row carrying the Meta template and
+ *   API            queueTemplate() writes a row carrying the 11za template and
  *                  its parameters, fixed now, and the SendWhatsAppMessage job
  *                  sends it. Only ever through the queue, never inline. When
  *                  the API is not configured or is switched off, the same call
@@ -44,20 +44,18 @@ class WhatsAppSender
     /** What an unconfigured API says, in words the office admin can act on. */
     public const NOT_CONFIGURED =
         'WhatsApp API sending is not set up yet. Nothing was sent. '
-        .'The API needs WhatsApp Business Platform access — a paid account through Meta or a '
-        .'provider — which is not the same as the free WhatsApp Business app on a phone. '
+        .'Save the 11za auth token and origin website in the WhatsApp settings on the Queue tab. '
         .'Until then, open the message from the Queue and send it yourself.';
 
-    /** Settings the Test connection button needs, and what to call them when missing. */
-    public const REQUIRED_FOR_TEST = [
-        'phone_number_id' => 'Phone Number ID',
-        'waba_id' => 'WhatsApp Business Account ID',
-        'access_token' => 'access token',
+    /** Settings sending needs, and what to call them when missing. */
+    public const REQUIRED = [
+        'auth_token' => '11za auth token',
+        'origin_website' => 'origin website',
     ];
 
     public function __construct(
         private TemplateRenderer $renderer,
-        private WhatsAppCloudClient $client,
+        private ElevenZaClient $client,
     ) {}
 
     /* ---------------- configuration ---------------- */
@@ -67,23 +65,21 @@ class WhatsAppSender
         return Integration::forProvider(config('automation.whatsapp.provider', 'whatsapp'));
     }
 
-    /**
-     * Enough credentials to send at all: a phone number id and a token.
-     *
-     * The WABA id is not part of this. Sending never uses it — only syncing
-     * templates and testing the connection do, and both ask for it themselves.
-     */
+    /** Enough settings to send at all: an auth token and an origin website. */
     public function isConfigured(): bool
     {
-        $integration = $this->integration();
+        return $this->missingSettings() === [];
+    }
 
-        foreach (['access_token', 'phone_number_id'] as $key) {
-            if (blank($integration->setting($key))) {
-                return false;
-            }
-        }
-
-        return true;
+    /**
+     * The 11za host: the admin's override if one is saved, otherwise config.
+     *
+     * 11za's docs name two hosts; which is right is not yet confirmed, so it
+     * can be changed without a deploy.
+     */
+    public function baseUrl(): string
+    {
+        return (string) ($this->integration()->setting('base_url') ?: config('automation.whatsapp.api.base'));
     }
 
     /** "Use API sending" is on AND there is something to send with. */
@@ -135,7 +131,8 @@ class WhatsAppSender
         return MessageLog::create([
             'lead_id' => $lead->id,
             'template_id' => $template->id,
-            'whatsapp_template_id' => $template->whatsapp_template_id,
+            'provider_template_name' => $template->provider_template_name,
+            'provider_template_language' => $template->provider_template_language,
             'user_id' => $user?->id,
             'rule_id' => $rule?->id,
             'mode' => 'click',
@@ -204,7 +201,8 @@ class WhatsAppSender
         $row = [
             'lead_id' => $lead->id,
             'template_id' => $template->id,
-            'whatsapp_template_id' => $template->whatsapp_template_id,
+            'provider_template_name' => $template->provider_template_name,
+            'provider_template_language' => $template->provider_template_language,
             'user_id' => $user?->id,
             'rule_id' => $rule?->id,
             'to_number' => $built['number'],
@@ -248,7 +246,7 @@ class WhatsAppSender
         if ($empty !== false) {
             $name = array_values($template->placeholder_map ?? [])[$empty];
 
-            return $this->skipped($row, "{{$name}} is empty for this lead, and Meta refuses a template with an empty variable.");
+            return $this->skipped($row, "{{$name}} is empty for this lead, and WhatsApp refuses a template with an empty variable.");
         }
 
         $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued']);
@@ -288,7 +286,8 @@ class WhatsAppSender
         $message->update([
             'mode' => 'api',
             'user_id' => $user->id,
-            'whatsapp_template_id' => $message->whatsapp_template_id ?? $message->template?->whatsapp_template_id,
+            'provider_template_name' => $message->provider_template_name ?? $message->template?->provider_template_name,
+            'provider_template_language' => $message->provider_template_language ?? $message->template?->provider_template_language,
         ]);
 
         SendWhatsAppMessage::dispatch($message->id)->afterCommit();
@@ -297,12 +296,22 @@ class WhatsAppSender
     }
 
     /**
-     * Send through the Cloud API. Called by SendWhatsAppMessage and nothing
-     * else — except for one case: an unconfigured API, which says so on the
-     * row and on screen rather than failing somewhere nobody reads.
+     * Send through 11za. Called by SendWhatsAppMessage and nothing else —
+     * except for one case: an unconfigured API, which says so on the row and
+     * on screen rather than failing somewhere nobody reads.
      *
      * The parameters are the ones stored on the row when it was queued, in
-     * that order. Nothing is re-rendered and nothing is re-ordered here.
+     * that order. Nothing is re-rendered and nothing is re-ordered here. The
+     * template name and language are the row's too, falling back to the
+     * message's for a row queued before they were recorded.
+     *
+     * 11za's response is stored as it came (token removed) whichever way it
+     * went, because its shape is not yet known.
+     *
+     * A 2xx without a recognised message id is still `sent`, with
+     * `confirmed` false, and is never retried. The id lookup is a guess; a
+     * wrong guess must not turn a delivered message into a failure somebody
+     * resends.
      *
      * @return array{ok: bool, message: string, retry: bool}
      */
@@ -320,22 +329,22 @@ class WhatsAppSender
             return ['ok' => false, 'message' => $reason, 'retry' => false];
         }
 
-        $meta = $message->whatsappTemplate ?? $message->template->whatsappTemplate;
-        $integration = $this->integration();
+        $templateName = $message->provider_template_name ?: $message->template->provider_template_name;
+        $language = $message->provider_template_language ?: $message->template->provider_template_language;
 
         try {
-            $wamid = $this->client->sendTemplate(
-                (string) $integration->setting('access_token'),
-                (string) $integration->setting('phone_number_id'),
+            $sent = $this->sendTemplate(
                 (string) $message->to_number,
-                $meta->name,
-                $meta->language,
+                (string) $message->to_name,
+                $templateName,
+                $language,
                 array_map('strval', $message->params ?? []),
             );
         } catch (WhatsAppApiException $e) {
             $message->update([
                 'error' => $e->explain(),
-                'error_code' => $e->metaCode !== null ? (string) $e->metaCode : ($e->httpStatus ? "http {$e->httpStatus}" : null),
+                'error_code' => $e->httpStatus ? "http {$e->httpStatus}" : null,
+                'provider_response' => $e->raw,
             ]);
 
             if ($e->isRetryable()) {
@@ -350,75 +359,84 @@ class WhatsAppSender
         $message->update([
             'mode' => 'api',
             'status' => 'sent',
-            'wamid' => $wamid,
-            'whatsapp_template_id' => $meta->id,
+            'confirmed' => $sent['id'] !== null,
+            'provider_message_id' => $sent['id'],
+            'provider_response' => $sent['raw'],
+            'provider_template_name' => $templateName,
+            'provider_template_language' => $language,
             'sent_at' => now(),
             'error' => null,
             'error_code' => null,
         ]);
 
-        return ['ok' => true, 'message' => "Accepted by Meta ({$wamid}).", 'retry' => false];
+        return ['ok' => true, 'message' => $message->outcome(), 'retry' => false];
     }
 
     /* ---------------- test connection ---------------- */
 
     /**
-     * Ask Meta whether the SAVED settings work. Always answers.
+     * Send one real message, with the SAVED settings, to a number the admin
+     * typed. Always answers.
      *
-     * Three checks: the token can read the phone number (and what number it
-     * is), the token can read the business account, and the phone number is
-     * on that account — the last one is what catches a Phone Number ID and a
-     * WABA ID pasted into each other's boxes.
+     * 11za has no endpoint that checks credentials without sending, so this is
+     * the test: a chosen message, filled in with the placeholder examples
+     * ("Rahul Mehta", "Skyline Residency"), to the admin's own phone. The
+     * answer carries 11za's raw response, which is also how the shape of a
+     * real response first gets seen. Not written to message_logs — there is
+     * no lead.
      *
-     * @return array{ok: bool, message: string, code: ?int}
+     * A 2xx without a recognised id is reported as sent-unconfirmed, not as a
+     * failure: look at the phone and at the raw response before trying again.
+     *
+     * @return array{ok: bool, message: string, response: ?string}
      */
-    public function testConnection(): array
+    public function testConnection(MessageTemplate $template, string $mobile): array
     {
-        $integration = $this->integration();
+        $missing = $this->missingSettings();
 
-        $missing = collect(self::REQUIRED_FOR_TEST)
-            ->filter(fn (string $label, string $key) => blank($integration->setting($key)))
-            ->values();
-
-        if ($missing->isNotEmpty()) {
+        if ($missing !== []) {
             return $this->remember([
                 'ok' => false,
-                'code' => null,
-                'message' => 'Not tested: save the '.$missing->join(', ', ' and ').' first.',
+                'message' => 'Not tested: save the '.collect($missing)->join(', ', ' and ').' first.',
+                'response' => null,
             ]);
         }
 
-        $token = (string) $integration->setting('access_token');
-        $phoneId = (string) $integration->setting('phone_number_id');
-        $wabaId = (string) $integration->setting('waba_id');
+        if ($reason = $template->apiUnsendableReason()) {
+            return $this->remember(['ok' => false, 'message' => "Not tested: {$reason}", 'response' => null]);
+        }
+
+        $number = $this->renderer->waNumber($mobile);
+
+        if (! $number) {
+            return $this->remember([
+                'ok' => false,
+                'message' => "Not tested: \"{$mobile}\" is not a ten-digit mobile number.",
+                'response' => null,
+            ]);
+        }
+
+        $examples = array_map(fn (array $placeholder) => $placeholder['example'], $this->renderer->placeholders());
+        $data = array_map(fn (string $name) => (string) ($examples[$name] ?? ''), array_values($template->placeholder_map ?? []));
+        $label = $template->providerTemplateLabel();
 
         try {
-            $phone = $this->client->phoneNumber($token, $phoneId);
-            $onAccount = $this->client->phoneNumberIds($token, $wabaId);
+            $sent = $this->sendTemplate($number, 'Test', $template->provider_template_name, $template->provider_template_language, $data);
         } catch (WhatsAppApiException $e) {
             return $this->remember([
                 'ok' => false,
-                'code' => $e->metaCode,
-                'message' => 'Connection failed. '.$e->explain(),
+                'message' => "Test message {$label} to {$number} failed. {$e->getMessage()}",
+                'response' => $e->raw,
             ]);
         }
-
-        if (! in_array($phoneId, $onAccount, true)) {
-            return $this->remember([
-                'ok' => false,
-                'code' => null,
-                'message' => "Meta answered, but Phone Number ID {$phoneId} is not on WhatsApp Business Account {$wabaId}. "
-                    .'Check the two IDs have not been swapped.',
-            ]);
-        }
-
-        $number = $phone['display_phone_number'] ?? $phoneId;
-        $name = $phone['verified_name'] ? " ({$phone['verified_name']})" : '';
 
         return $this->remember([
             'ok' => true,
-            'code' => null,
-            'message' => "Connected. Messages will be sent from {$number}{$name}.",
+            'message' => $sent['id'] !== null
+                ? "11za accepted the test message {$label} to {$number} (message id {$sent['id']}). Check that phone."
+                : "Sent (unconfirmed): 11za answered HTTP {$sent['status']} for the test message {$label} to {$number}, "
+                    .'but no message id was recognised in its response. '.MessageLog::UNCONFIRMED_ADVICE,
+            'response' => $sent['raw'],
         ]);
     }
 
@@ -428,7 +446,7 @@ class WhatsAppSender
      * {{1}}, {{2}}… for this lead, in `placeholder_map` order.
      *
      * The map was stored when the message was saved and is the only thing
-     * that decides the order. Values are flattened to one line because Meta
+     * that decides the order. Values are flattened to one line because WhatsApp
      * refuses a parameter with a newline, a tab or a run of spaces in it.
      *
      * @return list<string>
@@ -449,7 +467,7 @@ class WhatsAppSender
         $template = $message->template;
 
         if (! $template) {
-            return 'The message it was written from has been deleted, so there is no Meta template to send it as.';
+            return 'The message it was written from has been deleted, so there is no 11za template to send it as.';
         }
 
         if ($reason = $template->apiUnsendableReason()) {
@@ -461,6 +479,39 @@ class WhatsAppSender
         }
 
         return null;
+    }
+
+    /** @return list<string> labels of the required settings that are blank */
+    private function missingSettings(): array
+    {
+        $integration = $this->integration();
+
+        return collect(self::REQUIRED)
+            ->filter(fn (string $label, string $key) => blank($integration->setting($key)))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $data
+     * @return array{id: string, status: int, raw: string}
+     *
+     * @throws WhatsAppApiException
+     */
+    private function sendTemplate(string $to, string $name, string $templateName, string $language, array $data): array
+    {
+        $integration = $this->integration();
+
+        return $this->client->sendTemplate(
+            (string) $integration->setting('auth_token'),
+            $this->baseUrl(),
+            (string) $integration->setting('origin_website'),
+            $to,
+            $name,
+            $templateName,
+            $language,
+            $data,
+        );
     }
 
     private function recentDuplicate(string $key, int $minutes): ?MessageLog
@@ -484,8 +535,8 @@ class WhatsAppSender
      * Keep the last result on the settings row, so the card still shows it
      * after a reload.
      *
-     * @param  array{ok: bool, message: string, code: ?int}  $result
-     * @return array{ok: bool, message: string, code: ?int}
+     * @param  array{ok: bool, message: string, response: ?string}  $result
+     * @return array{ok: bool, message: string, response: ?string}
      */
     private function remember(array $result): array
     {

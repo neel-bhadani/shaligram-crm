@@ -39,15 +39,17 @@ use Tests\TestCase;
  * no credentials — a request that tries gets the refusal, not just a hidden
  * toggle.
  *
- * @see \App\Services\WhatsApp\TemplateRenderer
- * @see \App\Services\WhatsApp\WhatsAppSender
+ * @see TemplateRenderer
+ * @see WhatsAppSender
  */
 class AutomationWhatsAppTest extends TestCase
 {
     use RefreshDatabase;
 
     private User $admin;
+
     private User $tele;
+
     private Project $project;
 
     protected function setUp(): void
@@ -56,8 +58,8 @@ class AutomationWhatsAppTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-09-08 11:00', 'Asia/Kolkata'));
 
-        $this->admin   = $this->user('admin', 'Ann');
-        $this->tele    = $this->user('telecaller', 'Tara');
+        $this->admin = $this->user('admin', 'Ann');
+        $this->tele = $this->user('telecaller', 'Tara');
         $this->project = Project::create(['name' => 'Skyline Residency']);
     }
 
@@ -118,7 +120,7 @@ class AutomationWhatsAppTest extends TestCase
 
         $rendered = app(TemplateRenderer::class)->render(
             'Hi {first_name}, thank you for visiting {project}. {owner_name} ({owner_phone}) will call you. '
-            . 'Full name: {lead_name}. Stage: {stage}.',
+            .'Full name: {lead_name}. Stage: {stage}.',
             $lead->fresh()->load('project', 'owner'),
         );
 
@@ -130,13 +132,13 @@ class AutomationWhatsAppTest extends TestCase
         $this->assertStringNotContainsString('{', $rendered, 'nothing was left unreplaced');
     }
 
-    public function test_the_meta_numbering_is_stored_when_the_template_is_saved(): void
+    public function test_the_template_numbering_is_stored_when_the_template_is_saved(): void
     {
         $this->actingAs($this->admin)
             ->post(route('automation.templates.store'), [
-                'name'      => 'Welcome',
-                'category'  => 'utility',
-                'body'      => 'Hi {first_name}, welcome to {project}. {first_name}, we will call you soon.',
+                'name' => 'Welcome',
+                'category' => 'utility',
+                'body' => 'Hi {first_name}, welcome to {project}. {first_name}, we will call you soon.',
                 'is_active' => true,
             ])
             ->assertSessionHasNoErrors();
@@ -144,7 +146,7 @@ class AutomationWhatsAppTest extends TestCase
         $template = MessageTemplate::firstOrFail();
 
         // first appearance wins, and a repeat does not get a second number —
-        // which is exactly what Meta expects
+        // which is exactly what a WhatsApp template expects
         $this->assertSame(['first_name', 'project'], $template->placeholder_map);
 
         $this->assertSame(
@@ -240,8 +242,7 @@ class AutomationWhatsAppTest extends TestCase
         $message->refresh();
         $this->assertSame('failed', $message->status);
         $this->assertSame(WhatsAppSender::NOT_CONFIGURED, $message->error);
-        $this->assertStringContainsString('WhatsApp Business Platform', $message->error);
-        $this->assertStringContainsString('not the same as the free WhatsApp Business app', $message->error);
+        $this->assertStringContainsString('11za auth token', $message->error);
 
         Http::assertNothingSent();
     }
@@ -250,9 +251,9 @@ class AutomationWhatsAppTest extends TestCase
     {
         $this->actingAs($this->admin)
             ->put(route('automation.whatsapp.update'), [
-                'phone_number_id' => '',
-                'access_token'    => '',
-                'auto_send'       => true,
+                'origin_website' => '',
+                'auth_token' => '',
+                'auto_send' => true,
             ])
             ->assertRedirect()
             ->assertSessionHas('error', WhatsAppSender::NOT_CONFIGURED);
@@ -264,9 +265,9 @@ class AutomationWhatsAppTest extends TestCase
     {
         $this->actingAs($this->admin)
             ->put(route('automation.whatsapp.update'), [
-                'phone_number_id' => '123456789',
-                'access_token'    => 'EAAG-secret-token-abcd',
-                'auto_send'       => false,
+                'origin_website' => 'https://example.test',
+                'auth_token' => '11za-secret-token-abcd',
+                'auto_send' => false,
             ])
             ->assertSessionHasNoErrors();
 
@@ -276,12 +277,12 @@ class AutomationWhatsAppTest extends TestCase
         $this->assertFalse($sender->autoSends(), 'configured is not the same as switched on');
     }
 
-    public function test_the_access_token_never_reaches_the_browser(): void
+    public function test_the_auth_token_never_reaches_the_browser(): void
     {
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
-            'phone_number_id' => '123456789',
-            'access_token'    => 'EAAG-secret-token-abcd',
-            'auto_send'       => false,
+            'origin_website' => 'https://example.test',
+            'auth_token' => '11za-secret-token-abcd',
+            'auto_send' => false,
         ]);
 
         /*
@@ -291,31 +292,31 @@ class AutomationWhatsAppTest extends TestCase
          | clear and the assertion would be testing nothing.
          */
         $stored = DB::table('integrations')->where('provider', 'whatsapp')->value('settings');
-        $this->assertStringNotContainsString('EAAG-secret-token-abcd', (string) $stored);
+        $this->assertStringNotContainsString('11za-secret-token-abcd', (string) $stored);
 
         $page = $this->actingAs($this->admin)->get('/automation');
         $page->assertOk();
-        $page->assertDontSee('EAAG-secret-token-abcd', false);
+        $page->assertDontSee('11za-secret-token-abcd', false);
 
         $props = $page->viewData('page')['props'];
-        $this->assertSame('••••••••abcd', $props['whatsapp']['access_token_tail']);
-        $this->assertArrayNotHasKey('access_token', $props['whatsapp']);
+        $this->assertSame('••••••••abcd', $props['whatsapp']['auth_token_tail']);
+        $this->assertArrayNotHasKey('auth_token', $props['whatsapp']);
     }
 
-    public function test_editing_the_phone_id_does_not_blank_the_token(): void
+    public function test_editing_the_origin_website_does_not_blank_the_token(): void
     {
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
-            'phone_number_id' => '111', 'access_token' => 'EAAG-first-token', 'auto_send' => false,
+            'origin_website' => 'https://one.test', 'auth_token' => '11za-first-token', 'auto_send' => false,
         ]);
 
         // the form ships an empty token box, because it cannot show the real one
         $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
-            'phone_number_id' => '222', 'access_token' => '', 'auto_send' => false,
+            'origin_website' => 'https://two.test', 'auth_token' => '', 'auto_send' => false,
         ]);
 
         $integration = Integration::forProvider('whatsapp');
-        $this->assertSame('222', $integration->setting('phone_number_id'));
-        $this->assertSame('EAAG-first-token', $integration->setting('access_token'));
+        $this->assertSame('https://two.test', $integration->setting('origin_website'));
+        $this->assertSame('11za-first-token', $integration->setting('auth_token'));
     }
 
     /* ================= the door ================= */
@@ -339,51 +340,51 @@ class AutomationWhatsAppTest extends TestCase
         $lead = $this->lead(['assigned_to' => $this->tele->id]);
 
         return MessageLog::create([
-            'lead_id'   => $lead->id,
-            'mode'      => 'click',
+            'lead_id' => $lead->id,
+            'mode' => 'click',
             'to_number' => '919876543210',
-            'body'      => 'Namaste Rahul',
-            'status'    => 'queued',
+            'body' => 'Namaste Rahul',
+            'status' => 'queued',
         ]);
     }
 
     private function lead(array $attrs = []): Lead
     {
         return Lead::create($attrs + [
-            'first_name'       => 'Rahul',
-            'last_name'        => 'Mehta',
-            'mobile_number'    => '9876543210',
-            'project_id'       => $this->project->id,
-            'source'           => 'walk_in',
-            'stage'            => 'fresh',
-            'assigned_role'    => 'telecaller',
+            'first_name' => 'Rahul',
+            'last_name' => 'Mehta',
+            'mobile_number' => '9876543210',
+            'project_id' => $this->project->id,
+            'source' => 'walk_in',
+            'stage' => 'fresh',
+            'assigned_role' => 'telecaller',
             'stage_changed_at' => now(),
-            'created_by'       => $this->admin->id,
+            'created_by' => $this->admin->id,
         ]);
     }
 
     private function todoFor(Lead $lead): Todo
     {
         return Todo::create([
-            'lead_id'      => $lead->id,
-            'assigned_to'  => $lead->assigned_to,
-            'created_by'   => $this->admin->id,
+            'lead_id' => $lead->id,
+            'assigned_to' => $lead->assigned_to,
+            'created_by' => $this->admin->id,
             'scheduled_at' => now()->addDay(),
-            'type'         => 'call',
-            'status'       => 'pending',
+            'type' => 'call',
+            'status' => 'pending',
         ]);
     }
 
     private function user(string $role, string $first): User
     {
         return User::create([
-            'first_name'    => $first,
-            'last_name'     => 'User',
-            'email'         => strtolower($first) . '@example.test',
+            'first_name' => $first,
+            'last_name' => 'User',
+            'email' => strtolower($first).'@example.test',
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'role'          => $role,
-            'is_active'     => true,
-            'password'      => 'password',
+            'role' => $role,
+            'is_active' => true,
+            'password' => 'password',
         ]);
     }
 }

@@ -175,8 +175,9 @@ class AutomationRuleRequest extends FormRequest
     }
 
     /**
-     * An API-mode WhatsApp action has to name a message Meta will accept:
-     * linked to an APPROVED template, with the same number of variables.
+     * An API-mode WhatsApp action has to name a message with an 11za
+     * template name and language. Whether 11za accepts that name is only
+     * known when it answers a send.
      *
      * Refused here, at Save, because the alternative is a rule that looks
      * fine and fails on every lead it fires for.
@@ -189,7 +190,7 @@ class AutomationRuleRequest extends FormRequest
             return;
         }
 
-        $template = MessageTemplate::with('whatsappTemplate')->find($action['template_id']);
+        $template = MessageTemplate::find($action['template_id']);
         $reason = $template?->apiUnsendableReason();
 
         if ($reason) {
