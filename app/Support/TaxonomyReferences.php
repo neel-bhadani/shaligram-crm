@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\AutomationRule;
 use App\Models\Lead;
 use App\Models\Todo;
+use Illuminate\Support\Collection;
 
 /**
  * What still points at a stage or a source, counted in the three places that
@@ -32,7 +33,7 @@ class TaxonomyReferences
     public static function forStage(string $key): array
     {
         return [
-            'leads'   => Lead::withTrashed()->where('stage', $key)->count(),
+            'leads' => Lead::withTrashed()->where('stage', $key)->count(),
             /*
              | Soft-deleted leads counted too, and history counted separately
              | from them. A trashed lead can be restored, and a completed to-do
@@ -40,7 +41,7 @@ class TaxonomyReferences
              | three dashboard cards whichever way its lead is filed.
              */
             'history' => Todo::where('outcome_stage', $key)->count(),
-            'rules'   => self::rulesNaming($key, ['stage']),
+            'rules' => self::rulesNaming($key, ['stage']),
         ];
     }
 
@@ -50,12 +51,27 @@ class TaxonomyReferences
     public static function forSource(string $key): array
     {
         return [
-            'leads'   => Lead::withTrashed()->where('source', $key)->count(),
+            'leads' => Lead::withTrashed()->where('source', $key)->count(),
             // `todos` records the stage a lead was moved to and never the source
             // it came from, so a source has no history of its own to protect
             'history' => 0,
-            'rules'   => self::rulesNaming($key, ['source']),
+            'rules' => self::rulesNaming($key, ['source']),
         ];
+    }
+
+    /**
+     * The rules themselves that mention a stage, for the decision about what
+     * deleting it does to them — see PipelineController::destroyStage().
+     *
+     * @param  list<string>  $fields
+     * @return Collection<int, AutomationRule>
+     */
+    public static function rulesNamingStage(string $key, array $fields = ['stage']): Collection
+    {
+        return AutomationRule::query()
+            ->get()
+            ->filter(fn (AutomationRule $rule) => self::ruleNames($rule, $key, $fields))
+            ->values();
     }
 
     /**
@@ -68,9 +84,7 @@ class TaxonomyReferences
      */
     private static function rulesNaming(string $key, array $fields): array
     {
-        return AutomationRule::query()
-            ->get(['id', 'name', 'trigger_config', 'conditions', 'actions'])
-            ->filter(fn (AutomationRule $rule) => self::ruleNames($rule, $key, $fields))
+        return self::rulesNamingStage($key, $fields)
             ->pluck('name')
             ->values()
             ->all();

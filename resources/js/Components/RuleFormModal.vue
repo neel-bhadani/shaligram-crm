@@ -98,7 +98,19 @@ watch(() => props.show, open => {
 
 const triggerList = computed(() => Object.entries(props.catalog.triggers ?? {}))
 const conditionList = computed(() => Object.entries(props.catalog.conditions ?? {}))
-const actionList = computed(() => Object.entries(props.catalog.actions ?? {}))
+/*
+ | WhatsApp is set up on the Auto-send tab, so the builder does not offer it
+ | for a new action. An existing rule that already sends one still shows it, so
+ | editing that rule keeps it rather than quietly changing it to something else.
+ */
+const actionList = computed(() => Object.entries(props.catalog.actions ?? {})
+  .filter(([, meta]) => meta.in_builder !== false))
+
+const actionChoices = current => {
+  const meta = props.catalog.actions?.[current]
+
+  return meta && meta.in_builder === false ? [...actionList.value, [current, meta]] : actionList.value
+}
 
 const triggerMeta = computed(() => props.catalog.triggers?.[form.trigger] ?? null)
 const triggerParams = computed(() => Object.entries(triggerMeta.value?.params ?? {}))
@@ -355,8 +367,7 @@ const err = key => form.errors[key]
           <HelpTip title="Actions">
             What the rule does, in the order you put them. They all happen together or not at all,
             so a rule can never half-run and leave a lead in a strange state.
-            A WhatsApp action <strong>queues</strong> a message for somebody to send — it never
-            sends one by itself.
+            WhatsApp messages are not set up here — use the Auto-send tab.
           </HelpTip>
         </div>
         <p class="mb-3 text-xs text-slate-400">At least one. They run in this order.</p>
@@ -368,7 +379,7 @@ const err = key => form.errors[key]
             <span class="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-slate-100
                          text-[10px] font-bold text-slate-500">{{ i + 1 }}</span>
             <select v-model="action.type" class="flex-1" @change="onActionType(i)">
-              <option v-for="[key, meta] in actionList" :key="key" :value="key">{{ meta.label }}</option>
+              <option v-for="[key, meta] in actionChoices(action.type)" :key="key" :value="key">{{ meta.label }}</option>
             </select>
             <button type="button" class="btn-xs" @click="removeAction(i)">Remove</button>
           </div>

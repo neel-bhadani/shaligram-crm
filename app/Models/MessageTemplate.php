@@ -5,11 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A WhatsApp message written once and sent many times.
+ * A WhatsApp message: an 11za template, and what goes into each variable.
  *
- * The body carries named placeholders. Rendering it against a lead is
- * App\Services\WhatsApp\TemplateRenderer — this model holds the text, the
- * numbering the WhatsApp template uses, and the 11za template it goes out as.
+ * 11za owns the wording. This model holds the 11za template it goes out as and
+ * `placeholder_map` — which CRM field fills {{1}}, {{2}} — plus two copies of
+ * wording nobody edits here: `provider_body`, 11za's own, copied from its
+ * template list, and `body`, kept only on messages written in the CRM before it
+ * stopped holding wording. TemplateRenderer::clickText() decides which of them
+ * click-to-send uses.
  */
 class MessageTemplate extends Model
 {
@@ -69,11 +72,11 @@ class MessageTemplate extends Model
     public function apiUnsendableReason(): ?string
     {
         if (blank($this->provider_template_name)) {
-            return "\"{$this->name}\" has no 11za template name. Add it on the Templates tab.";
+            return "\"{$this->name}\" has no 11za template name. Add it on the Messages tab.";
         }
 
         if (blank($this->provider_template_language)) {
-            return "\"{$this->name}\" has no template language. Add it on the Templates tab.";
+            return "\"{$this->name}\" has no template language. Add it on the Messages tab.";
         }
 
         return null;

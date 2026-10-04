@@ -4,13 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\LeadSourceRequest;
 use App\Http\Requests\LeadStageRequest;
+use App\Models\AutomationRule;
 use App\Models\LeadSource;
 use App\Models\LeadStage;
+use App\Services\Automation\AutoSend;
 use App\Services\LeadAssignmentService;
 use App\Support\CrmTaxonomy;
 use App\Support\TaxonomyReferences;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -216,7 +219,16 @@ class PipelineController extends Controller
             throw ValidationException::withMessages(['stage' => $blocker]);
         }
 
-        $stage->delete();
+        /*
+         | The only rules that can still name the stage here are switched-off
+         | Auto-send rules — a row set to None. They go with it: otherwise None
+         | would leave a rule behind that blocks this delete for ever, with no
+         | screen that can remove it.
+         */
+        DB::transaction(function () use ($stage) {
+            $this->stageRules($stage->key)['removable']->each->delete();
+            $stage->delete();
+        });
 
         return back()->with('success', 'Stage deleted.');
     }
@@ -329,10 +341,55 @@ class PipelineController extends Controller
         }
 
         if ($refs['rules'] !== []) {
-            return 'Used by '.$this->ruleList($refs['rules']).'. Remove it from '.(count($refs['rules']) === 1 ? 'that rule' : 'those rules').' first.';
+            $rules = $this->stageRules($stage->key);
+            $reasons = [];
+
+            if ($rules['auto_send']->isNotEmpty()) {
+                $reasons[] = 'Auto-send sends a message when a lead reaches this stage. Set it to None on the Auto-send tab first.';
+            }
+
+            if ($rules['other']->isNotEmpty()) {
+                $names = $rules['other']->pluck('name')->all();
+                $reasons[] = 'Used by '.$this->ruleList($names).' (listed under Other automation on the Auto-send tab). '
+                    .'Switch '.(count($names) === 1 ? 'it' : 'them').' off there, then ask your developer to remove '
+                    .(count($names) === 1 ? 'it' : 'them').'.';
+            }
+
+            if ($reasons !== []) {
+                return implode(' ', $reasons);
+            }
         }
 
         return null;
+    }
+
+    /**
+     * The rules naming a stage, in the three groups deleting it treats
+     * differently:
+     *
+     *   removable  an Auto-send rule that is switched off — the row was set
+     *              to None. Deleted along with the stage.
+     *   auto_send  the switched-on rule an Auto-send row shows. Blocks, and
+     *              the way out is setting the row to None.
+     *   other      anything else: conditions, other actions, a second
+     *              message rule. Blocks; listed under Other automation.
+     *
+     * @return array{removable: Collection<int, AutomationRule>, auto_send: Collection<int, AutomationRule>, other: Collection<int, AutomationRule>}
+     */
+    private function stageRules(string $key): array
+    {
+        $autoSend = app(AutoSend::class);
+        $rowRuleIds = $autoSend->rowRuleIds();
+        $rules = TaxonomyReferences::rulesNamingStage($key);
+
+        $removable = $rules->filter(fn (AutomationRule $rule) => ! $rule->is_active && $autoSend->isSimple($rule));
+        $rest = $rules->diff($removable);
+
+        return [
+            'removable' => $removable->values(),
+            'auto_send' => $rest->filter(fn (AutomationRule $rule) => in_array($rule->id, $rowRuleIds, true))->values(),
+            'other' => $rest->reject(fn (AutomationRule $rule) => in_array($rule->id, $rowRuleIds, true))->values(),
+        ];
     }
 
     private function stageDeactivateBlocker(LeadStage $stage): ?string
@@ -405,7 +462,9 @@ class PipelineController extends Controller
         }
 
         if ($refs['rules'] !== []) {
-            return 'Used by '.$this->ruleList($refs['rules']).'. Remove it from '.(count($refs['rules']) === 1 ? 'that rule' : 'those rules').' first.';
+            return 'Used by '.$this->ruleList($refs['rules']).' (listed under Other automation on the Auto-send tab). '
+                .'Switch '.(count($refs['rules']) === 1 ? 'it' : 'them').' off there, then ask your developer to remove '
+                .(count($refs['rules']) === 1 ? 'it' : 'them').'.';
         }
 
         return null;

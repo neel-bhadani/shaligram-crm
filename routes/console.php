@@ -36,3 +36,10 @@ Schedule::command('automation:run')
     ->runInBackground();
 
 Schedule::command('leads:prune-imports')->hourly()->withoutOverlapping();
+
+/*
+| A WhatsApp send whose worker died mid-request is left `sending` for ever.
+| Every minute, any row abandoned like that becomes `unknown` — never re-sent,
+| because it may have reached the customer — and the admins are told.
+*/
+Schedule::command('whatsapp:sweep-abandoned')->everyMinute()->withoutOverlapping();

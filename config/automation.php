@@ -347,6 +347,10 @@ return [
 
         'queue_whatsapp' => [
             'label' => 'Send a WhatsApp message',
+            // set up on the Auto-send tab, not in the rule builder. The engine
+            // still runs it, and a rule that already has one keeps it when
+            // edited; the builder just does not offer it for a new action
+            'in_builder' => false,
             'phrase' => 'queue the {template_id} WhatsApp message',
             'phrase_by' => 'mode',
             'phrases' => [
@@ -368,7 +372,7 @@ return [
                     'type' => 'select',
                     'options' => 'templates',
                     'required' => true,
-                    'hint' => 'Written on the Templates tab. The lead\'s name and project are filled in when the message is queued. By API needs a message with its 11za template name filled in.',
+                    'hint' => 'Set up on the Messages tab. The lead\'s name and project are filled in when the message is queued. By API needs a message with its 11za template name filled in.',
                 ],
                 'terminal' => [
                     'label' => 'Booked and lost leads',
@@ -376,7 +380,7 @@ return [
                     'options' => 'whatsapp_terminal',
                     'default' => 'skip',
                     'when' => ['mode' => 'api'],
-                    'hint' => 'Off unless you say so: a rule does not message a lead who has booked or been lost.',
+                    'hint' => 'A rule that watches for Booking done or Lost messages those leads anyway — it chose that stage. This is for every other rule: off unless you say so, it does not message a lead who has booked or been lost.',
                 ],
             ],
         ],
@@ -510,6 +514,19 @@ return [
             'stage' => ['label' => 'Where the lead has reached', 'example' => 'Site visit done'],
         ],
 
+        /*
+         | What click-to-send opens WhatsApp with for a message that has no
+         | wording of its own — 11za has not said what its template reads and
+         | the message was set up after the CRM stopped holding wording. Not
+         | the template, but not an empty box. {project} is dropped with its
+         | clause when the lead has none.
+         */
+        'fallback_line' => [
+            'greeting' => 'Hello {first_name}',
+            'project' => ', regarding {project}',
+            'end' => '.',
+        ],
+
         // wa.me is the click-to-chat host. It takes the number as bare digits
         // with the country code and no punctuation of any kind — a single
         // space or dash and the link opens WhatsApp on nothing.
@@ -537,12 +554,22 @@ return [
             // default; an admin can override it in the WhatsApp settings.
             'base' => env('WHATSAPP_API_BASE', 'https://api.11za.in'),
             'send_path' => '/apis/template/sendTemplate',
+            // the template list for the Messages tab's dropdown. "All data"
+            // because it is the one most likely to carry the wording; the
+            // response shape is not documented, so the parser is defensive
+            'list_path' => '/apis/template/getTemplatesAll',
+            'list_limit' => 100,
             'timeout' => 15,
 
             // timeouts, 429 and 5xx: tries in all, and the pause before each
             // retry, in seconds
             'tries' => 3,
             'backoff' => [30, 120],
+
+            // a row still `sending` this long after a worker claimed it was
+            // abandoned by a worker that died mid-send. Marked `unknown`,
+            // never re-sent: it may have reached 11za before the worker died
+            'stuck_after_minutes' => 5,
         ],
 
         'modes' => [

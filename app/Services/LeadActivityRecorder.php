@@ -197,6 +197,23 @@ class LeadActivityRecorder
         );
     }
 
+    /**
+     * The WhatsApp opt-out switched on or off. Its own row because the lead's
+     * columns are cleared when it is switched off — this is where "who let
+     * WhatsApp messages through again, and when" survives.
+     */
+    public function whatsAppOptOut(Lead $lead, ?int $userId, bool $optedOut): void
+    {
+        $this->write(
+            $lead,
+            $userId,
+            LeadActivity::FieldUpdated,
+            'whatsapp_opt_out',
+            $optedOut ? 'allowed' : 'opted_out',
+            $optedOut ? 'opted_out' : 'allowed',
+        );
+    }
+
     private function write(
         Lead|int $lead,
         ?int $userId,

@@ -266,9 +266,10 @@ class ActionRunner
      * it to the queue worker, and when the API is off or unconfigured it
      * quietly becomes click mode rather than failing the rule.
      *
-     * API mode guards: booked and lost leads only when the rule says so, and
-     * the same rendered message to the same number at most once per the
-     * rule's cooldown — whichever lead it came through.
+     * API mode guards: booked and lost leads only when the rule says so or
+     * deliberately targets that stage, and the same rendered message to the
+     * same number at most once per the rule's cooldown — whichever lead it
+     * came through.
      */
     private function queueWhatsApp(AutomationRule $rule, Lead $lead, array $action): array
     {
@@ -276,6 +277,10 @@ class ActionRunner
 
         if (! $template) {
             return $this->skip('The message this rule queues has been deleted or switched off.');
+        }
+
+        if ($lead->hasOptedOutOfWhatsApp()) {
+            return $this->skip(WhatsAppSender::OPTED_OUT);
         }
 
         if (($action['mode'] ?? 'click') !== 'api') {
@@ -290,13 +295,37 @@ class ActionRunner
             $lead,
             $template,
             $rule,
-            allowTerminal: ($action['terminal'] ?? 'skip') === 'send',
+            allowTerminal: ($action['terminal'] ?? 'skip') === 'send' || $this->targetsStage($rule, $lead->stage),
             dedupeMinutes: $this->loopGuard->cooldownFor($rule),
         );
 
         return $outcome['result'] === 'skipped'
             ? $this->skip($outcome['reason'])
             : ['result' => 'success', 'error' => $outcome['reason']];
+    }
+
+    /**
+     * Does this rule name the stage the lead is at, on purpose?
+     *
+     * The booked-and-lost opt-in guards against messaging a customer who
+     * happens to have booked or been lost when some other rule fires — a
+     * reassignment, a new lead imported as booked, an hourly check. It is
+     * not for "when a lead reaches Booking done, send congratulations": that
+     * rule chose the stage, which is the opt-in. So a rule whose trigger
+     * watches that exact stage, or whose condition requires it, sends.
+     */
+    private function targetsStage(AutomationRule $rule, ?string $stage): bool
+    {
+        if ($stage === null) {
+            return false;
+        }
+
+        if (in_array($rule->trigger, ['stage_changed', 'stage_idle'], true) && $rule->triggerSetting('stage') === $stage) {
+            return true;
+        }
+
+        return collect($rule->conditionList())
+            ->contains(fn (array $condition) => ($condition['field'] ?? null) === 'stage' && ($condition['value'] ?? null) === $stage);
     }
 
     /* ---------------- outcomes ---------------- */

@@ -9,7 +9,8 @@ use SensitiveParameter;
 use Throwable;
 
 /**
- * The one call this CRM makes to 11za: send a template. Outbound only.
+ * The two calls this CRM makes to 11za: send a template, and list the
+ * account's templates for the Messages tab. Outbound only.
  *
  * Its own class so everything above it can be tested with Http::fake().
  * Nothing here retries — that is the job's decision, made from the exception.
@@ -45,6 +46,15 @@ class ElevenZaClient
      * the message id wherever they appear in the response.
      */
     private const MESSAGE_ID_KEYS = ['messageid', 'msgid', 'wamid'];
+
+    /** Keys, normalised the same way, read from each entry of the template list. */
+    private const TEMPLATE_NAME_KEYS = ['templatename', 'elementname', 'name'];
+
+    private const TEMPLATE_LANGUAGE_KEYS = ['language', 'languagecode', 'lang'];
+
+    private const TEMPLATE_BODY_KEYS = ['body', 'bodytext', 'templatebody', 'text', 'content'];
+
+    private const TEMPLATE_COUNT_KEYS = ['dynamicvaluecount', 'dynamiccount', 'variablecount', 'variables', 'count'];
 
     /**
      * Send one template message.
@@ -97,6 +107,52 @@ class ElevenZaClient
     }
 
     /**
+     * The templates in the 11za account, for the Messages tab's dropdown.
+     *
+     * 11za documents the request and not the answer, so the answer is read
+     * defensively: the first list in it whose entries carry a name is the
+     * template list, and from each entry the name, language, wording and
+     * variable count are taken from whichever key looks like one. Anything
+     * missing comes back null rather than guessed. The raw response (token
+     * removed) always comes back too, so the shape can be seen and this
+     * tightened.
+     *
+     * @return array{templates: list<array{name: string, language: ?string, body: ?string, variables: ?int}>, raw: string}
+     *
+     * @throws WhatsAppApiException
+     */
+    public function listTemplates(#[SensitiveParameter] string $authToken, string $baseUrl): array
+    {
+        $url = rtrim($baseUrl, '/').config('automation.whatsapp.api.list_path');
+
+        try {
+            $response = Http::acceptJson()
+                ->asJson()
+                ->timeout((int) config('automation.whatsapp.api.timeout', 15))
+                ->post($url, [
+                    'authToken' => $authToken,
+                    'limit' => (int) config('automation.whatsapp.api.list_limit', 100),
+                    'page' => 1,
+                    'search' => '',
+                ]);
+        } catch (ConnectionException $e) {
+            throw WhatsAppApiException::unreachable($this->redact($e->getMessage(), $authToken));
+        } catch (Throwable $e) {
+            throw WhatsAppApiException::unreachable($this->redact(class_basename($e).': '.$e->getMessage(), $authToken));
+        }
+
+        $raw = $this->redact($response->body(), $authToken);
+
+        if ($response->failed()) {
+            throw WhatsAppApiException::fromResponse($response->status(), $raw);
+        }
+
+        $json = $response->json();
+
+        return ['templates' => is_array($json) ? $this->templatesIn($json) : [], 'raw' => $raw];
+    }
+
+    /**
      * Remove the token from anything about to be stored or shown.
      *
      * An echo does not come back as typed. JSON escapes a slash as "\/", and
@@ -123,6 +179,86 @@ class ElevenZaClient
             '$1[redacted]',
             $text,
         );
+    }
+
+    /**
+     * The first list of named entries anywhere in the response, read as
+     * templates. One entry per name and language.
+     *
+     * @return list<array{name: string, language: ?string, body: ?string, variables: ?int}>
+     */
+    private function templatesIn(array $json): array
+    {
+        if (array_is_list($json) && $json !== [] && collect($json)->contains(fn ($item) => is_array($item) && $this->field($item, self::TEMPLATE_NAME_KEYS) !== null)) {
+            return collect($json)
+                ->filter(fn ($item) => is_array($item) && is_string($this->field($item, self::TEMPLATE_NAME_KEYS)))
+                ->map(fn (array $item) => $this->templateFrom($item))
+                ->unique(fn (array $t) => $t['name'].'|'.$t['language'])
+                ->values()
+                ->all();
+        }
+
+        foreach ($json as $value) {
+            if (is_array($value) && ($found = $this->templatesIn($value)) !== []) {
+                return $found;
+            }
+        }
+
+        return [];
+    }
+
+    /** @return array{name: string, language: ?string, body: ?string, variables: ?int} */
+    private function templateFrom(array $item): array
+    {
+        $language = $this->field($item, self::TEMPLATE_LANGUAGE_KEYS);
+
+        if (is_array($language)) {
+            $language = $this->field($language, ['code', 'language']);
+        }
+
+        $body = $this->field($item, self::TEMPLATE_BODY_KEYS);
+
+        // WhatsApp's own shape: components[{type: BODY, text}]
+        if (! is_string($body) && is_array($components = $this->field($item, ['components']))) {
+            $body = collect($components)
+                ->first(fn ($c) => is_array($c) && strtoupper((string) ($c['type'] ?? '')) === 'BODY')['text'] ?? null;
+        }
+
+        $body = is_string($body) && trim($body) !== '' ? $body : null;
+
+        $variables = $body !== null && preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $m)
+            ? max(array_map('intval', $m[1]))
+            : ($body !== null ? 0 : null);
+
+        if ($variables === null && is_numeric($count = $this->field($item, self::TEMPLATE_COUNT_KEYS))) {
+            $variables = (int) $count;
+        }
+
+        return [
+            'name' => trim((string) $this->field($item, self::TEMPLATE_NAME_KEYS)),
+            'language' => is_string($language) && $language !== '' ? $language : null,
+            'body' => $body,
+            'variables' => $variables,
+        ];
+    }
+
+    /**
+     * The value under the first key that, lowercased with underscores and
+     * spaces removed, is one of these. One level deep only.
+     *
+     * @param  list<string>  $keys
+     */
+    private function field(array $item, array $keys): mixed
+    {
+        foreach ($keys as $wanted) {
+            foreach ($item as $key => $value) {
+                if (str_replace(['_', ' '], '', strtolower((string) $key)) === $wanted && $value !== null && $value !== '') {
+                    return $value;
+                }
+            }
+        }
+
+        return null;
     }
 
     /** The first non-empty scalar under a message-id-looking key, anywhere in the response. */

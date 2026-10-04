@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AutomationController;
 use App\Http\Controllers\AutomationRuleController;
+use App\Http\Controllers\AutoSendController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ChannelPartnerController;
 use App\Http\Controllers\DashboardController;
@@ -54,6 +55,7 @@ Route::middleware(['auth'])->group(function () {
     // one message to one lead; LeadPolicy@view is checked in the controller
     Route::get('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'show'])->name('leads.whatsapp.show');
     Route::post('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'send'])->name('leads.whatsapp.send');
+    Route::put('/leads/{lead}/whatsapp/opt-out', [LeadWhatsAppController::class, 'optOut'])->name('leads.whatsapp.opt-out');
     Route::post('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])
         ->name('leads.check-duplicate');
 
@@ -459,6 +461,20 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('/automation/rules/{rule}', [AutomationRuleController::class, 'destroy'])
             ->name('automation.rules.destroy');
 
+        /*
+         | Auto-send: what each stage sends. Choosing a message writes or
+         | updates the stage's rule; None switches it off.
+         */
+        Route::put('/automation/auto-send/{slot}', [AutoSendController::class, 'update'])
+            ->name('automation.auto_send.update');
+
+        /*
+         | Read 11za's template list for the Messages dropdown. JSON, and a
+         | POST because it asks 11za and keeps what came back.
+         */
+        Route::post('/automation/templates/provider', [MessageTemplateController::class, 'provider'])
+            ->name('automation.templates.provider');
+
         Route::post('/automation/templates', [MessageTemplateController::class, 'store'])
             ->name('automation.templates.store');
         Route::put('/automation/templates/{template}', [MessageTemplateController::class, 'update'])
@@ -479,6 +495,14 @@ Route::middleware(['auth'])->group(function () {
             ->name('automation.messages.send');
         Route::post('/automation/messages/{message}/cancel', [MessageQueueController::class, 'cancel'])
             ->name('automation.messages.cancel');
+        /*
+         | Settling a message whose outcome is unknown, after looking it up in
+         | 11za's own message log: it delivered, or it never went (send again).
+         */
+        Route::post('/automation/messages/{message}/checked-delivered', [MessageQueueController::class, 'checkedDelivered'])
+            ->name('automation.messages.checked-delivered');
+        Route::post('/automation/messages/{message}/checked-not-sent', [MessageQueueController::class, 'checkedNotSent'])
+            ->name('automation.messages.checked-not-sent');
 
         Route::put('/automation/whatsapp', [AutomationController::class, 'updateWhatsApp'])
             ->name('automation.whatsapp.update');

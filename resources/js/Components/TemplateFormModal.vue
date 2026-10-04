@@ -1,49 +1,40 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
 import HelpTip from './HelpTip.vue'
 
 /*
- | The WhatsApp message editor.
+ | A message: which 11za template, and what goes into each of its variables.
  |
- | Two things make this usable by somebody who has never written a template:
+ | The wording is 11za's, so there is nothing to write here. What only the CRM
+ | knows is that the template's {{1}} is the lead's first name and {{2}} the
+ | project — without that every send goes out blank — so the screen is: pick
+ | the template, then one dropdown per variable.
  |
- |   THE PICKER shows each placeholder with an example of what it becomes.
- |   "{owner_phone}" means nothing; "{owner_phone} → +91 98200 00002" means
- |   something. Clicking one drops it into the message at the cursor, so nobody
- |   has to type braces correctly.
- |
- |   THE PREVIEW renders the message against a sample customer as it is typed.
- |   A misspelled placeholder shows up as a literal "{custamer_name}" sitting in
- |   the middle of an otherwise finished message, which is far more obvious than
- |   any validation error would be.
- |
- | The category is a real decision and not a label — utility costs roughly an
- | eighth of marketing — so it is a required choice with the difference printed
- | next to it, rather than something defaulted quietly.
+ | The template is picked from 11za's own list when it could be read, which is
+ | what stops a mistyped name reaching 11za as "template doesn't exist". When
+ | the list is not available it falls back to typing the name and language.
  */
 const props = defineProps({
   show: Boolean,
   template: { type: Object, default: null },
   // { name: { label, example } } from config/automation.php
   placeholders: { type: Object, required: true },
-  // { utility: { label, cost_note, hint } }
-  categories: { type: Object, required: true },
+  // [{ name, language, body, variables }] as last read from 11za
+  providerTemplates: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close'])
 
 const editing = computed(() => !!props.template)
-const bodyRef = ref(null)
 
 const form = useForm({
   name: '',
-  category: 'utility',
-  body: '',
-  is_active: true,
   provider_template_name: '',
   provider_template_language: 'en',
+  placeholder_map: [],
+  is_active: true,
 })
 
 watch(() => props.show, open => {
@@ -52,85 +43,57 @@ watch(() => props.show, open => {
   form.defaults(props.template
     ? {
         name: props.template.name,
-        category: props.template.category,
-        body: props.template.body,
-        is_active: props.template.is_active,
         provider_template_name: props.template.provider_template_name ?? '',
         provider_template_language: props.template.provider_template_language ?? 'en',
+        placeholder_map: [...(props.template.placeholder_map ?? [])],
+        is_active: props.template.is_active,
       }
-    : { name: '', category: 'utility', body: '', is_active: true, provider_template_name: '', provider_template_language: 'en' })
+    : { name: '', provider_template_name: '', provider_template_language: 'en', placeholder_map: [], is_active: true })
 
   form.reset()
   form.clearErrors()
 })
 
-/* ---------------- the picker ---------------- */
+/* ---------------- the 11za template ---------------- */
+
+const fromList = computed(() => props.providerTemplates.length > 0)
+const pickKey = t => `${t.name}|${t.language ?? ''}`
+
+const picked = computed(() => props.providerTemplates.find(t =>
+  t.name === form.provider_template_name
+  && (t.language === null || t.language === form.provider_template_language)) ?? null)
+
+// a saved name 11za no longer lists stays selectable, so editing does not lose it
+const missingFromList = computed(() =>
+  fromList.value && form.provider_template_name && !picked.value)
+
+const onPick = event => {
+  const t = props.providerTemplates.find(p => pickKey(p) === event.target.value)
+
+  form.provider_template_name = t?.name ?? ''
+  form.provider_template_language = t?.language ?? form.provider_template_language ?? 'en'
+
+  if (!t) return
+  if (!form.name) form.name = t.name.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+
+  // one dropdown per variable, as many as 11za says the template has
+  if (t.variables !== null && t.variables !== undefined) {
+    form.placeholder_map = Array.from({ length: t.variables }, (_, i) => form.placeholder_map[i] ?? '')
+  }
+}
+
+/* ---------------- the variables ---------------- */
 
 const placeholderList = computed(() => Object.entries(props.placeholders))
 
-/**
- * Drop a placeholder in at the cursor.
- *
- * At the cursor rather than at the end, because the whole point is writing
- * "Namaste {first_name}, thank you…" in one pass. Falls back to appending if
- * the textarea has never been focused.
- */
-const insert = name => {
-  const token = `{${name}}`
-  const el = bodyRef.value
+// fixed by 11za's list when it said how many; otherwise the admin adds them
+const variablesFixed = computed(() => picked.value?.variables !== null && picked.value?.variables !== undefined)
 
-  if (!el) {
-    form.body += token
-    return
-  }
+const addVariable = () => form.placeholder_map.push('')
+const removeVariable = () => form.placeholder_map.pop()
 
-  const start = el.selectionStart ?? form.body.length
-  const end = el.selectionEnd ?? form.body.length
-
-  form.body = form.body.slice(0, start) + token + form.body.slice(end)
-
-  // put the caret after what was just inserted, on the next tick, so typing
-  // carries on where the reader's eye is
-  requestAnimationFrame(() => {
-    el.focus()
-    el.setSelectionRange(start + token.length, start + token.length)
-  })
-}
-
-/* ---------------- the preview ---------------- */
-
-/*
- | Rendered in the browser from the same examples the picker shows, so the two
- | can never disagree about what {project} turns into. The server renders the
- | identical thing with TemplateRenderer::preview() for the list on the page —
- | the examples live in config and both sides read them.
- */
-const preview = computed(() => {
-  let out = form.body
-
-  Object.entries(props.placeholders).forEach(([name, meta]) => {
-    out = out.split(`{${name}}`).join(meta.example)
-  })
-
-  return out
-})
-
-/*
- | Anything in braces that is not a placeholder we know.
- |
- | A warning, never a refusal. A message may legitimately contain a brace, and
- | blocking the save on a false positive would leave the admin unable to write
- | what they meant. The preview beside it makes the mistake obvious anyway.
- */
-const unknown = computed(() => {
-  const known = Object.keys(props.placeholders)
-  const found = form.body.match(/\{([a-z_]+)\}/g) ?? []
-
-  return [...new Set(found.map(s => s.slice(1, -1)).filter(n => !known.includes(n)))]
-})
-
-const costNote = computed(() => props.categories[form.category]?.cost_note ?? '')
-const categoryHint = computed(() => props.categories[form.category]?.hint ?? '')
+// Built here because Vue reads a literal "{{" in the markup as an interpolation
+const slotLabel = i => `{{${i + 1}}}`
 
 const submit = () => {
   const options = { preserveScroll: true, onSuccess: () => emit('close') }
@@ -142,117 +105,94 @@ const submit = () => {
 </script>
 
 <template>
-  <Modal :show="show" :title="editing ? 'Edit message' : 'New message'" max-width="max-w-3xl" @close="emit('close')">
+  <Modal :show="show" :title="editing ? 'Edit message' : 'New message'" max-width="max-w-2xl" @close="emit('close')">
     <div class="space-y-5">
 
-      <div class="grid gap-4 sm:grid-cols-2">
-        <FormField label="Message name" required :error="form.errors.name"
-                   hint="What you will pick it by in a rule. The customer never sees this.">
-          <input v-model="form.name" type="text" class="w-full" maxlength="120" />
-        </FormField>
-
-        <FormField label="Category" required :error="form.errors.category" :hint="categoryHint">
-          <select v-model="form.category" class="w-full">
-            <option v-for="(meta, key) in categories" :key="key" :value="key">{{ meta.label }}</option>
+      <!-- ---------------- the 11za template ---------------- -->
+      <div v-if="fromList">
+        <FormField label="11za template" required :error="form.errors.provider_template_name"
+                   hint="From your 11za account. The wording is set up in 11za, not here.">
+          <select class="w-full" :value="picked ? pickKey(picked) : ''" @change="onPick">
+            <option value="">{{ missingFromList ? `${form.provider_template_name} (not in 11za's list)` : 'Choose a template…' }}</option>
+            <option v-for="t in providerTemplates" :key="pickKey(t)" :value="pickKey(t)">
+              {{ t.name }}{{ t.language ? ` (${t.language})` : '' }}
+            </option>
           </select>
         </FormField>
+        <p v-if="missingFromList" class="warn-box mt-2">
+          11za does not list “{{ form.provider_template_name }}” any more. Sends will fail until you
+          choose a template that exists.
+        </p>
       </div>
 
-      <!--
-        The price difference, on screen, at the moment the choice is made.
-        Meta bills per conversation and marketing is roughly eight times
-        utility — which is the sort of thing an office finds out from a bill.
-      -->
-      <div class="warn-box flex items-start gap-2">
-        <span class="flex-1">
-          <strong>Cost:</strong> {{ costNote }}
-        </span>
-        <HelpTip title="Why the category matters" align="right">
-          WhatsApp charges per conversation, and the price depends on this box.
-          <strong>Utility</strong> is for messages about something the customer already started —
-          a brochure they asked for, a visit they booked. <strong>Marketing</strong> is for
-          anything they did not ask for: offers, launches, festive wishes. Marketing costs
-          roughly eight times as much, so a friendly Diwali message to two thousand leads is not
-          a small decision.
-          <br><br>
-          This only affects billing once WhatsApp API sending is set up. Sending by hand from the
-          Queue costs nothing.
-        </HelpTip>
-      </div>
-
-      <!-- ---------------- the body ---------------- -->
-      <FormField label="Message" required :error="form.errors.body">
-        <textarea ref="bodyRef" v-model="form.body" rows="7" class="w-full font-mono text-sm"
-                  maxlength="1024" placeholder="Namaste {first_name}, thank you for your interest in {project}." />
-      </FormField>
-
-      <div>
-        <div class="mb-2 flex items-center gap-1.5">
-          <span class="text-xs font-semibold text-slate-500">Drop in a detail</span>
-          <HelpTip title="Placeholders">
-            These are filled in with the real customer's details when the message is created.
-            Click one to add it where your cursor is. Anything in braces that is not on this
-            list will be sent to the customer exactly as you typed it.
-          </HelpTip>
-        </div>
-
-        <div class="flex flex-wrap gap-1.5">
-          <button
-            v-for="[name, meta] in placeholderList" :key="name"
-            type="button" class="btn-xs text-left"
-            :title="meta.label"
-            @click="insert(name)"
-          >
-            <span class="font-mono">{{ '{' + name + '}' }}</span>
-            <span class="ml-1 text-slate-400">→ {{ meta.example }}</span>
-          </button>
-        </div>
-      </div>
-
-      <p v-if="unknown.length" class="warn-box">
-        <strong>{{ unknown.map(n => '{' + n + '}').join(', ') }}</strong>
-        {{ unknown.length === 1 ? 'is not a placeholder this CRM knows' : 'are not placeholders this CRM knows' }}.
-        It will be sent to the customer exactly as written. Check the spelling against the buttons above.
-      </p>
-
-      <!-- ---------------- the preview ---------------- -->
-      <div>
-        <div class="mb-2 flex items-center gap-1.5">
-          <span class="text-xs font-semibold text-slate-500">What the customer sees</span>
-          <HelpTip title="Sample customer">
-            Made up from the examples on the buttons above. The real message uses the actual
-            lead's name, project and the staff member handling them.
-          </HelpTip>
-        </div>
-
-        <!-- a WhatsApp-ish bubble, so it reads as a message rather than a field -->
-        <div class="rounded-xl bg-slate-100 p-3">
-          <div class="max-w-md whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-sm
-                      leading-relaxed text-slate-800 shadow-sm">
-            {{ preview || 'Your message will appear here as you type it.' }}
-          </div>
-        </div>
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-3">
-        <FormField class="sm:col-span-2" label="11za template name (for sending by API)"
+      <div v-else class="grid gap-4 sm:grid-cols-3">
+        <FormField class="sm:col-span-2" label="11za template name" required
                    :error="form.errors.provider_template_name"
-                   hint="Exactly as it is named in the 11za panel. Its variables are filled in the order the placeholders appear above. Leave empty for click-to-send only.">
+                   hint="The list could not be read from 11za, so type the name exactly as it appears in the 11za panel.">
           <input v-model="form.provider_template_name" type="text" class="w-full" placeholder="site_visit_thanks" />
         </FormField>
-        <FormField label="Language" :error="form.errors.provider_template_language"
-                   hint="The template's language code in 11za — usually en.">
+        <FormField label="Language" required :error="form.errors.provider_template_language"
+                   hint="Usually en.">
           <input v-model="form.provider_template_language" type="text" class="w-full" placeholder="en" />
         </FormField>
       </div>
 
+      <!-- 11za's own wording, read-only, so the variables can be matched to it -->
+      <div v-if="picked?.body">
+        <span class="text-xs font-semibold text-slate-500">The template in 11za</span>
+        <div class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">{{ picked.body }}</div>
+      </div>
+
+      <!-- ---------------- the variables ---------------- -->
+      <div>
+        <div class="mb-2 flex items-center gap-1.5">
+          <span class="text-xs font-semibold text-slate-500">What goes into each variable</span>
+          <HelpTip title="Variables">
+            11za's template has numbered gaps — {{ slotLabel(0) }}, {{ slotLabel(1) }} and so on.
+            11za does not know what they are meant to be; this is where you say. Each one is filled
+            in with the real lead's details when the message is sent.
+          </HelpTip>
+        </div>
+
+        <p v-if="!form.placeholder_map.length" class="mb-2 text-xs text-slate-400">
+          {{ variablesFixed ? 'This template has no variables.' : 'No variables yet. Add one for each numbered gap in the 11za template.' }}
+        </p>
+
+        <div v-for="(field, i) in form.placeholder_map" :key="i" class="mb-2 flex items-center gap-2">
+          <span class="w-12 flex-none font-mono text-xs text-slate-500">{{ slotLabel(i) }}</span>
+          <select v-model="form.placeholder_map[i]" class="flex-1">
+            <option value="">Choose…</option>
+            <option v-for="[key, meta] in placeholderList" :key="key" :value="key">
+              {{ meta.label }} — e.g. {{ meta.example }}
+            </option>
+          </select>
+        </div>
+        <p v-for="(message, key) in form.errors" v-show="key.startsWith('placeholder_map')" :key="key"
+           class="text-xs text-rose-600">{{ message }}</p>
+
+        <div v-if="!variablesFixed" class="mt-2 flex gap-1.5">
+          <button type="button" class="btn-xs" @click="addVariable">+ Add a variable</button>
+          <button v-if="form.placeholder_map.length" type="button" class="btn-xs" @click="removeVariable">Remove the last</button>
+        </div>
+      </div>
+
+      <FormField label="Name in the CRM" required :error="form.errors.name"
+                 hint="What you pick it by on the Auto-send tab. The customer never sees this.">
+        <input v-model="form.name" type="text" class="w-full" maxlength="120" />
+      </FormField>
+
+      <!-- wording written before the CRM stopped holding it: kept, never edited -->
+      <div v-if="template?.old_body">
+        <span class="text-xs font-semibold text-slate-500">Old wording, only used when sending by hand</span>
+        <div class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">{{ template.old_body }}</div>
+      </div>
+
       <label class="flex items-center gap-2 text-sm text-slate-700">
         <input v-model="form.is_active" type="checkbox" class="h-4 w-4" />
-        Available to rules
+        Can be sent
         <HelpTip title="Switching a message off">
-          A switched-off message disappears from the rule builder but stays here. Any rule already
-          using it will skip that step and say so in the Activity tab, rather than failing.
-          It is the gentle version of deleting.
+          A switched-off message disappears from the Auto-send dropdowns and the lead's WhatsApp
+          button. A stage already set to send it skips it and says so in the Activity tab.
         </HelpTip>
       </label>
     </div>

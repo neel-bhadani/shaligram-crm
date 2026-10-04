@@ -66,6 +66,7 @@ class LeadTimeline
         'reason' => 'Reason for loss',
         'booked_unit' => 'Booked unit',
         'assigned_to' => 'Assigned to',
+        'whatsapp_opt_out' => 'WhatsApp',
     ];
 
     /** Ties on the same second: the lead first, what was done to it, then what it set off. */
@@ -427,6 +428,7 @@ class LeadTimeline
             'assigned_to' => $this->userName($raw),
             'source' => CrmTaxonomy::sourceLabel($raw),
             'reason' => config("crm.lost_reasons.$raw", $raw),
+            'whatsapp_opt_out' => $raw === 'opted_out' ? 'Opted out' : 'Messages allowed',
             default => $raw,
         };
     }

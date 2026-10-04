@@ -1,13 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
-import { Head, router } from '@inertiajs/vue3'
+import { Head } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import StageBadge from './StageBadge.vue'
 import LeadActivityTimeline from './LeadActivityTimeline.vue'
 import LeadWhatsAppPanel from './LeadWhatsAppPanel.vue'
+import SectionBoundary from './SectionBoundary.vue'
+import LeadReassignPanel from './LeadReassignPanel.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
-import { pickable } from '@/composables/useTaxonomy.js'
 
 const props = defineProps({
   show: Boolean,
@@ -29,12 +30,8 @@ const timeline = ref([])
 // other leads on this number — see LeadController::sameMobile()
 const sameMobile = ref([])
 const loading = ref(false)
-// role => candidates, not a flat list — see LeadController::reassignCandidates().
-// The stage picker below decides which role's list is offered.
+// role => candidates, not a flat list — see LeadController::reassignCandidates()
 const reassignCandidates = ref({})
-const reassignStage = ref('')
-const reassignTo = ref('')
-const reassigning = ref(false)
 
 async function load() {
   if (!props.show || !props.leadId) {
@@ -49,7 +46,6 @@ async function load() {
     timeline.value = data.timeline ?? []
     reassignCandidates.value = data.reassignCandidates ?? {}
     sameMobile.value = data.sameMobile ?? []
-    reassignStage.value = lead.value?.stage ?? ''
   } catch (e) {
     // A non-admin who just reassigned this lead away from themselves no
     // longer passes LeadPolicy::view() on it — the same rule that dropped it
@@ -65,55 +61,11 @@ async function load() {
   }
 }
 
-watch(() => props.show, v => {
-  reassignTo.value = ''
-  load()
-})
-
-// picking a different stage changes who is offered — the choice made under
-// the old stage rarely still makes sense under the new one
-watch(reassignStage, () => { reassignTo.value = '' })
-
-/*
- | pickable(), the same helper the lead form's own stage field uses: every
- | active stage, plus the lead's current one even if it has since been
- | retired. Nothing here restricts which stage may follow which — see
- | LeadReassignRequest, which validates the same "active, or the lead's own
- | value" rule as every other stage field in the application.
- */
-const reassignStageOptions = computed(() =>
-  pickable(props.options.stages, props.options.activeStages, lead.value?.stage))
-
-// the desk the picked stage belongs to, falling back to the lead's own
-// current owner's role for a terminal stage — see CrmTaxonomy::stageOwnerRoles()
-const reassignRole = computed(() => props.options.stageOwnerRoles?.[reassignStage.value] ?? lead.value?.assigned_role)
-
-const reassignRoleCandidates = computed(() => reassignCandidates.value[reassignRole.value] ?? [])
+watch(() => props.show, () => load())
 
 // shown whenever ANY stage's desk has somebody to offer, not only the one the
 // lead happens to be sitting in right now — see LeadController::reassignCandidates()
 const canReassign = computed(() => Object.values(reassignCandidates.value).some(list => list.length))
-
-function reassign() {
-  if (!reassignTo.value) { return }
-
-  reassigning.value = true
-  // Inertia's router, not a bare axios PUT: leads.reassign redirects back()
-  // on success, and only Inertia's client follows a PUT redirect as a GET
-  // (a 303) — a plain axios PUT would replay the redirect as PUT against a
-  // route that doesn't accept it (405). Going through the router also gets
-  // the success toast for free, since app.js flashes it on every Inertia
-  // response.
-  router.put(route('leads.reassign', props.leadId), {
-    assigned_to: reassignTo.value,
-    stage: reassignStage.value || null,
-  }, {
-    preserveScroll: true,
-    preserveState: true,
-    onSuccess: () => { reassignTo.value = ''; load() },
-    onFinish: () => { reassigning.value = false },
-  })
-}
 
 const fmt = v => v ? new Date(v).toLocaleString('en-IN',
   { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
@@ -167,27 +119,19 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
         </ul>
       </div>
 
-      <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
+      <!-- each section fails on its own, without blanking the lead — see SectionBoundary -->
+      <SectionBoundary name="Activity">
+        <LeadActivityTimeline :timeline="timeline" :stage-colors="options.stageColors" />
+      </SectionBoundary>
 
-      <LeadWhatsAppPanel :lead-id="lead.id" />
+      <SectionBoundary name="WhatsApp">
+        <LeadWhatsAppPanel :lead-id="lead.id" />
+      </SectionBoundary>
 
-      <div v-if="allowEdit && canReassign" class="mt-6 border-t border-slate-100 pt-5">
-        <h4 class="text-xs font-semibold text-slate-500">Reassign</h4>
-        <p class="mt-0.5 text-xs text-slate-400">Move this lead to a different stage and owner.</p>
-        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-          <select v-model="reassignStage" class="w-full sm:!w-auto sm:!py-1.5 sm:text-xs" aria-label="Reassign stage">
-            <option v-for="s in reassignStageOptions" :key="s.key" :value="s.key">{{ s.label }}</option>
-          </select>
-          <select v-model="reassignTo" class="w-full sm:!w-auto sm:!py-1.5 sm:text-xs" aria-label="Reassign to">
-            <option value="" disabled>Reassign to…</option>
-            <option v-for="c in reassignRoleCandidates" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select>
-          <button type="button" class="btn-ghost w-full sm:w-auto sm:!py-1.5 sm:text-xs"
-                  :disabled="!reassignTo || reassigning" @click="reassign">
-            {{ reassigning ? 'Reassigning…' : 'Reassign' }}
-          </button>
-        </div>
-      </div>
+      <SectionBoundary name="Reassign">
+        <LeadReassignPanel v-if="allowEdit && canReassign" :lead="lead" :candidates="reassignCandidates"
+                           :options="options" @reassigned="load" />
+      </SectionBoundary>
     </div>
 
     <template #footer>

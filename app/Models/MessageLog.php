@@ -18,6 +18,8 @@ class MessageLog extends Model
     protected $casts = [
         'confirmed' => 'boolean',
         'sent_at' => 'datetime',
+        'sending_started_at' => 'datetime',
+        'checked_at' => 'datetime',
         'params' => 'array',
     ];
 
@@ -28,8 +30,21 @@ class MessageLog extends Model
     public const UNCONFIRMED_ADVICE =
         'Check the 11za panel before resending — it may well have been delivered.';
 
-    /** Still somewhere between the rule and 11za. */
-    public const IN_FLIGHT = ['queued', 'sending', 'sent'];
+    /**
+     * Still somewhere between the rule and 11za — or may already have reached
+     * the customer. `unknown` is here on purpose: a message that may have
+     * arrived must not be sent again by a rule.
+     */
+    public const IN_FLIGHT = ['queued', 'sending', 'sent', 'unknown'];
+
+    /**
+     * Beside an `unknown` row. Where to look, before pressing either button:
+     * a guess here marks a customer contacted who never was, or messages
+     * them twice.
+     */
+    public const UNKNOWN_ADVICE =
+        'The send was interrupted after it was handed to 11za, so it may or may not have reached the customer. '
+        .'Look for it in the 11za panel\'s message log — this number, around this time — before deciding.';
 
     /**
      * What happened, in words that do not overclaim.
@@ -42,12 +57,11 @@ class MessageLog extends Model
     public function outcome(): string
     {
         return match ($this->status) {
-            'sent' => $this->isUnconfirmed()
-                ? 'Sent (unconfirmed) — 11za accepted it but no message id was recognised. '.self::UNCONFIRMED_ADVICE
-                : 'Accepted by 11za'.($this->provider_message_id ? " ({$this->provider_message_id})" : ''),
+            'sent' => $this->sentOutcome(),
             'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
             'queued' => $this->mode === 'api' ? 'Waiting to be sent by API' : 'Waiting for somebody to open it',
             'sending' => 'Being sent',
+            'unknown' => 'Outcome unknown — '.self::UNKNOWN_ADVICE,
             'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
             'skipped' => 'Not sent',
             'cancelled' => 'Cancelled',
@@ -58,7 +72,30 @@ class MessageLog extends Model
     /** An API send 11za answered 2xx to, without a message id the CRM recognised. */
     public function isUnconfirmed(): bool
     {
-        return $this->status === 'sent' && $this->mode === 'api' && ! $this->confirmed;
+        return $this->status === 'sent' && $this->mode === 'api' && ! $this->confirmed && $this->check_result !== 'delivered';
+    }
+
+    /** The words for a `sent` row, which has the most ways to have got there. */
+    private function sentOutcome(): string
+    {
+        if ($this->check_result === 'delivered') {
+            return 'Sent — '.($this->checker?->display_name ?? 'somebody').' found it in the 11za log on '
+                .$this->checked_at?->format('j M, g:i a');
+        }
+
+        $outcome = $this->isUnconfirmed()
+            ? 'Sent (unconfirmed) — 11za accepted it but no message id was recognised. '.self::UNCONFIRMED_ADVICE
+            : 'Accepted by 11za'.($this->provider_message_id ? " ({$this->provider_message_id})" : '');
+
+        return $outcome.($this->check_result === 'not_sent' ? $this->resentNote() : '');
+    }
+
+    /** " — sent again after Ann found no trace of it in the 11za log (4 Oct)" */
+    private function resentNote(): string
+    {
+        return ' — sent again after '.($this->checker?->display_name ?? 'somebody')
+            .' found no trace of the first attempt in the 11za log'
+            .($this->checked_at ? ' ('.$this->checked_at->format('j M').')' : '');
     }
 
     public function lead()
@@ -76,9 +113,26 @@ class MessageLog extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** Who looked it up in 11za and settled an `unknown` row. */
+    public function checker()
+    {
+        return $this->belongsTo(User::class, 'checked_by');
+    }
+
     public function rule()
     {
         return $this->belongsTo(AutomationRule::class, 'rule_id');
+    }
+
+    /**
+     * Claimed by a worker that never came back: `sending` for longer than any
+     * real send can take — the request times out in seconds and the worker
+     * itself in a minute.
+     */
+    public function scopeAbandoned($query)
+    {
+        return $query->where('status', 'sending')
+            ->where('sending_started_at', '<', now()->subMinutes((int) config('automation.whatsapp.api.stuck_after_minutes', 5)));
     }
 
     /** Still waiting for a person to pick it up. */
