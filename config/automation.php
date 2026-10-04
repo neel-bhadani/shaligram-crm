@@ -558,7 +558,16 @@ return [
             // because it is the one most likely to carry the wording; the
             // response shape is not documented, so the parser is defensive
             'list_path' => '/apis/template/getTemplatesAll',
-            'list_limit' => 100,
+            // page sizes asked for, in order. 11za's maximum is undocumented,
+            // so a size 11za refuses falls back to the next; the one that
+            // worked is shown on the tab. The first is more than is kept, so
+            // "the first 500 of N" can say N
+            'list_limits' => [1000, 500, 100],
+            // at most this many are kept for the dropdown; any other is typed
+            'list_cap' => 500,
+            // how much of 11za's unreadable answer is shown on screen. Shown
+            // once, never stored
+            'list_raw_excerpt' => 2000,
             'timeout' => 15,
 
             // timeouts, 429 and 5xx: tries in all, and the pause before each

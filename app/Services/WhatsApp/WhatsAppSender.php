@@ -8,8 +8,12 @@ use App\Models\Integration;
 use App\Models\Lead;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Models\ProviderTemplate;
 use App\Models\User;
 use App\Support\CrmTaxonomy;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Queueing, opening and sending WhatsApp messages. One message, one lead.
@@ -518,91 +522,265 @@ class WhatsAppSender
     /**
      * Read the template list from 11za, for the Messages tab's dropdown.
      *
-     * Kept on the settings row with 11za's raw answer, so the dropdown still
-     * fills after a reload and the raw answer can be read when the list comes
-     * back empty. 11za's wording, when the list carries it, is copied onto
-     * every message set up as that template — that copy is the only wording
-     * the CRM keeps for a new message, and it is never typed by anybody.
+     * Kept in `provider_templates`: name, language and variable count, at most
+     * `list_cap` of them, replaced whole on every successful read. 11za's
+     * wording, when the list carries it, is copied onto every message set up
+     * as that template — that copy is the only wording the CRM keeps, and it
+     * is never typed by anybody. 11za's raw answer is never stored: when it
+     * cannot be read it comes back once, trimmed, for the screen.
      *
-     * Always answers. When 11za cannot be asked, or answers with nothing the
-     * parser recognises, the tab falls back to typing the name and language.
+     * 11za's maximum page size is undocumented, so the sizes in `list_limits`
+     * are tried in turn: an answer from 11za that is a refusal, or carries no
+     * template, moves on to the next size. No answer at all (a timeout) does
+     * not — that is not about the size. The size that worked is stored and
+     * shown, so the first real read says what 11za's limit is.
      *
-     * @return array{ok: bool, message: string, templates: list<array<string, mixed>>, raw: ?string, at: ?string}
+     * Always answers, and never throws. A timeout, an outage, an answer the
+     * parser does not recognise and a database error all come back as `ok`
+     * false with a sentence, and the list already stored is left as it was.
+     * A failed read is remembered so the tab does not ask again by itself;
+     * only the Refresh button does.
+     *
+     * @return array{ok: bool, message: string, templates: list<array{name: string, language: ?string, variables: ?int}>, total: int, at: ?string, failed: bool, raw: ?string}
      */
     public function refreshProviderTemplates(): array
+    {
+        try {
+            return $this->readProviderTemplates();
+        } catch (Throwable $e) {
+            // the message only: the token may be in it, and the trace holds the request
+            Log::warning('11za template list: '.class_basename($e).': '.$this->redactQuietly($e->getMessage()));
+
+            $this->rememberListFailure();
+
+            return $this->listAnswer(false,
+                'Something went wrong reading the template list. Nothing was changed. '
+                .'Press Refresh to try again, or type the template name and language instead.');
+        }
+    }
+
+    /**
+     * The list as last read from 11za, and when, for the page.
+     *
+     * `total` is how many 11za listed at that read; more than the templates
+     * here means the list was cut at `list_cap`.
+     *
+     * @return array{templates: list<array{name: string, language: ?string, variables: ?int}>, total: int, at: ?string, page_size: ?int, failed: bool}
+     */
+    public function providerTemplateList(): array
+    {
+        $read = (array) $this->integration()->setting('template_list_read', []);
+
+        $templates = ProviderTemplate::orderBy('id')
+            ->limit($this->listCap())
+            ->get()
+            ->map(fn (ProviderTemplate $t) => $t->toListEntry())
+            ->all();
+
+        return [
+            'templates' => $templates,
+            'total' => max((int) ($read['total'] ?? 0), count($templates)),
+            'at' => $read['at'] ?? null,
+            'page_size' => $read['page_size'] ?? null,
+            'failed' => ($read['failed_at'] ?? null) !== null,
+        ];
+    }
+
+    /** @return array{ok: bool, message: string, templates: list<array<string, mixed>>, total: int, at: ?string, failed: bool, raw: ?string} */
+    private function readProviderTemplates(): array
     {
         $missing = $this->missingSettings();
 
         if ($missing !== []) {
-            return [
-                'ok' => false,
-                'message' => 'The 11za template list cannot be read until the '.collect($missing)->join(', ', ' and ')
-                    .' are saved. Type the template name and language instead.',
-                'templates' => [],
-                'raw' => null,
-                'at' => null,
-            ];
+            return $this->listAnswer(false,
+                'The 11za template list cannot be read until the '.collect($missing)->join(', ', ' and ')
+                .' are saved. Type the template name and language instead.');
+        }
+
+        $sizes = $this->listPageSizes();
+        $refused = [];
+
+        foreach ($sizes as $size) {
+            try {
+                $list = $this->client->listTemplates((string) $this->integration()->setting('auth_token'), $this->baseUrl(), $size);
+            } catch (WhatsAppApiException $e) {
+                // no answer at all is not about the size: asking again smaller
+                // would only wait out the same timeout
+                if ($e->httpStatus === null) {
+                    $this->rememberListFailure();
+
+                    return $this->listAnswer(false,
+                        'Could not read the template list from 11za. '.$e->getMessage()
+                        .$this->triedSizes($refused).' Nothing was changed. Press Refresh to try again, or type the template name and language instead.');
+                }
+
+                $refused[] = $size;
+                $last = ['message' => $e->getMessage(), 'raw' => $e->raw];
+
+                continue;
+            }
+
+            $entries = collect($list['templates'])
+                ->filter(fn (array $t) => $t['name'] !== '' && mb_strlen($t['name']) <= 255)
+                ->values();
+
+            if ($entries->isNotEmpty()) {
+                break;
+            }
+
+            $refused[] = $size;
+            $last = ['message' => '11za answered, but no template could be recognised in its answer (shown below).', 'raw' => $list['raw']];
+        }
+
+        if (count($refused) === count($sizes)) {
+            $this->rememberListFailure();
+
+            return $this->listAnswer(false,
+                'Could not read the template list from 11za. '.$last['message']
+                .' Tried page sizes '.implode(', ', $sizes).'; 11za refused or gave no templates for each — its last answer is shown.'
+                .' Nothing was changed. Press Refresh to try again, or type the template name and language instead.',
+                $last['raw']);
         }
 
         try {
-            $list = $this->client->listTemplates((string) $this->integration()->setting('auth_token'), $this->baseUrl());
-        } catch (WhatsAppApiException $e) {
-            return [
-                'ok' => false,
-                'message' => 'Could not read the template list from 11za. '.$e->getMessage().' Type the template name and language instead.',
-                'templates' => $this->providerTemplates(),
-                'raw' => $e->raw,
-                'at' => null,
-            ];
+            $this->storeProviderTemplates($entries->all(), $size);
+        } catch (Throwable $e) {
+            Log::warning('11za template list could not be saved: '.class_basename($e).': '.$this->redactQuietly($e->getMessage()));
+
+            $this->rememberListFailure();
+
+            return $this->listAnswer(false,
+                'The list was read from 11za but could not be saved. The previous list is unchanged. '
+                .'Press Refresh to try again.');
         }
 
-        $saved = [
-            'templates' => $list['templates'],
-            'raw' => $list['raw'],
-            'at' => now()->toIso8601String(),
-        ];
+        $total = $entries->count();
+        $cap = $this->listCap();
 
-        $integration = $this->integration();
-        $integration->mergeSettings(['template_list' => $saved]);
-        $integration->save();
+        return $this->listAnswer(true, ($total > $cap
+            ? "Showing the first {$cap} of {$total} templates from 11za. Type the name for any other."
+            : "11za lists {$total} template".($total === 1 ? '' : 's').'.')
+            ." Read with page size {$size}".$this->triedSizes($refused).'.');
+    }
 
-        foreach ($list['templates'] as $template) {
-            if ($template['body'] !== null) {
-                MessageTemplate::where('provider_template_name', $template['name'])
-                    ->when($template['language'], fn ($q, $language) => $q->where('provider_template_language', $language))
-                    ->update(['provider_body' => $template['body']]);
-            }
+    /** ", after 1000 was refused" — so the first real refresh tells us 11za's limit. */
+    private function triedSizes(array $refused): string
+    {
+        if ($refused === []) {
+            return '';
         }
 
-        $count = count($list['templates']);
+        return ', after '.implode(' and ', $refused).' '.(count($refused) === 1 ? 'was' : 'were').' refused';
+    }
 
-        return $saved + [
-            'ok' => $count > 0,
-            'message' => $count > 0
-                ? "11za lists {$count} template".($count === 1 ? '' : 's').'.'
-                : '11za answered, but no template could be recognised in its answer (shown below). Type the template name and language instead.',
-        ];
+    /** @return list<int> */
+    private function listPageSizes(): array
+    {
+        $sizes = array_values(array_filter(array_map('intval', (array) config('automation.whatsapp.api.list_limits', [100]))));
+
+        return $sizes === [] ? [100] : $sizes;
     }
 
     /**
-     * The list as last read from 11za, or empty.
+     * Replace the stored list, copy 11za's wording onto the messages set up
+     * as each template, and note when — all or nothing.
      *
-     * @return list<array{name: string, language: ?string, body: ?string, variables: ?int}>
+     * @param  list<array{name: string, language: ?string, body: ?string, variables: ?int}>  $entries
+     * @param  int  $pageSize  the size 11za accepted, kept so the tab can show it
      */
-    public function providerTemplates(): array
+    private function storeProviderTemplates(array $entries, int $pageSize): void
     {
-        return (array) data_get($this->integration()->setting('template_list'), 'templates', []);
+        DB::transaction(function () use ($entries, $pageSize) {
+            ProviderTemplate::query()->delete();
+
+            $now = now();
+
+            collect($entries)
+                ->take($this->listCap())
+                ->map(fn (array $t) => [
+                    'name' => $t['name'],
+                    'language' => $t['language'] !== null && mb_strlen($t['language']) <= 32 ? $t['language'] : null,
+                    'variables' => $t['variables'] !== null && $t['variables'] >= 0 && $t['variables'] <= 1000 ? $t['variables'] : null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ])
+                ->chunk(100)
+                ->each(fn ($chunk) => ProviderTemplate::insert($chunk->values()->all()));
+
+            foreach ($entries as $template) {
+                if ($template['body'] !== null) {
+                    MessageTemplate::where('provider_template_name', $template['name'])
+                        ->when($template['language'], fn ($q, $language) => $q->where('provider_template_language', $language))
+                        ->update(['provider_body' => $template['body']]);
+                }
+            }
+
+            $integration = $this->integration();
+            $integration->mergeSettings(['template_list_read' => [
+                'at' => $now->toIso8601String(),
+                'total' => count($entries),
+                'page_size' => $pageSize,
+                'failed_at' => null,
+            ]]);
+            $integration->save();
+        });
     }
 
-    /** 11za's wording for one template, from the last list read, or null. */
-    public function providerBodyFor(?string $name, ?string $language): ?string
+    /**
+     * Note that the last read failed, so the tab stops asking by itself.
+     * Best effort: when the database is what failed, this fails too, quietly.
+     */
+    private function rememberListFailure(): void
     {
-        if (blank($name)) {
-            return null;
+        try {
+            $integration = $this->integration();
+            $read = (array) $integration->setting('template_list_read', []);
+            $integration->mergeSettings(['template_list_read' => ['failed_at' => now()->toIso8601String()] + $read]);
+            $integration->save();
+        } catch (Throwable) {
+            // the answer to the admin already says what went wrong
+        }
+    }
+
+    /**
+     * The answer to a refresh: what happened, and the list as it now stands.
+     * 11za's raw answer comes back trimmed, and only when it explains a
+     * failure. It has had the token removed by ElevenZaClient.
+     *
+     * @return array{ok: bool, message: string, templates: list<array<string, mixed>>, total: int, at: ?string, failed: bool, raw: ?string}
+     */
+    private function listAnswer(bool $ok, string $message, ?string $raw = null): array
+    {
+        try {
+            $list = $this->providerTemplateList();
+        } catch (Throwable) {
+            $list = ['templates' => [], 'total' => 0, 'at' => null, 'page_size' => null, 'failed' => true];
         }
 
-        return collect($this->providerTemplates())
-            ->first(fn (array $t) => $t['name'] === $name && ($t['language'] === null || $t['language'] === $language))['body'] ?? null;
+        $limit = (int) config('automation.whatsapp.api.list_raw_excerpt', 2000);
+
+        if ($ok || $raw === null || trim($raw) === '') {
+            $raw = null;
+        } elseif (mb_strlen($raw) > $limit) {
+            $raw = mb_substr($raw, 0, $limit).'…';
+        }
+
+        return ['ok' => $ok, 'message' => $message] + $list + ['raw' => $raw];
+    }
+
+    /** The token removed from $text, or the whole text withheld when the token cannot be read. */
+    private function redactQuietly(string $text): string
+    {
+        try {
+            return $this->client->redact($text, (string) $this->integration()->setting('auth_token'));
+        } catch (Throwable) {
+            return '(not shown: the settings could not be read to remove the token)';
+        }
+    }
+
+    private function listCap(): int
+    {
+        return (int) config('automation.whatsapp.api.list_cap', 500);
     }
 
     /* ---------------- internals ---------------- */

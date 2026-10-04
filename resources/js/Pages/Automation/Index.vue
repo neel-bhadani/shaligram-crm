@@ -205,9 +205,11 @@ const setAutoSend = (row, value) => {
 /*
  | 11za's template list. Read on demand — the first time the Messages tab is
  | opened with the API set up, and whenever Refresh is pressed — and kept on
- | the server, so the dropdown fills straight away next time.
+ | the server, so the dropdown fills straight away next time. After a failed
+ | read the tab does not ask again by itself: only Refresh does.
  */
-const providerList = ref(props.providerTemplates ?? { templates: [], raw: null, at: null })
+const providerList = ref(props.providerTemplates ?? { templates: [], total: 0, at: null, failed: false })
+const providerTruncated = computed(() => providerList.value.total > providerList.value.templates.length)
 const providerResult = ref(null)
 const loadingProvider = ref(false)
 
@@ -217,10 +219,17 @@ const refreshProvider = () => {
   axios.post(route('automation.templates.provider'))
     .then(({ data }) => {
       providerResult.value = data
-      providerList.value = { templates: data.templates ?? [], raw: data.raw, at: data.at ?? providerList.value.at }
+      providerList.value = {
+        templates: data.templates ?? [],
+        total: data.total ?? 0,
+        at: data.at ?? providerList.value.at,
+        page_size: data.page_size ?? providerList.value.page_size,
+        failed: data.failed ?? !data.ok,
+      }
       if (data.ok) router.reload({ only: ['templates'] })
     })
     .catch(error => {
+      providerList.value = { ...providerList.value, failed: true }
       providerResult.value = {
         ok: false,
         message: error.response?.data?.message ?? 'The request did not reach the server. Type the template name and language instead.',
@@ -230,7 +239,8 @@ const refreshProvider = () => {
 }
 
 watch(tab, key => {
-  if (key === 'templates' && props.whatsapp.configured && !providerList.value.at && !providerResult.value) {
+  if (key === 'templates' && props.whatsapp.configured && !providerList.value.at
+      && !providerList.value.failed && !providerResult.value) {
     refreshProvider()
   }
 }, { immediate: true })
@@ -683,10 +693,20 @@ const whenShort = iso => iso
         {{ providerResult.message }}
         <pre v-if="providerResult.raw" class="mt-1.5 whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[10px]">11za said: {{ providerResult.raw }}</pre>
       </div>
-      <p v-else-if="providerList.at" class="mb-3 text-[11px] text-slate-400">
-        {{ providerList.templates.length }} template{{ providerList.templates.length === 1 ? '' : 's' }}
-        in 11za, read {{ when(providerList.at) }}.
+      <p v-else-if="providerList.failed" class="warn-box mb-4">
+        The last read from 11za failed. Press Refresh from 11za to try again.
       </p>
+      <p v-if="providerTruncated" class="warn-box mb-4">
+        Showing the first {{ providerList.templates.length }} of {{ providerList.total }} templates from 11za.
+        Type the name for any other.
+      </p>
+      <p v-else-if="providerList.at && !providerList.failed && !(providerResult && !providerResult.ok)"
+         class="mb-3 text-[11px] text-slate-400">
+        {{ providerList.templates.length }} template{{ providerList.templates.length === 1 ? '' : 's' }}
+        in 11za, read {{ when(providerList.at) }}<template v-if="providerList.page_size">
+        with page size {{ providerList.page_size }}</template>.
+      </p>
+      <p v-if="providerResult?.ok" class="mb-3 text-[11px] text-slate-500">{{ providerResult.message }}</p>
 
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">No messages set up yet</p>
@@ -1119,7 +1139,7 @@ const whenShort = iso => iso
 
     <TemplateFormModal
       :show="templateModal" :template="editingTemplate"
-      :placeholders="placeholders" :provider-templates="providerList.templates"
+      :placeholders="placeholders" :provider-templates="providerList.templates" :provider-truncated="providerTruncated"
       @close="templateModal = false"
     />
 

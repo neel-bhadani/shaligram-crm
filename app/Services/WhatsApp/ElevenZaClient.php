@@ -121,7 +121,7 @@ class ElevenZaClient
      *
      * @throws WhatsAppApiException
      */
-    public function listTemplates(#[SensitiveParameter] string $authToken, string $baseUrl): array
+    public function listTemplates(#[SensitiveParameter] string $authToken, string $baseUrl, int $limit = 100): array
     {
         $url = rtrim($baseUrl, '/').config('automation.whatsapp.api.list_path');
 
@@ -131,7 +131,7 @@ class ElevenZaClient
                 ->timeout((int) config('automation.whatsapp.api.timeout', 15))
                 ->post($url, [
                     'authToken' => $authToken,
-                    'limit' => (int) config('automation.whatsapp.api.list_limit', 100),
+                    'limit' => $limit,
                     'page' => 1,
                     'search' => '',
                 ]);

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useForm } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
@@ -15,15 +15,18 @@ import HelpTip from './HelpTip.vue'
  |
  | The template is picked from 11za's own list when it could be read, which is
  | what stops a mistyped name reaching 11za as "template doesn't exist". When
- | the list is not available it falls back to typing the name and language.
+ | the list is not available it falls back to typing the name and language,
+ | and when 11za listed more than the CRM keeps, either can be used.
  */
 const props = defineProps({
   show: Boolean,
   template: { type: Object, default: null },
   // { name: { label, example } } from config/automation.php
   placeholders: { type: Object, required: true },
-  // [{ name, language, body, variables }] as last read from 11za
+  // [{ name, language, variables }] as last read from 11za
   providerTemplates: { type: Array, default: () => [] },
+  // 11za listed more than are kept, so a name not in the list may be real
+  providerTruncated: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close'])
 
@@ -52,11 +55,15 @@ watch(() => props.show, open => {
 
   form.reset()
   form.clearErrors()
+
+  // a saved name past the end of a cut-down list opens as typed, not "missing"
+  typing.value = props.providerTruncated && !!form.provider_template_name && !picked.value
 })
 
 /* ---------------- the 11za template ---------------- */
 
-const fromList = computed(() => props.providerTemplates.length > 0)
+const typing = ref(false)
+const fromList = computed(() => props.providerTemplates.length > 0 && !typing.value)
 const pickKey = t => `${t.name}|${t.language ?? ''}`
 
 const picked = computed(() => props.providerTemplates.find(t =>
@@ -66,6 +73,15 @@ const picked = computed(() => props.providerTemplates.find(t =>
 // a saved name 11za no longer lists stays selectable, so editing does not lose it
 const missingFromList = computed(() =>
   fromList.value && form.provider_template_name && !picked.value)
+
+// 11za's wording is never in the list; a saved message shows its own copy
+// while it is still set up as the same template
+const providerBody = computed(() =>
+  props.template?.provider_body
+  && props.template.provider_template_name === form.provider_template_name
+  && props.template.provider_template_language === form.provider_template_language
+    ? props.template.provider_body
+    : null)
 
 const onPick = event => {
   const t = props.providerTemplates.find(p => pickKey(p) === event.target.value)
@@ -119,16 +135,21 @@ const submit = () => {
             </option>
           </select>
         </FormField>
-        <p v-if="missingFromList" class="warn-box mt-2">
+        <p v-if="missingFromList && !providerTruncated" class="warn-box mt-2">
           11za does not list “{{ form.provider_template_name }}” any more. Sends will fail until you
           choose a template that exists.
         </p>
+        <button v-if="providerTruncated" type="button" class="btn-xs mt-2" @click="typing = true">
+          Not in the list? Type the name
+        </button>
       </div>
 
       <div v-else class="grid gap-4 sm:grid-cols-3">
         <FormField class="sm:col-span-2" label="11za template name" required
                    :error="form.errors.provider_template_name"
-                   hint="The list could not be read from 11za, so type the name exactly as it appears in the 11za panel.">
+                   :hint="typing
+                     ? 'Type the name exactly as it appears in the 11za panel.'
+                     : 'The list could not be read from 11za, so type the name exactly as it appears in the 11za panel.'">
           <input v-model="form.provider_template_name" type="text" class="w-full" placeholder="site_visit_thanks" />
         </FormField>
         <FormField label="Language" required :error="form.errors.provider_template_language"
@@ -138,9 +159,9 @@ const submit = () => {
       </div>
 
       <!-- 11za's own wording, read-only, so the variables can be matched to it -->
-      <div v-if="picked?.body">
+      <div v-if="providerBody">
         <span class="text-xs font-semibold text-slate-500">The template in 11za</span>
-        <div class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">{{ picked.body }}</div>
+        <div class="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">{{ providerBody }}</div>
       </div>
 
       <!-- ---------------- the variables ---------------- -->

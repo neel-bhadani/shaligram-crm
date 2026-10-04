@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests;
 
-use App\Services\WhatsApp\WhatsAppSender;
+use App\Models\MessageTemplate;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -64,8 +64,9 @@ class MessageTemplateRequest extends FormRequest
     }
 
     /**
-     * What gets stored. 11za's wording comes along when the last template list
-     * read from 11za carried it — never from the browser.
+     * What gets stored. 11za's wording is never taken from the browser: it is
+     * kept when the 11za template is unchanged, and otherwise left empty until
+     * the next read of 11za's list copies it on.
      *
      * @return array<string, mixed>
      */
@@ -73,13 +74,18 @@ class MessageTemplateRequest extends FormRequest
     {
         $name = $this->input('provider_template_name');
         $language = $this->input('provider_template_language');
+        $current = $this->route('template');
 
         return [
             'name' => trim($this->input('name')),
             'is_active' => $this->boolean('is_active'),
             'provider_template_name' => $name,
             'provider_template_language' => $language,
-            'provider_body' => app(WhatsAppSender::class)->providerBodyFor($name, $language),
+            'provider_body' => $current instanceof MessageTemplate
+                && $current->provider_template_name === $name
+                && $current->provider_template_language === $language
+                    ? $current->provider_body
+                    : null,
             'placeholder_map' => array_values((array) $this->input('placeholder_map')),
         ];
     }
