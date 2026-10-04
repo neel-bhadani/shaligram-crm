@@ -8,6 +8,7 @@ import LeadViewModal from '@/Components/LeadViewModal.vue'
 import ConfirmDialog from '@/Components/ConfirmDialog.vue'
 import AssignedTo from '@/Components/AssignedTo.vue'
 import FilterChips from '@/Components/FilterChips.vue'
+import BulkWhatsAppModal from '@/Components/BulkWhatsAppModal.vue'
 import { useFilterVisit, useDebouncedFilters } from '@/composables/useFilterVisit.js'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 import { filterable } from '@/composables/useTaxonomy'
@@ -18,6 +19,8 @@ const props = defineProps({
   options: Object,
   // the stage breakdown of this list, every filter applied except stage
   stageCounts: Object,
+  // the tags a bulk WhatsApp send can pick from; empty for anyone not admin
+  whatsappTags: { type: Array, default: () => [] },
 })
 
 // every source there has ever been, retired ones marked — see filterable()
@@ -165,6 +168,24 @@ const doDelete = () => {
   })
 }
 
+/* ---------------- bulk WhatsApp, admin only ---------------- */
+
+/*
+ | Ticked on this page, or everything the filter matches. Either way the
+ | server works out who will actually receive it before anything is sent.
+ */
+const canBulk = computed(() => isAdmin.value && props.whatsappTags.length > 0)
+const ticked = ref([])
+const allTicked = computed(() => props.leads.data.length > 0
+  && props.leads.data.every(l => ticked.value.includes(l.id)))
+const toggleAll = () => {
+  ticked.value = allTicked.value ? [] : props.leads.data.map(l => l.id)
+}
+
+const bulkOpen = ref(false)
+const bulkMode = ref('selected')
+const openBulk = mode => { bulkMode.value = mode; bulkOpen.value = true }
+
 /* ---------------- helpers ---------------- */
 const fmtDate = v => v ? new Date(v).toLocaleDateString('en-IN',
   { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
@@ -266,6 +287,14 @@ const ageClass = d => d === null ? 'text-slate-400'
       -->
       <FilterChips :chips="chips" :active="f.stage" @select="setStage" />
 
+      <div v-if="canBulk && leads.total" class="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 sm:px-4">
+        <span class="text-xs text-slate-500">WhatsApp a tag to</span>
+        <button class="btn-xs" :disabled="!ticked.length" @click="openBulk('selected')">
+          {{ ticked.length ? `the ${ticked.length} ticked` : 'ticked leads (tick some below)' }}
+        </button>
+        <button class="btn-xs" @click="openBulk('filter')">all {{ leads.total }} matching</button>
+      </div>
+
       <!-- empty -->
       <div v-if="!leads.data.length" class="px-5 py-14 text-center text-sm text-slate-500">
         <p class="mb-1 font-semibold text-slate-700">No leads match these filters</p>
@@ -276,6 +305,10 @@ const ageClass = d => d === null ? 'text-slate-400'
       <table v-else class="hidden w-full text-sm lg:table">
         <thead>
           <tr class="bg-slate-50 text-left text-xs text-slate-500">
+            <th v-if="canBulk" class="w-8 py-2.5 pl-4">
+              <input type="checkbox" class="h-4 w-4" :checked="allTicked" aria-label="Tick every lead on this page"
+                     @change="toggleAll" />
+            </th>
             <th class="px-4 py-2.5 font-semibold">Name</th>
             <th class="px-4 py-2.5 font-semibold">Mobile</th>
             <th class="px-4 py-2.5 font-semibold">Stage</th>
@@ -291,6 +324,9 @@ const ageClass = d => d === null ? 'text-slate-400'
           <tr v-for="l in leads.data" :key="l.id"
               class="border-b border-l-4 border-slate-100 hover:bg-slate-50/70"
               :style="{ borderLeftColor: options.stageColors[l.stage] }">
+            <td v-if="canBulk" class="py-3 pl-4">
+              <input v-model="ticked" type="checkbox" :value="l.id" class="h-4 w-4" :aria-label="`Tick ${l.full_name}`" />
+            </td>
             <td class="px-4 py-3">
               <div class="font-semibold">{{ l.full_name }}</div>
               <div class="text-xs text-slate-400">{{ l.email }}</div>
@@ -326,7 +362,9 @@ const ageClass = d => d === null ? 'text-slate-400'
         <div v-for="l in leads.data" :key="l.id" class="border-l-4 p-4"
              :style="{ borderLeftColor: options.stageColors[l.stage] }">
           <div class="mb-2 flex items-start justify-between gap-3">
-            <div class="min-w-0">
+            <input v-if="canBulk" v-model="ticked" type="checkbox" :value="l.id" class="mt-1 h-4 w-4 flex-none"
+                   :aria-label="`Tick ${l.full_name}`" />
+            <div class="min-w-0 flex-1">
               <div class="truncate font-semibold">{{ l.full_name }}</div>
               <div class="text-xs text-slate-400">{{ l.mobile_number }}</div>
             </div>
@@ -372,6 +410,9 @@ const ageClass = d => d === null ? 'text-slate-400'
       </div>
     </div>
 
+    <BulkWhatsAppModal :show="bulkOpen" :mode="bulkMode" :lead-ids="ticked"
+                       :count="bulkMode === 'selected' ? ticked.length : leads.total"
+                       :tags="whatsappTags" @close="bulkOpen = false" />
     <LeadFormModal :show="formOpen" :lead="editing" :options="options" @close="formOpen = false" />
     <LeadViewModal :show="viewOpen" :lead-id="viewId" :options="options"
                    @close="viewOpen = false" @edit="editFromView" />

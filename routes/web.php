@@ -5,6 +5,7 @@ use App\Http\Controllers\AlertController;
 use App\Http\Controllers\AutomationController;
 use App\Http\Controllers\AutomationRuleController;
 use App\Http\Controllers\AutoSendController;
+use App\Http\Controllers\BulkWhatsAppController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\ChannelPartnerController;
 use App\Http\Controllers\DashboardController;
@@ -504,6 +505,22 @@ Route::middleware(['auth'])->group(function () {
             ->name('automation.messages.checked-delivered');
         Route::post('/automation/messages/{message}/checked-not-sent', [MessageQueueController::class, 'checkedNotSent'])
             ->name('automation.messages.checked-not-sent');
+
+        /*
+         | Bulk sends: one tag to selected leads or to everything matching the
+         | leads list's filter. Preview first — the confirm screen — then start
+         | with the numbers the admin saw. Stop and resume from the Queue.
+         */
+        Route::post('/leads/whatsapp/bulk/preview', [BulkWhatsAppController::class, 'preview'])
+            ->name('leads.whatsapp.bulk.preview');
+        Route::post('/leads/whatsapp/bulk', [BulkWhatsAppController::class, 'start'])
+            ->name('leads.whatsapp.bulk.start');
+        Route::get('/automation/batches/{batch}', [BulkWhatsAppController::class, 'show'])
+            ->name('automation.batches.show');
+        Route::post('/automation/batches/{batch}/stop', [BulkWhatsAppController::class, 'stop'])
+            ->name('automation.batches.stop');
+        Route::post('/automation/batches/{batch}/resume', [BulkWhatsAppController::class, 'resume'])
+            ->name('automation.batches.resume');
 
         Route::put('/automation/whatsapp', [AutomationController::class, 'updateWhatsApp'])
             ->name('automation.whatsapp.update');

@@ -6,6 +6,7 @@ use App\Jobs\SendWhatsAppMessage;
 use App\Models\AutomationRule;
 use App\Models\Integration;
 use App\Models\Lead;
+use App\Models\MessageBatch;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Models\ProviderTemplate;
@@ -274,7 +275,7 @@ class WhatsAppSender
         }
 
         if ($sendAt) {
-            $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued', 'send_at' => $sendAt]);
+            $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued', 'send_at' => $sendAt, 'scheduled_at' => now()]);
 
             SendWhatsAppMessage::dispatch($message->id)->delay($sendAt)->afterCommit();
 
@@ -319,6 +320,7 @@ class WhatsAppSender
             'mode' => 'api',
             'user_id' => $user->id,
             'send_at' => $sendAt,
+            'scheduled_at' => $sendAt ? now() : null,
             'provider_template_name' => $message->provider_template_name ?? $message->template?->provider_template_name,
             'provider_template_language' => $message->provider_template_language ?? $message->template?->provider_template_language,
         ]);
@@ -462,6 +464,12 @@ class WhatsAppSender
                 'provider_response' => $e->raw,
             ]);
 
+            if ($message->batch_id !== null && $this->batchFailed($message, $e)) {
+                $message->update(['status' => 'held']);
+
+                return ['ok' => false, 'message' => $e->explain(), 'retry' => false];
+            }
+
             if ($e->isRetryable()) {
                 return ['ok' => false, 'message' => $e->explain(), 'retry' => true];
             }
@@ -483,6 +491,11 @@ class WhatsAppSender
             'error' => null,
             'error_code' => null,
         ]);
+
+        if ($message->batch_id !== null) {
+            // any send — confirmed or not — ends a run of failures
+            MessageBatch::whereKey($message->batch_id)->update(['failure_streak' => 0]);
+        }
 
         return ['ok' => true, 'message' => $message->outcome(), 'retry' => false];
     }
@@ -843,6 +856,42 @@ class WhatsAppSender
     }
 
     /**
+     * A failed attempt in a bulk send. Returns whether the batch is now held,
+     * in which case the row is held with it and not retried.
+     *
+     * 11za saying 429 holds it at once: going on would only be refused again.
+     * Any other failed attempt — a refusal or a timeout — counts towards the
+     * streak; `failure_streak` of them in a row holds it. A batch already held
+     * by something else holds this row too, so an in-flight send that failed
+     * after the hold does not set off a retry.
+     */
+    private function batchFailed(MessageLog $message, WhatsAppApiException $e): bool
+    {
+        $batch = MessageBatch::find($message->batch_id);
+
+        if (! $batch) {
+            return false;
+        }
+
+        if ($e->httpStatus === 429) {
+            $batch->hold('11za said too many messages too quickly (HTTP 429). Nothing more is sent until somebody presses Resume.');
+
+            return true;
+        }
+
+        MessageBatch::whereKey($batch->id)->increment('failure_streak');
+        $batch->refresh();
+
+        $limit = (int) config('automation.whatsapp.bulk.failure_streak', 5);
+
+        if ($batch->status === 'running' && $batch->failure_streak >= $limit) {
+            $batch->hold("Held: {$batch->failure_streak} sends in a row failed. The last error: ".$e->explain());
+        }
+
+        return $batch->status === 'held';
+    }
+
+    /**
      * A scheduled message, read again from the lead at the time it goes: the
      * number, the name and every value are this moment's, not the moment it
      * was scheduled. Written onto the row, so the log shows what was sent.
@@ -886,6 +935,10 @@ class WhatsAppSender
 
         $params = $this->paramsFor($template, $lead);
 
+        if ($message->batch_id !== null && ($earlier = $this->sentRecently($template, $lead, $built['number'], $message->id, ['sending', 'sent', 'opened', 'unknown']))) {
+            return 'This tag already went to this lead or number '.$earlier->created_at->diffForHumans().', so it was not sent again.';
+        }
+
         $message->update([
             'to_number' => $built['number'],
             'to_name' => $lead->full_name,
@@ -917,6 +970,23 @@ class WhatsAppSender
         return $at && $at->isFuture() ? $at->setTimezone(config('app.timezone')) : false;
     }
 
+    /**
+     * The same tag to the same lead, or to the same number from any lead,
+     * within the bulk dedupe window — or null.
+     *
+     * @param  list<string>  $statuses
+     */
+    public function sentRecently(MessageTemplate $template, Lead $lead, string $number, ?int $exceptId, array $statuses): ?MessageLog
+    {
+        return MessageLog::where('template_id', $template->id)
+            ->where(fn ($q) => $q->where('lead_id', $lead->id)->orWhere('to_number', $number))
+            ->whereIn('status', $statuses)
+            ->where('created_at', '>=', now()->subHours((int) config('automation.whatsapp.bulk.dedupe_hours', 24)))
+            ->when($exceptId, fn ($q, $id) => $q->whereKeyNot($id))
+            ->latest('id')
+            ->first();
+    }
+
     /** "Scheduled for 5 Oct, 3:30 pm (India time)…" — said wherever a send is scheduled. */
     public static function scheduledFor(CarbonInterface $sendAt): string
     {
@@ -928,7 +998,7 @@ class WhatsAppSender
      * What to fix when a variable would go out empty — WhatsApp refuses a
      * template with an empty one. Names the lead's field, not {{1}}.
      */
-    private function missingValueReason(string $field, Lead $lead): string
+    public function missingValueReason(string $field, Lead $lead): string
     {
         $needs = config("automation.whatsapp.placeholders.{$field}.needs")
             ?? config("automation.whatsapp.placeholders.{$field}.label")

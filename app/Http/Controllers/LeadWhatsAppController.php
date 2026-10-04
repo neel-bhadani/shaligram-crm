@@ -181,7 +181,7 @@ class LeadWhatsAppController extends Controller
         $cancelled = MessageLog::whereKey($message->id)
             ->where('status', 'queued')
             ->whereNotNull('send_at')
-            ->update(['status' => 'cancelled', 'user_id' => $user->id]);
+            ->update(['status' => 'cancelled', 'cancelled_by' => $user->id, 'cancelled_at' => now()]);
 
         return response()->json([
             'ok' => (bool) $cancelled,
@@ -255,7 +255,7 @@ class LeadWhatsAppController extends Controller
         $user = request()->user();
 
         return MessageLog::where('lead_id', $lead->id)
-            ->with(['template:id,name', 'rule:id,name', 'user:id,first_name,last_name'])
+            ->with(['template:id,name', 'rule:id,name', 'user:id,first_name,last_name', 'canceller:id,first_name,last_name'])
             ->latest('id')
             ->limit(20)
             ->get()

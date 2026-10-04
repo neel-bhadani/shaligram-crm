@@ -21,6 +21,8 @@ class MessageLog extends Model
         'sending_started_at' => 'datetime',
         'checked_at' => 'datetime',
         'send_at' => 'datetime',
+        'scheduled_at' => 'datetime',
+        'cancelled_at' => 'datetime',
         'params' => 'array',
     ];
 
@@ -61,17 +63,43 @@ class MessageLog extends Model
             'sent' => $this->sentOutcome(),
             'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
             'queued' => match (true) {
+                $this->batch_id !== null && $this->send_at !== null => 'Waiting its turn in a bulk send ('.$this->send_at->format('j M, g:i a').')',
                 $this->isScheduled() => 'Scheduled for '.$this->send_at->format('j M, g:i a').' (India time)',
                 $this->mode === 'api' => 'Waiting to be sent by API',
                 default => 'Waiting for somebody to open it',
             },
             'sending' => 'Being sent',
+            'held' => $this->error_code === 'http 429'
+                ? 'Rate limited by 11za — held with its bulk send until somebody resumes it'
+                : 'Held with its bulk send until somebody resumes it',
             'unknown' => 'Outcome unknown — '.self::UNKNOWN_ADVICE,
             'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
             'skipped' => 'Not sent',
-            'cancelled' => 'Cancelled',
+            'cancelled' => $this->cancelledOutcome(),
             default => $this->status,
         };
+    }
+
+    /**
+     * "Cancelled by Ann on 5 Oct, 2:10 pm. Scheduled by Tara on 5 Oct,
+     * 11:00 am for 5 Oct, 3:30 pm." Who stopped it, and who set it up.
+     */
+    private function cancelledOutcome(): string
+    {
+        $at = fn ($time) => $time->format('j M, g:i a');
+
+        $outcome = 'Cancelled'
+            .($this->cancelled_by ? ' by '.($this->canceller?->display_name ?? 'a removed user') : '')
+            .($this->cancelled_at ? ' on '.$at($this->cancelled_at) : '');
+
+        if ($this->send_at) {
+            $outcome .= '. Scheduled'
+                .($this->user ? " by {$this->user->display_name}" : '')
+                .($this->scheduled_at ? ' on '.$at($this->scheduled_at) : '')
+                .' for '.$at($this->send_at);
+        }
+
+        return $outcome;
     }
 
     /** Waiting for the time a person chose. Cancellable until the worker claims it. */
@@ -124,10 +152,22 @@ class MessageLog extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** Who cancelled it. `user` stays whoever sent or scheduled it. */
+    public function canceller()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
     /** Who looked it up in 11za and settled an `unknown` row. */
     public function checker()
     {
         return $this->belongsTo(User::class, 'checked_by');
+    }
+
+    /** The bulk send this message is part of, or null. */
+    public function batch()
+    {
+        return $this->belongsTo(MessageBatch::class, 'batch_id');
     }
 
     public function rule()

@@ -582,6 +582,26 @@ return [
             'stuck_after_minutes' => 5,
         ],
 
+        /*
+         | Bulk sends: one tag to selected leads, or to everything matching the
+         | leads list's filter. Admin only, API only.
+         |
+         |   max_recipients  counted AFTER exclusions. Over it, the send is
+         |                   refused, never cut short.
+         |   per_minute      pacing: each message gets its own time, spread at
+         |                   this rate. A placeholder until 11za's real limit
+         |                   is known.
+         |   failure_streak  this many failed attempts in a row holds the send.
+         |   dedupe_hours    the same tag to the same lead or number this
+         |                   recently is not sent again.
+         */
+        'bulk' => [
+            'max_recipients' => (int) env('WHATSAPP_BULK_MAX_RECIPIENTS', 200),
+            'per_minute' => (int) env('WHATSAPP_BULK_PER_MINUTE', 20),
+            'failure_streak' => (int) env('WHATSAPP_BULK_FAILURE_STREAK', 5),
+            'dedupe_hours' => 24,
+        ],
+
         'modes' => [
             'click' => ['label' => 'Click-to-send (somebody opens it)'],
             'api' => ['label' => 'By API (11za template)'],

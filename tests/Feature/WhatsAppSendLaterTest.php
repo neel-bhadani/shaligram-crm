@@ -176,8 +176,18 @@ class WhatsAppSendLaterTest extends TestCase
                 ->where('scheduled.0.id', $message->id)
                 ->where('scheduled.0.scheduled', true));
 
+        Carbon::setTestNow(Carbon::parse('2026-10-05 14:10', 'Asia/Kolkata'));
         $this->actingAs($this->admin)->post(route('automation.messages.cancel', $message))->assertSessionHas('success');
-        $this->assertSame('cancelled', $message->fresh()->status);
+
+        // who scheduled it and who stopped it, both kept
+        $message->refresh();
+        $this->assertSame('cancelled', $message->status);
+        $this->assertSame($this->tele->id, $message->user_id);
+        $this->assertSame($this->admin->id, $message->cancelled_by);
+        $this->assertSame(
+            'Cancelled by Ann User on 5 Oct, 2:10 pm. Scheduled by Tara User on 5 Oct, 11:00 am for 5 Oct, 3:30 pm',
+            $message->outcome(),
+        );
 
         // the delayed job wakes later and finds nothing to send
         $this->runAt('2026-10-05 15:30', $message);
@@ -214,10 +224,13 @@ class WhatsAppSendLaterTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Cancelled. It will not be sent.');
         $this->assertSame('cancelled', $mine->fresh()->status);
+        $this->assertSame($this->tele->id, $mine->fresh()->cancelled_by);
 
         $theirs = $this->schedule($this->lead(['mobile_number' => '9876500022']));
         $this->actingAs($this->admin)->postJson(route('leads.whatsapp.cancel', [$theirs->lead_id, $theirs]))->assertOk();
         $this->assertSame('cancelled', $theirs->fresh()->status);
+        $this->assertSame($this->tele->id, $theirs->fresh()->user_id);
+        $this->assertSame($this->admin->id, $theirs->fresh()->cancelled_by);
     }
 
     public function test_cancelling_from_the_lead_is_refused_once_it_is_on_its_way(): void

@@ -227,6 +227,10 @@ class AutomationWhatsAppTest extends TestCase
 
         $this->assertSame('cancelled', $message->fresh()->status);
         $this->assertSame(1, MessageLog::count(), 'the record survives the decision not to send');
+        // who queued it is not written over by who cancelled it
+        $this->assertSame($message->user_id, $message->fresh()->user_id);
+        $this->assertSame($this->admin->id, $message->fresh()->cancelled_by);
+        $this->assertNotNull($message->fresh()->cancelled_at);
     }
 
     /* ================= the API that is not configured ================= */
