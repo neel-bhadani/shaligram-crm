@@ -94,6 +94,15 @@ class AutomationPageTest extends TestCase
                 ->has('thresholds'));
     }
 
+    public function test_the_old_messages_address_redirects_to_the_tags_tab(): void
+    {
+        $this->actingAs($this->admin)->get('/automation?tab=templates')
+            ->assertRedirect(route('automation.index', ['tab' => 'tags']));
+
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
+            ->assertInertia(fn (Assert $page) => $page->where('tab', 'tags'));
+    }
+
     public function test_a_deep_link_opens_the_tab_it_names(): void
     {
         $this->actingAs($this->admin)->get('/automation?tab=activity')

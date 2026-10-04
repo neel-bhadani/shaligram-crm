@@ -22,9 +22,8 @@ use Illuminate\Support\Facades\DB;
  *
  * JSON, because the lead opens in a modal that loads itself with axios.
  *
- * The 24-hour window is reported as unknown, always. Knowing it needs the
- * inbound webhook, which this CRM does not have; the panel says "window
- * unknown, template required" and never claims the lead is outside it.
+ * The 24-hour window is not reported. Every tag is an 11za template, which
+ * can be sent inside or outside it, so it never changes what the user can do.
  */
 class LeadWhatsAppController extends Controller
 {
@@ -71,7 +70,6 @@ class LeadWhatsAppController extends Controller
             'api_enabled' => $apiEnabled,
             'number' => $this->renderer->waNumber($lead->mobile_number),
             'opt_out' => $this->optOutState($lead, $user),
-            'window' => 'Window unknown, template required',
             'templates' => $templates,
             'history' => $this->history($lead),
         ]);
@@ -95,7 +93,7 @@ class LeadWhatsAppController extends Controller
         $template = MessageTemplate::active()->find($data['template_id']);
 
         if (! $template) {
-            return response()->json(['ok' => false, 'message' => 'That message has been deleted or switched off.'], 422);
+            return response()->json(['ok' => false, 'message' => 'That tag has been deleted or switched off.'], 422);
         }
 
         $user = $request->user();

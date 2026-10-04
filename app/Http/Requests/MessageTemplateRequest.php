@@ -53,8 +53,8 @@ class MessageTemplateRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.required' => 'Give the message a name you will recognise on the Auto-send tab.',
-            'provider_template_name.required' => 'Choose the 11za template this message is sent as.',
+            'name.required' => 'Give the tag a name you will recognise.',
+            'provider_template_name.required' => 'Choose the 11za template this tag sends.',
             'provider_template_name.regex' => 'An 11za template name has no spaces in it. Copy it exactly as it appears in the 11za panel.',
             'provider_template_language.required' => 'Give the template\'s language code — usually "en".',
             'provider_template_language.regex' => 'The language is a code like "en", "hi" or "en_US", as shown in the 11za panel.',

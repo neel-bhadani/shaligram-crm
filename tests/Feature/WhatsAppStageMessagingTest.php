@@ -516,7 +516,7 @@ class WhatsAppStageMessagingTest extends TestCase
         $this->actingAs($this->tele)
             ->getJson(route('leads.whatsapp.show', $lead))
             ->assertOk()
-            ->assertJsonPath('window', 'Window unknown, template required')
+            ->assertJsonMissingPath('window')
             ->assertJsonPath('templates.0.preview', 'Welcome Rahul.')
             ->assertJsonPath('templates.0.by_api', true);
 
@@ -535,6 +535,30 @@ class WhatsAppStageMessagingTest extends TestCase
         $stranger = $this->user('telecaller', 'Sid');
         $this->actingAs($stranger)->getJson(route('leads.whatsapp.show', $lead))->assertForbidden();
         $this->actingAs($stranger)->postJson(route('leads.whatsapp.send', $lead), ['template_id' => $template->id])->assertForbidden();
+    }
+
+    public function test_an_empty_variable_is_skipped_with_the_lead_field_to_fix(): void
+    {
+        $this->fakeElevenZa();
+        $this->configureApi();
+
+        $template = $this->namedTemplate('Call {owner_name}.', ['owner_name']);
+
+        $unassigned = $this->lead(['assigned_to' => null]);
+        $result = app(WhatsAppSender::class)->queueTemplate($unassigned, $template, user: $this->admin);
+
+        $this->assertSame('skipped', $result['result']);
+        $this->assertSame(
+            'This tag needs the name of the staff member handling the lead, and nobody is assigned to this lead.',
+            $result['message']->error,
+        );
+
+        $this->project->update(['name' => '']);
+        $template = $this->namedTemplate('About {project}.', ['project'], 'project_note');
+        $result = app(WhatsAppSender::class)->queueTemplate($this->lead(['mobile_number' => '9876500099']), $template, user: $this->admin);
+
+        $this->assertSame("This tag needs the lead's project, and this lead has none.", $result['message']->error);
+        Http::assertNothingSent();
     }
 
     /* ================= helpers ================= */

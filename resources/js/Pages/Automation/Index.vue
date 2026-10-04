@@ -50,7 +50,7 @@ const props = defineProps({
 
 const TABS = [
   { key: 'auto_send', label: 'Auto-send' },
-  { key: 'templates', label: 'Messages' },
+  { key: 'tags', label: 'Tags' },
   { key: 'rules', label: 'Rules' },
   { key: 'queue', label: 'Queue' },
   { key: 'alerts', label: 'Alerts' },
@@ -203,7 +203,7 @@ const setAutoSend = (row, value) => {
 /* ================= templates ================= */
 
 /*
- | 11za's template list. Read on demand — the first time the Messages tab is
+ | 11za's template list. Read on demand — the first time the Tags tab is
  | opened with the API set up, and whenever Refresh is pressed — and kept on
  | the server, so the dropdown fills straight away next time. After a failed
  | read the tab does not ask again by itself: only Refresh does.
@@ -239,7 +239,7 @@ const refreshProvider = () => {
 }
 
 watch(tab, key => {
-  if (key === 'templates' && props.whatsapp.configured && !providerList.value.at
+  if (key === 'tags' && props.whatsapp.configured && !providerList.value.at
       && !providerList.value.failed && !providerResult.value) {
     refreshProvider()
   }
@@ -446,7 +446,7 @@ const whenShort = iso => iso
   <AppLayout title="Automation" subtitle="Rules that do the routine work for you.">
     <template #actions>
       <button v-if="tab === 'rules'" class="btn" @click="openRule(null)">New rule</button>
-      <button v-if="tab === 'templates'" class="btn" @click="openTemplate(null)">New message</button>
+      <button v-if="tab === 'tags'" class="btn" @click="openTemplate(null)">New tag</button>
     </template>
 
     <!--
@@ -578,13 +578,13 @@ const whenShort = iso => iso
     <!-- ================= AUTO-SEND ================= -->
     <div v-show="tab === 'auto_send'">
       <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500">
-        Choose a WhatsApp message for any stage, and every lead that reaches it is sent that
-        message. Choose None to stop. Changes save straight away.
+        Choose a tag for any stage, and every lead that reaches it is sent that tag. Choose None
+        to stop. Changes save straight away.
       </p>
 
       <p v-if="!activeTemplates.length" class="warn-box mb-4">
-        There are no messages to choose yet.
-        <button class="underline" @click="tab = 'templates'">Set one up on the Messages tab</button>.
+        There are no tags to choose yet.
+        <button class="underline" @click="tab = 'tags'">Set one up on the Tags tab</button>.
       </p>
 
       <div class="card overflow-hidden">
@@ -604,10 +604,10 @@ const whenShort = iso => iso
                         @change="setAutoSend(row, $event.target.value)">
                   <option value="">None</option>
                   <option v-for="t in activeTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
-                  <!-- a message switched off since it was chosen: shown, not silently swapped -->
+                  <!-- a tag switched off since it was chosen: shown, not silently swapped -->
                   <option v-if="row.template_id && !activeTemplates.some(t => t.id === row.template_id)"
                           :value="row.template_id">
-                    {{ templates.find(t => t.id === row.template_id)?.name ?? 'A deleted message' }} (switched off)
+                    {{ templates.find(t => t.id === row.template_id)?.name ?? 'A deleted tag' }} (switched off)
                   </option>
                 </select>
                 <p v-for="other in row.others" :key="other.id" class="mt-1.5 text-[11px] text-slate-500">
@@ -668,13 +668,13 @@ const whenShort = iso => iso
       </p>
     </div>
 
-    <!-- ================= MESSAGES ================= -->
-    <div v-show="tab === 'templates'">
+    <!-- ================= TAGS ================= -->
+    <div v-show="tab === 'tags'">
       <div class="info-box mb-4 flex items-start gap-2">
         <span class="flex-1">
           <strong>The wording lives in 11za.</strong>
-          A message here is an 11za template plus what goes into each of its variables — the
-          lead's first name, the project, and so on.
+          A tag is a name you pick, pointing at an 11za template and what fills each of its
+          gaps. Once it's set up, you only ever pick the tag.
         </span>
         <button v-if="whatsapp.configured" class="btn-xs flex-none" :disabled="loadingProvider" @click="refreshProvider">
           {{ loadingProvider ? 'Reading 11za…' : 'Refresh from 11za' }}
@@ -709,12 +709,12 @@ const whenShort = iso => iso
       <p v-if="providerResult?.ok" class="mb-3 text-[11px] text-slate-500">{{ providerResult.message }}</p>
 
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">No messages set up yet</p>
+        <p class="text-base font-semibold text-slate-800">No tags yet</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           Pick a template from your 11za account and say what goes into each of its gaps. Then
-          choose which stage sends it on the Auto-send tab.
+          pick the tag on a lead or on Auto-send.
         </p>
-        <button class="btn mt-5" @click="openTemplate(null)">Set up your first message</button>
+        <button class="btn mt-5" @click="openTemplate(null)">Create your first tag</button>
       </div>
 
       <div v-else class="grid gap-3 lg:grid-cols-2">
@@ -822,7 +822,7 @@ const whenShort = iso => iso
               {{ when(message.handed_at) }}</strong>, then say what you found.
             </p>
             <p class="mt-1 text-[11px] text-slate-400">
-              {{ message.template ?? 'No template' }}
+              {{ message.template ? `Tag: ${message.template}` : 'No tag' }}
               <template v-if="message.rule"> · rule “{{ message.rule }}”</template>
               <template v-else-if="message.user"> · by {{ message.user }}</template>
             </p>
@@ -868,7 +868,7 @@ const whenShort = iso => iso
                 <div class="mt-2 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2
                             text-xs leading-relaxed text-slate-700">{{ message.body }}</div>
                 <p class="mt-1.5 text-[11px] text-slate-400">
-                  {{ message.template ?? 'No template' }}
+                  {{ message.template ? `Tag: ${message.template}` : 'No tag' }}
                   <template v-if="message.rule"> · queued by “{{ message.rule }}”</template>
                   · {{ when(message.created_at) }}
                 </p>
@@ -891,7 +891,7 @@ const whenShort = iso => iso
           <div class="mb-2 mt-6 flex flex-wrap items-center justify-between gap-2">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-400">Message log</h3>
             <input v-model="logSearch" type="search" class="w-64 text-xs"
-                   placeholder="Search name, number, message, rule…" />
+                   placeholder="Search name, number, tag, rule…" />
           </div>
           <div class="card divide-y divide-slate-100">
             <div v-if="!filteredHistory.length" class="px-4 py-3 text-xs text-slate-400">
@@ -906,7 +906,7 @@ const whenShort = iso => iso
               <span class="text-xs font-medium text-slate-700">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
               <span class="text-[11px] text-slate-400">{{ message.to_number ?? 'no number' }}</span>
               <span class="text-[11px] text-slate-400">
-                {{ message.template ?? '—' }}
+                {{ message.template ? `Tag: ${message.template}` : 'No tag' }}
                 <template v-if="message.rule"> · rule “{{ message.rule }}”</template>
                 <template v-else-if="message.user"> · by {{ message.user }}</template>
                 · {{ when(message.sent_at ?? message.created_at) }}
@@ -975,7 +975,7 @@ const whenShort = iso => iso
             Use API sending
             <span class="block text-xs text-slate-400">
               Off: every WhatsApp message is click-to-send. On: rules set to “By API”, and messages
-              sent from a lead, go through 11za — using the template named on each message.
+              sent from a lead, go through 11za — using the 11za template behind each tag.
             </span>
           </span>
         </label>
@@ -1014,9 +1014,9 @@ const whenShort = iso => iso
             <FormField label="Send to mobile">
               <input v-model="testMobile" type="tel" class="w-44" placeholder="98765 43210" />
             </FormField>
-            <FormField label="As message">
+            <FormField label="Tag">
               <select v-model="testTemplateId" class="w-64">
-                <option value="">{{ testableTemplates.length ? 'Choose a message…' : 'No message has an 11za name yet' }}</option>
+                <option value="">{{ testableTemplates.length ? 'Choose a tag…' : 'No tag has an 11za template yet' }}</option>
                 <option v-for="t in testableTemplates" :key="t.id" :value="t.id">{{ t.name }} · {{ t.provider_template }}</option>
               </select>
             </FormField>
@@ -1173,9 +1173,9 @@ const whenShort = iso => iso
 
     <ConfirmDialog
       :show="!!deletingTemplate"
-      title="Delete this message?"
+      title="Delete this tag?"
       :message="`“${deletingTemplate?.name}” will be removed. Messages already sent keep their wording in the log. If a rule still uses it, you will be told rather than losing the rule.`"
-      confirm-text="Delete message"
+      confirm-text="Delete tag"
       @close="deletingTemplate = null"
       @confirm="confirmDeleteTemplate"
     />

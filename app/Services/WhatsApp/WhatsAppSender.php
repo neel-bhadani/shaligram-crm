@@ -253,7 +253,7 @@ class WhatsAppSender
         if ($empty !== false) {
             $name = array_values($template->placeholder_map ?? [])[$empty];
 
-            return $this->skipped($row, "{{$name}} is empty for this lead, and WhatsApp refuses a template with an empty variable.");
+            return $this->skipped($row, $this->missingValueReason($name, $lead));
         }
 
         $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued']);
@@ -520,7 +520,7 @@ class WhatsAppSender
     /* ---------------- 11za's template list ---------------- */
 
     /**
-     * Read the template list from 11za, for the Messages tab's dropdown.
+     * Read the template list from 11za, for the Tags tab's dropdown.
      *
      * Kept in `provider_templates`: name, language and variable count, at most
      * `list_cap` of them, replaced whole on every successful read. 11za's
@@ -804,13 +804,34 @@ class WhatsAppSender
         );
     }
 
+    /**
+     * What to fix when a variable would go out empty — WhatsApp refuses a
+     * template with an empty one. Names the lead's field, not {{1}}.
+     */
+    private function missingValueReason(string $field, Lead $lead): string
+    {
+        $needs = config("automation.whatsapp.placeholders.{$field}.needs")
+            ?? config("automation.whatsapp.placeholders.{$field}.label")
+            ?? $field;
+
+        if (in_array($field, ['owner_name', 'owner_phone'], true)) {
+            $owner = $lead->owner;
+
+            return $owner
+                ? "This tag needs {$needs}, and {$owner->display_name} has none saved."
+                : "This tag needs {$needs}, and nobody is assigned to this lead.";
+        }
+
+        return "This tag needs {$needs}, and this lead has none.";
+    }
+
     /** Why this message cannot go by API, or null. */
     private function apiBlocker(MessageLog $message): ?string
     {
         $template = $message->template;
 
         if (! $template) {
-            return 'The message it was written from has been deleted, so there is no 11za template to send it as.';
+            return 'The tag it was written from has been deleted, so there is no 11za template to send it as.';
         }
 
         if ($reason = $template->apiUnsendableReason()) {
@@ -818,7 +839,7 @@ class WhatsAppSender
         }
 
         if ($message->params === null || count($message->params) !== count($template->placeholder_map ?? [])) {
-            return 'This message was queued before its values were recorded, so it cannot be sent as a template.';
+            return 'This message was queued before its values were recorded, so it cannot be sent by API.';
         }
 
         return null;

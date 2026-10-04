@@ -368,11 +368,11 @@ return [
                     // mode, and no mode is click-to-send
                 ],
                 'template_id' => [
-                    'label' => 'Which message',
+                    'label' => 'Which tag',
                     'type' => 'select',
                     'options' => 'templates',
                     'required' => true,
-                    'hint' => 'Set up on the Messages tab. The lead\'s name and project are filled in when the message is queued. By API needs a message with its 11za template name filled in.',
+                    'hint' => 'Set up on the Tags tab. The lead\'s name and project are filled in when the message is queued. By API needs a tag with its 11za template name filled in.',
                 ],
                 'terminal' => [
                     'label' => 'Booked and lost leads',
@@ -506,12 +506,13 @@ return [
          | number, not left to find out after fifty messages have gone out.
          */
         'placeholders' => [
-            'lead_name' => ['label' => "The customer's full name", 'example' => 'Rahul Mehta'],
-            'first_name' => ['label' => 'Just their first name',    'example' => 'Rahul'],
-            'project' => ['label' => 'The project they asked about', 'example' => 'Skyline Residency'],
-            'owner_name' => ['label' => 'Your staff member handling them', 'example' => 'Priya Shah'],
-            'owner_phone' => ['label' => "That staff member's mobile", 'example' => '+91 98200 00002'],
-            'stage' => ['label' => 'Where the lead has reached', 'example' => 'Site visit done'],
+            // `needs` finishes "This tag needs …" when the value is empty
+            'lead_name' => ['label' => "The customer's full name", 'example' => 'Rahul Mehta', 'needs' => "the customer's name"],
+            'first_name' => ['label' => 'Just their first name',    'example' => 'Rahul', 'needs' => "the customer's first name"],
+            'project' => ['label' => 'The project they asked about', 'example' => 'Skyline Residency', 'needs' => "the lead's project"],
+            'owner_name' => ['label' => 'Your staff member handling them', 'example' => 'Priya Shah', 'needs' => 'the name of the staff member handling the lead'],
+            'owner_phone' => ['label' => "That staff member's mobile", 'example' => '+91 98200 00002', 'needs' => 'the mobile number of the staff member handling the lead'],
+            'stage' => ['label' => 'Where the lead has reached', 'example' => 'Site visit done', 'needs' => "the lead's stage"],
         ],
 
         /*
@@ -554,7 +555,7 @@ return [
             // default; an admin can override it in the WhatsApp settings.
             'base' => env('WHATSAPP_API_BASE', 'https://api.11za.in'),
             'send_path' => '/apis/template/sendTemplate',
-            // the template list for the Messages tab's dropdown. "All data"
+            // the template list for the Tags tab's dropdown. "All data"
             // because it is the one most likely to carry the wording; the
             // response shape is not documented, so the parser is defensive
             'list_path' => '/apis/template/getTemplatesAll',

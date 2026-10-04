@@ -37,7 +37,7 @@ class AutomationController extends Controller
 {
     use ListsAlerts;
 
-    public const TABS = ['auto_send', 'templates', 'rules', 'queue', 'alerts', 'activity'];
+    public const TABS = ['auto_send', 'tags', 'rules', 'queue', 'alerts', 'activity'];
 
     public function __construct(
         private AutoSend $autoSend,
@@ -48,6 +48,11 @@ class AutomationController extends Controller
 
     public function index(Request $request)
     {
+        // the Tags tab was the Messages tab, at ?tab=templates
+        if ($request->query('tab') === 'templates') {
+            return redirect()->route('automation.index', ['tab' => 'tags'] + $request->query());
+        }
+
         $tab = in_array($request->query('tab'), self::TABS, true)
             ? $request->query('tab')
             : 'auto_send';
@@ -171,7 +176,7 @@ class AutomationController extends Controller
             'template_id' => ['required', 'integer', 'exists:message_templates,id'],
         ], [
             'mobile.required' => 'Type the mobile number the test message should go to.',
-            'template_id.required' => 'Choose which message to send as the test.',
+            'template_id.required' => 'Choose which tag to send as the test.',
         ]);
 
         return response()->json($this->whatsapp->testConnection(
@@ -258,7 +263,7 @@ class AutomationController extends Controller
     }
 
     /**
-     * 11za's template list as last read, for the Messages dropdown before it
+     * 11za's template list as last read, for the Tags dropdown before it
      * is refreshed. `failed` stops the tab asking 11za again by itself.
      *
      * @return array{templates: list<array<string, mixed>>, total: int, at: ?string, failed: bool}

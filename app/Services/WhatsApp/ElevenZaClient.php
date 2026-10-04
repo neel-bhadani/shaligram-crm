@@ -10,7 +10,7 @@ use Throwable;
 
 /**
  * The two calls this CRM makes to 11za: send a template, and list the
- * account's templates for the Messages tab. Outbound only.
+ * account's templates for the Tags tab. Outbound only.
  *
  * Its own class so everything above it can be tested with Http::fake().
  * Nothing here retries — that is the job's decision, made from the exception.
@@ -107,7 +107,7 @@ class ElevenZaClient
     }
 
     /**
-     * The templates in the 11za account, for the Messages tab's dropdown.
+     * The templates in the 11za account, for the Tags tab's dropdown.
      *
      * 11za documents the request and not the answer, so the answer is read
      * defensively: the first list in it whose entries carry a name is the

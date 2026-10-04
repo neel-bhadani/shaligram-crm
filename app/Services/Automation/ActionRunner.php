@@ -276,7 +276,7 @@ class ActionRunner
         $template = MessageTemplate::active()->find($action['template_id'] ?? null);
 
         if (! $template) {
-            return $this->skip('The message this rule queues has been deleted or switched off.');
+            return $this->skip('The tag this rule sends has been deleted or switched off.');
         }
 
         if ($lead->hasOptedOutOfWhatsApp()) {
