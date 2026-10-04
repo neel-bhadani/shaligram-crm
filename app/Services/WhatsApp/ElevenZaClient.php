@@ -211,7 +211,7 @@ class ElevenZaClient
      * carousel ones, which a send from this CRM does not fill.
      *
      * `body` is the BODY component's text — 11za's own wording, with its own
-     * {{1}}, {{2}}. Not kept in the list; copied onto the tags set up as it.
+     * {{1}}, {{2}}. Kept in the list and copied onto the tags set up as it.
      *
      * @return list<array{name: string, language: ?string, status: ?string, category: ?string,
      *                    body: ?string, variables: ?int, extra_variables: ?int}>

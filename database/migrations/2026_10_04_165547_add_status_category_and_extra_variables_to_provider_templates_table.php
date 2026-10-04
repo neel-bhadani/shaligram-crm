@@ -21,9 +21,12 @@ return new class extends Migration
      *   extra_variables  a template's header and carousel variables, per
      *                    language. A send from this CRM fills only the body's,
      *                    so the tag form warns when there are any.
-     *
-     * Still no wording here: 11za's wording is copied onto each tag
-     * (message_templates.provider_body), as before.
+     *   body             11za's BODY wording for that language, so the tag
+     *                    form can show it while a template is picked and a
+     *                    new tag has it at once. The earlier "no wording here"
+     *                    rule was about the settings blob it overflowed; this
+     *                    is a row per template and language, where it cannot.
+     *                    Still copied onto each tag (provider_body) too.
      *
      * The list read under the old guesses has nulls where the language and
      * count should be, so it is emptied: the next Refresh fills it properly.
@@ -38,6 +41,7 @@ return new class extends Migration
             $table->string('status', 20)->nullable()->after('language');
             $table->string('category', 30)->nullable()->after('status');
             $table->unsignedSmallInteger('extra_variables')->nullable()->after('variables');
+            $table->text('body')->nullable()->after('extra_variables');
         });
 
         DB::table('provider_templates')->delete();
@@ -55,7 +59,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('provider_templates', function (Blueprint $table) {
-            $table->dropColumn(['status', 'category', 'extra_variables']);
+            $table->dropColumn(['status', 'category', 'extra_variables', 'body']);
         });
     }
 };

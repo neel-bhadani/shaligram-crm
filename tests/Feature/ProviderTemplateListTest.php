@@ -81,7 +81,7 @@ class ProviderTemplateListTest extends TestCase
             ->assertJsonPath('total', 1)
             ->assertJsonPath('templates', [[
                 'name' => 'vanam_won', 'language' => 'en', 'status' => 'APPROVED', 'category' => 'MARKETING',
-                'variables' => 0, 'extra_variables' => 0,
+                'variables' => 0, 'extra_variables' => 0, 'body' => '🎉 Welcome to the *Shaligram Family!* ...',
             ]])
             ->assertJsonPath('message', '11za lists 1 template. Read 1 page of up to 100 (asked for 1000; 11za sends at most 100 a page).');
 
@@ -120,10 +120,10 @@ class ProviderTemplateListTest extends TestCase
         $this->readList()
             ->assertJsonPath('total', 3)
             ->assertJsonPath('templates', [
-                ['name' => 'welcome', 'language' => 'en', 'status' => 'APPROVED', 'category' => 'UTILITY', 'variables' => 2, 'extra_variables' => 1],
-                ['name' => 'welcome', 'language' => 'hi', 'status' => 'PENDING', 'category' => 'UTILITY', 'variables' => 1, 'extra_variables' => 0],
-                ['name' => 'site_visit', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 3, 'extra_variables' => 0],
-                ['name' => 'callback', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 2, 'extra_variables' => null],
+                ['name' => 'welcome', 'language' => 'en', 'status' => 'APPROVED', 'category' => 'UTILITY', 'variables' => 2, 'extra_variables' => 1, 'body' => 'Hi {{1}}, about {{2}}.'],
+                ['name' => 'welcome', 'language' => 'hi', 'status' => 'PENDING', 'category' => 'UTILITY', 'variables' => 1, 'extra_variables' => 0, 'body' => 'नमस्ते {{1}}'],
+                ['name' => 'site_visit', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 3, 'extra_variables' => 0, 'body' => null],
+                ['name' => 'callback', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 2, 'extra_variables' => null, 'body' => 'Call {{1}} on {{2}}'],
             ]);
 
         $this->assertSame('Hi {{1}}, about {{2}}.', $english->fresh()->provider_body);
@@ -202,8 +202,8 @@ class ProviderTemplateListTest extends TestCase
         $this->readList()
             ->assertJsonPath('ok', true)
             ->assertJsonPath('templates', [
-                ['name' => 'bare', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null],
-                ['name' => 'odd', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null],
+                ['name' => 'bare', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null, 'body' => null],
+                ['name' => 'odd', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null, 'body' => null],
             ]);
     }
 
@@ -411,6 +411,24 @@ class ProviderTemplateListTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('providerTemplates.failed', false));
     }
 
+    public function test_a_new_tag_takes_11zas_wording_from_the_list_at_once(): void
+    {
+        ProviderTemplate::create(['name' => 'site_visit', 'language' => 'en', 'status' => 'APPROVED',
+            'variables' => 1, 'body' => 'Thanks for visiting, {{1}}.']);
+
+        $this->actingAs($this->admin)->post(route('automation.templates.store'), [
+            'name' => 'Site visit thanks', 'is_active' => true,
+            'provider_template_name' => 'site_visit', 'provider_template_language' => 'en',
+            'placeholder_map' => ['first_name'],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame('Thanks for visiting, {{1}}.', MessageTemplate::sole()->provider_body);
+
+        // and the form has it while picking
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
+            ->assertInertia(fn (Assert $page) => $page->where('providerTemplates.templates.0.body', 'Thanks for visiting, {{1}}.'));
+    }
+
     public function test_saving_a_message_keeps_11zas_wording_only_while_it_is_the_same_template(): void
     {
         $template = $this->message();
@@ -448,8 +466,8 @@ class ProviderTemplateListTest extends TestCase
 
         $this->assertSame(
             [
-                ['name' => 'welcome', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 1, 'extra_variables' => null],
-                ['name' => 'site_visit', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null],
+                ['name' => 'welcome', 'language' => 'en', 'status' => null, 'category' => null, 'variables' => 1, 'extra_variables' => null, 'body' => null],
+                ['name' => 'site_visit', 'language' => null, 'status' => null, 'category' => null, 'variables' => null, 'extra_variables' => null, 'body' => null],
             ],
             ProviderTemplate::orderBy('id')->get()->map->toListEntry()->all(),
         );

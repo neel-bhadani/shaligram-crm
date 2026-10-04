@@ -574,9 +574,9 @@ class WhatsAppSender
      *
      * Kept in `provider_templates`: one row per template and language, with
      * its variable counts, for at most `list_cap` templates, replaced whole on
-     * every successful read, with each language's approval status and the
-     * category. 11za's wording is copied onto the tags set up as each template
-     * — that copy is the only wording the CRM keeps, never typed by anybody.
+     * every successful read, with each language's approval status, the
+     * category and 11za's BODY wording. The wording is also copied onto the
+     * tags set up as each template — never typed by anybody.
      * Its raw answer is never stored: when it cannot be read it comes back
      * once, trimmed, for the screen.
      *
@@ -617,7 +617,7 @@ class WhatsAppSender
      * here means the list was cut at `list_cap`. A template in two languages
      * is two entries and one template.
      *
-     * @return array{templates: list<array{name: string, language: ?string, status: ?string, category: ?string, variables: ?int, extra_variables: ?int}>, total: int, at: ?string, page_size: ?int, failed: bool}
+     * @return array{templates: list<array{name: string, language: ?string, status: ?string, category: ?string, variables: ?int, extra_variables: ?int, body: ?string}>, total: int, at: ?string, page_size: ?int, failed: bool}
      */
     public function providerTemplateList(): array
     {
@@ -806,6 +806,7 @@ class WhatsAppSender
                     'category' => $t['category'] !== null && mb_strlen($t['category']) <= 30 ? $t['category'] : null,
                     'variables' => $count($t['variables']),
                     'extra_variables' => $count($t['extra_variables']),
+                    'body' => $t['body'],
                     'created_at' => $now,
                     'updated_at' => $now,
                 ])

@@ -25,7 +25,7 @@ const props = defineProps({
   template: { type: Object, default: null },
   // { name: { label, example } } from config/automation.php
   placeholders: { type: Object, required: true },
-  // [{ name, language, status, category, variables, extra_variables }] as last read from 11za
+  // [{ name, language, status, category, variables, extra_variables, body }] as last read from 11za
   providerTemplates: { type: Array, default: () => [] },
   // 11za listed more than are kept, so a name not in the list may be real
   providerTruncated: { type: Boolean, default: false },
@@ -76,14 +76,14 @@ const picked = computed(() => props.providerTemplates.find(t =>
 const missingFromList = computed(() =>
   fromList.value && form.provider_template_name && !picked.value)
 
-// 11za's wording is never in the list; a saved message shows its own copy
-// while it is still set up as the same template
-const providerBody = computed(() =>
-  props.template?.provider_body
-  && props.template.provider_template_name === form.provider_template_name
-  && props.template.provider_template_language === form.provider_template_language
-    ? props.template.provider_body
-    : null)
+// 11za's wording for the template picked, shown while picking. From the
+// list; a saved tag whose template is not in it shows its own copy
+const providerBody = computed(() => picked.value?.body
+  ?? (props.template?.provider_body
+    && props.template.provider_template_name === form.provider_template_name
+    && props.template.provider_template_language === form.provider_template_language
+      ? props.template.provider_body
+      : null))
 
 const onPick = event => {
   const t = props.providerTemplates.find(p => pickKey(p) === event.target.value)
