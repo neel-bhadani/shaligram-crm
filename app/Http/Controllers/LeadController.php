@@ -9,15 +9,17 @@ use App\Http\Requests\LeadRequest;
 use App\Http\Requests\LeadSwitchProjectRequest;
 use App\Models\ChannelPartner;
 use App\Models\Lead;
+use App\Models\MessageTemplate;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\LeadActivityRecorder;
 use App\Services\LeadAssignmentService;
 use App\Services\LeadCreationService;
 use App\Services\LeadFollowUpService;
+use App\Services\LeadListQuery;
 use App\Services\LeadTimeline;
+use App\Services\WhatsApp\BulkSender;
 use App\Support\CrmTaxonomy;
-use App\Support\RecordSearch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -48,14 +50,13 @@ class LeadController extends Controller
         private LeadActivityRecorder $activities,
         private LeadTimeline $timeline,
         private LeadCreationService $creation,
+        private LeadListQuery $listQuery,
     ) {}
 
     public function index(Request $request)
     {
         $user = $request->user();
         $filters = $this->filters($request);
-
-        [$from, $to] = $this->dateWindow($filters);
 
         /*
          | One base query, built once and read twice.
@@ -72,23 +73,12 @@ class LeadController extends Controller
          |
          | visibleTo() is inside it, which is what keeps a telecaller's chips
          | counting a telecaller's leads; the model's soft-delete scope comes
-         | along for the same ride.
+         | along for the same ride. The query itself is LeadListQuery, so the
+         | bulk WhatsApp send acts on exactly this list.
          */
-        $base = fn () => Lead::visibleTo($user)
-            ->tap(fn (Builder $q) => RecordSearch::apply($q, $filters['search'] ?? null,
-                ['first_name', 'middle_name', 'last_name', 'mobile_number', 'email'],
-                ['first_name', 'middle_name', 'last_name'], ['mobile_number']))
-            ->when($filters['project_id'] ?? null, fn ($q, $v) => $q->where('project_id', $v))
-            ->when($filters['source'] ?? null, fn ($q, $v) => $q->where('source', $v))
-            // where the leads report's "By channel partner" rows drill through to
-            ->when($filters['channel_partner_id'] ?? null, fn ($q, $v) => $q->where('channel_partner_id', $v))
-            ->when($filters['assigned_to'] ?? null, fn ($q, $v) => $q->where('assigned_to', $v))
-            // one clause, both bounds, on real datetimes rather than DATE() —
-            // see dateWindow() for why the boundaries are built where they are
-            ->when($from, fn ($q) => $q->whereBetween('created_at', [$from, $to]));
+        $base = fn () => $this->listQuery->withoutStage($user, $filters);
 
-        $leads = $base()
-            ->when($filters['stage'] ?? null, fn ($q, $v) => $q->where('stage', $v))
+        $leads = $this->listQuery->filtered($user, $filters)
             // eager load or a 25-row page fires 50 extra queries
             ->with([
                 'project:id,name',
@@ -117,6 +107,9 @@ class LeadController extends Controller
             'stageCounts' => $this->stageCounts($base),
             'filters' => $this->withRangeWord($filters),
             'options' => $this->options($user),
+            // the bulk WhatsApp send, admin only: the same tag list, in the
+            // same order, as everywhere else a tag is picked
+            'whatsappTags' => $user->isAdmin() ? $this->bulkTags() : [],
         ]);
     }
 
@@ -155,6 +148,21 @@ class LeadController extends Controller
     }
 
     /**
+     * Every tag that can be switched on, by name, with why it cannot go in
+     * bulk when it cannot — so the dropdown can say so rather than hide it.
+     *
+     * @return list<array{id: int, name: string, bulk_refusal: ?string}>
+     */
+    private function bulkTags(): array
+    {
+        $bulk = app(BulkSender::class);
+
+        return MessageTemplate::active()->orderBy('name')->get()
+            ->map(fn (MessageTemplate $t) => ['id' => $t->id, 'name' => $t->name, 'bulk_refusal' => $bulk->refusal($t)])
+            ->all();
+    }
+
+    /**
      * The filters this page owns. Leads have no default — an unfiltered list
      * is the starting point — so a missing key simply means "do not filter",
      * and that is what All time and the All chip are.
@@ -164,19 +172,9 @@ class LeadController extends Controller
         return $this->resolveFilters(
             $request,
             'leads',
-            [
-                'search' => ['sometimes', 'string', 'max:100'],
-                // every key, not only the active ones: filtering a list is
-                // reading, and a lead filed under a retired stage is still a
-                // lead somebody may want to narrow to
-                'stage' => ['sometimes', 'string', Rule::in(CrmTaxonomy::stageKeys())],
-                'project_id' => ['sometimes', 'integer', 'min:1'],
-                'source' => ['sometimes', 'string', Rule::in(CrmTaxonomy::sourceKeys())],
-                'channel_partner_id' => ['sometimes', 'integer', 'min:1'],
-                'assigned_to' => ['sometimes', 'integer', 'min:1'],
-            ] + $this->dateRangeRules(),
+            $this->listQuery->rules(),
             [],
-            fn (array $state) => $this->sanitiseDates($state),
+            fn (array $state) => $this->listQuery->normalise($state),
         );
     }
 

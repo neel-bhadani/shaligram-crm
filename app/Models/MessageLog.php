@@ -63,11 +63,15 @@ class MessageLog extends Model
             'sent' => $this->sentOutcome(),
             'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
             'queued' => match (true) {
+                $this->batch_id !== null && $this->send_at !== null => 'Waiting its turn in a bulk send ('.$this->send_at->format('j M, g:i a').')',
                 $this->isScheduled() => 'Scheduled for '.$this->send_at->format('j M, g:i a').' (India time)',
                 $this->mode === 'api' => 'Waiting to be sent by API',
                 default => 'Waiting for somebody to open it',
             },
             'sending' => 'Being sent',
+            'held' => $this->error_code === 'http 429'
+                ? 'Rate limited by 11za — held with its bulk send until somebody resumes it'
+                : 'Held with its bulk send until somebody resumes it',
             'unknown' => 'Outcome unknown — '.self::UNKNOWN_ADVICE,
             'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
             'skipped' => 'Not sent',
@@ -158,6 +162,12 @@ class MessageLog extends Model
     public function checker()
     {
         return $this->belongsTo(User::class, 'checked_by');
+    }
+
+    /** The bulk send this message is part of, or null. */
+    public function batch()
+    {
+        return $this->belongsTo(MessageBatch::class, 'batch_id');
     }
 
     public function rule()

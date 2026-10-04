@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Link, router, useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '../../Layouts/AppLayout.vue'
@@ -38,6 +38,7 @@ const props = defineProps({
   queue: Array,
   needsChecking: { type: Array, default: () => [] },
   scheduled: { type: Array, default: () => [] },
+  batches: { type: Array, default: () => [] },
   activity: Array,
   catalog: Object,
   whatsapp: Object,
@@ -377,6 +378,64 @@ const sendLater = message =>
 const cancelMessage = message =>
   router.post(route('automation.messages.cancel', message.id), {}, { preserveScroll: true })
 
+/*
+ | Bulk sends: one row each. The rows inside load when it is opened — the
+ | left-out leads too, with why. While one is going, the section refreshes
+ | itself so the counts move without a reload.
+ */
+const batchRows = ref({})
+const stoppingBatch = ref(null)
+
+const loadBatch = (batch, event) => {
+  if (!event.target.open || batchRows.value[batch.id]) return
+  axios.get(route('automation.batches.show', batch.id))
+    .then(({ data }) => { batchRows.value = { ...batchRows.value, [batch.id]: data.messages } })
+}
+
+const confirmStopBatch = () => {
+  router.post(route('automation.batches.stop', stoppingBatch.value.id), {}, {
+    preserveScroll: true,
+    onFinish: () => { stoppingBatch.value = null; batchRows.value = {} },
+  })
+}
+
+const resumeBatch = batch =>
+  router.post(route('automation.batches.resume', batch.id), {}, {
+    preserveScroll: true,
+    onFinish: () => { batchRows.value = {} },
+  })
+
+const batchStateLabel = state => ({
+  running: 'Sending', scheduled: 'Scheduled', held: 'Held', stopped: 'Stopped', finished: 'Finished',
+}[state] ?? state)
+
+const batchChip = state => ({
+  running: 'border-sky-200 bg-sky-50 text-sky-700',
+  scheduled: 'border-amber-200 bg-amber-50 text-amber-800',
+  held: 'border-rose-200 bg-rose-50 text-rose-700',
+  stopped: 'border-slate-200 bg-slate-50 text-slate-500',
+  finished: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+}[state] ?? 'border-slate-200 bg-slate-50 text-slate-500')
+
+const batchCounts = b => [
+  ['Sent', b.counts.sent],
+  ['Waiting', b.counts.queued],
+  ['Being sent', b.counts.sending],
+  ['Held', b.counts.held],
+  ['Failed', b.counts.failed],
+  ['Not sent', b.counts.skipped],
+  ['Cancelled', b.counts.cancelled],
+  ['Outcome unknown', b.counts.unknown],
+].filter(([, n]) => n > 0)
+
+const anyBatchGoing = computed(() => props.batches.some(b => b.state === 'running'))
+const batchTimer = setInterval(() => {
+  if (anyBatchGoing.value && tab.value === 'queue') {
+    router.reload({ only: ['batches', 'needsChecking'], preserveScroll: true })
+  }
+}, 15000)
+onBeforeUnmount(() => clearInterval(batchTimer))
+
 const statusChip = status => ({
   queued: 'border-amber-200 bg-amber-50 text-amber-800',
   opened: 'border-teal-200 bg-teal-50 text-teal-700',
@@ -384,6 +443,7 @@ const statusChip = status => ({
   unknown: 'border-slate-300 bg-white text-slate-600',
   sent: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
+  held: 'border-rose-200 bg-white text-rose-700',
   skipped: 'border-slate-200 bg-slate-50 text-slate-500',
   cancelled: 'border-slate-200 bg-slate-50 text-slate-500',
 }[status] ?? 'border-slate-200 bg-slate-50 text-slate-500')
@@ -861,6 +921,62 @@ const whenShort = iso => iso
         </div>
       </div>
 
+      <!-- BULK SENDS. One row each; open one for every lead in it. -->
+      <div v-if="batches.length" class="mb-6">
+        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Bulk sends</h3>
+        <div class="space-y-2">
+          <div v-for="b in batches" :key="b.id" class="card p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-semibold text-slate-900">Tag: {{ b.tag }}</span>
+                  <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        :class="batchChip(b.state)">{{ batchStateLabel(b.state) }}</span>
+                </div>
+                <p class="mt-1 text-[11px] text-slate-500">
+                  {{ b.selected }} selected · {{ b.recipients }} to receive it · {{ b.excluded }} left out ·
+                  started by {{ b.created_by ?? 'a removed user' }} {{ when(b.created_at) }}
+                  <template v-if="b.send_at"> · for {{ when(b.send_at) }}</template>
+                </p>
+                <p class="mt-1 text-xs text-slate-700">
+                  <span v-for="([label, n], i) in batchCounts(b)" :key="label">{{ i ? ' · ' : '' }}{{ label }} {{ n }}</span>
+                </p>
+                <p v-if="b.state === 'held'" class="warn-box mt-2 text-xs">
+                  {{ b.held_reason }}
+                  <span class="block text-[11px] text-slate-500">Held {{ when(b.held_at) }}. It does not resume by itself.</span>
+                </p>
+                <p v-if="b.resumed_by" class="mt-1 text-[11px] text-slate-400">
+                  Resumed by {{ b.resumed_by }} {{ when(b.resumed_at) }}
+                </p>
+                <p v-if="b.stopped_by" class="mt-1 text-[11px] text-slate-400">
+                  Stopped by {{ b.stopped_by }} {{ when(b.stopped_at) }}
+                </p>
+              </div>
+              <div class="flex flex-none flex-wrap gap-1.5">
+                <button v-if="b.state === 'held'" class="btn-xs" @click="resumeBatch(b)">Resume</button>
+                <button v-if="['running', 'scheduled', 'held'].includes(b.state)"
+                        class="btn-xs hover:border-rose-500 hover:text-rose-600"
+                        @click="stoppingBatch = b">Stop</button>
+              </div>
+            </div>
+
+            <details class="mt-2 text-[11px] text-slate-500" @toggle="loadBatch(b, $event)">
+              <summary class="cursor-pointer">Every lead in this send</summary>
+              <p v-if="!batchRows[b.id]" class="mt-1 text-slate-400">Loading…</p>
+              <div v-else class="mt-1 max-h-72 divide-y divide-slate-100 overflow-y-auto rounded bg-slate-50">
+                <div v-for="m in batchRows[b.id]" :key="m.id" class="px-3 py-1.5">
+                  <span class="font-medium text-slate-700">{{ m.name }}</span>
+                  <span class="text-slate-400"> · {{ m.number ?? 'no number' }}</span>
+                  <span class="block" :class="m.status === 'failed' ? 'text-rose-600' : 'text-slate-500'">
+                    {{ m.outcome }}<template v-if="m.error && m.status !== 'held'"> — {{ m.error }}</template>
+                  </span>
+                </div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+
       <!-- SCHEDULED. Every one, soonest first, cancellable until it goes. -->
       <div v-if="scheduled.length" class="mb-6">
         <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -884,7 +1000,7 @@ const whenShort = iso => iso
         </p>
       </div>
 
-      <div v-if="!queue.length && !scheduled.length" class="card px-6 py-10 text-center">
+      <div v-if="!queue.length && !scheduled.length && !batches.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">Nothing waiting to be sent</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           When a lead reaches a stage set up on Auto-send, the message appears here with the customer's
@@ -1228,6 +1344,15 @@ const whenShort = iso => iso
       confirm-text="Delete rule"
       @close="deletingRule = null"
       @confirm="confirmDeleteRule"
+    />
+
+    <ConfirmDialog
+      :show="!!stoppingBatch"
+      title="Stop this bulk send?"
+      :message="`Nothing more of “${stoppingBatch?.tag}” goes. Every message still waiting is cancelled, under your name. One already handed to 11za finishes. A stopped send cannot be resumed.`"
+      confirm-text="Stop the send"
+      @close="stoppingBatch = null"
+      @confirm="confirmStopBatch"
     />
 
     <ConfirmDialog

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\MessageBatch;
 use App\Models\MessageLog;
 use App\Services\WhatsApp\WhatsAppSender;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,7 +32,13 @@ class SendWhatsAppMessage implements ShouldQueue
 
     public int $tries;
 
-    public function __construct(public int $messageId)
+    /**
+     * @param  int  $dispatch  the row's dispatch number when this job was
+     *                         queued. Resuming a held bulk send bumps the
+     *                         row's, so a job from before the hold — a retry,
+     *                         or the row's old turn — wakes and does nothing.
+     */
+    public function __construct(public int $messageId, public int $dispatch = 0)
     {
         $this->tries = (int) config('automation.whatsapp.api.tries', 3);
     }
@@ -39,7 +46,8 @@ class SendWhatsAppMessage implements ShouldQueue
     public function handle(WhatsAppSender $sender): void
     {
         // woken before its time — a scheduled row is never sent early
-        $early = MessageLog::whereKey($this->messageId)->where('status', 'queued')->where('send_at', '>', now())->value('send_at');
+        $early = MessageLog::whereKey($this->messageId)->where('status', 'queued')->where('dispatch', $this->dispatch)
+            ->where('send_at', '>', now())->value('send_at');
 
         if ($early !== null) {
             $this->release(max(1, (int) ceil(now()->diffInSeconds($early, true))));
@@ -49,10 +57,14 @@ class SendWhatsAppMessage implements ShouldQueue
 
         $claimed = MessageLog::whereKey($this->messageId)
             ->where('status', 'queued')
+            ->where('dispatch', $this->dispatch)
             ->where(fn ($q) => $q->whereNull('send_at')->orWhere('send_at', '<=', now()))
+            // a bulk row only while its batch is running: not held, not stopped
+            ->where(fn ($q) => $q->whereNull('batch_id')
+                ->orWhereIn('batch_id', MessageBatch::select('id')->where('status', 'running')))
             ->update(['status' => 'sending', 'sending_started_at' => now()]);
 
-        // gone, already opened by somebody, cancelled, or another worker has it
+        // gone, already opened by somebody, cancelled, held, stale, or another worker has it
         if (! $claimed) {
             return;
         }
@@ -66,6 +78,16 @@ class SendWhatsAppMessage implements ShouldQueue
 
         if ($this->attempts() >= $this->tries) {
             $message->update(['status' => 'failed']);
+
+            return;
+        }
+
+        // a bulk send held or stopped while this one was out: not retried.
+        // Held, it waits with the rest for Resume; stopped, this attempt failed
+        $batchStatus = $message->batch_id !== null ? MessageBatch::whereKey($message->batch_id)->value('status') : null;
+
+        if ($batchStatus !== null && $batchStatus !== 'running') {
+            $message->update(['status' => $batchStatus === 'held' ? 'held' : 'failed']);
 
             return;
         }

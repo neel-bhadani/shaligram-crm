@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\ListsAlerts;
 use App\Models\AutomationLog;
 use App\Models\AutomationRule;
+use App\Models\MessageBatch;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
 use App\Services\Automation\AutoSend;
@@ -71,6 +72,7 @@ class AutomationController extends Controller
             'queue' => $this->queue(),
             'needsChecking' => $this->needsChecking(),
             'scheduled' => $this->scheduled(),
+            'batches' => $this->batches(),
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
             'whatsapp' => $this->whatsappCard(),
@@ -286,6 +288,8 @@ class AutomationController extends Controller
     private function queue(): array
     {
         return $this->messageQuery()
+            // a bulk send is one row in batches(), not a few hundred here
+            ->whereNull('batch_id')
             ->latest('id')
             ->limit((int) config('automation.queue_limit', 100))
             ->get()
@@ -320,11 +324,51 @@ class AutomationController extends Controller
     private function scheduled(): array
     {
         return $this->messageQuery()
+            ->whereNull('batch_id')
             ->where('status', 'queued')
             ->where('send_at', '>', now())
             ->orderBy('send_at')
             ->get()
             ->map(fn (MessageLog $m) => $this->messageRow($m))
+            ->all();
+    }
+
+    /**
+     * The recent bulk sends, one row each: who started it, what it is doing,
+     * and how many of its messages are in each state. Who stopped, held or
+     * resumed it are their own fields — none writes over who started it.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function batches(): array
+    {
+        return MessageBatch::with('creator:id,first_name,last_name', 'stopper:id,first_name,last_name', 'resumer:id,first_name,last_name')
+            ->latest('id')
+            ->limit(20)
+            ->get()
+            ->map(function (MessageBatch $batch) {
+                $counts = $batch->counts();
+
+                return [
+                    'id' => $batch->id,
+                    'tag' => $batch->template_name,
+                    'state' => $batch->state($counts),
+                    'counts' => $counts,
+                    'selected' => $batch->selected_count,
+                    'excluded' => $batch->excluded_count,
+                    'recipients' => $batch->recipient_count,
+                    'selection' => $batch->selection,
+                    'send_at' => $batch->send_at?->toIso8601String(),
+                    'created_by' => $batch->creator?->display_name,
+                    'created_at' => $batch->created_at?->toIso8601String(),
+                    'held_reason' => $batch->held_reason,
+                    'held_at' => $batch->held_at?->toIso8601String(),
+                    'stopped_by' => $batch->stopper?->display_name,
+                    'stopped_at' => $batch->stopped_at?->toIso8601String(),
+                    'resumed_by' => $batch->resumer?->display_name,
+                    'resumed_at' => $batch->resumed_at?->toIso8601String(),
+                ];
+            })
             ->all();
     }
 
