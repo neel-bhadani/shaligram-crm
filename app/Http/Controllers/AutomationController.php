@@ -70,6 +70,7 @@ class AutomationController extends Controller
             'providerTemplates' => $this->providerTemplates(),
             'queue' => $this->queue(),
             'needsChecking' => $this->needsChecking(),
+            'scheduled' => $this->scheduled(),
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
             'whatsapp' => $this->whatsappCard(),
@@ -309,6 +310,24 @@ class AutomationController extends Controller
             ->all();
     }
 
+    /**
+     * Every message waiting for a chosen time, soonest first. Kept out of the
+     * capped log for the same reason: one scheduled a week ahead must still
+     * be there to cancel.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function scheduled(): array
+    {
+        return $this->messageQuery()
+            ->where('status', 'queued')
+            ->where('send_at', '>', now())
+            ->orderBy('send_at')
+            ->get()
+            ->map(fn (MessageLog $m) => $this->messageRow($m))
+            ->all();
+    }
+
     private function messageQuery(): Builder
     {
         return MessageLog::with([
@@ -340,6 +359,8 @@ class AutomationController extends Controller
             'error_code' => $m->error_code,
             'sent_at' => $m->sent_at?->toIso8601String(),
             'created_at' => $m->created_at?->toIso8601String(),
+            'send_at' => $m->send_at?->toIso8601String(),
+            'scheduled' => $m->isScheduled(),
             'lead' => $m->lead ? [
                 'id' => $m->lead->id,
                 'name' => $m->lead->full_name,

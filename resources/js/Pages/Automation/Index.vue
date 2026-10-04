@@ -10,6 +10,7 @@ import HelpTip from '../../Components/HelpTip.vue'
 import RuleFormModal from '../../Components/RuleFormModal.vue'
 import TemplateFormModal from '../../Components/TemplateFormModal.vue'
 import { rulePhrase } from '../../lib/rulePhrase.js'
+import { localNow, isPast } from '../../lib/localDateTime.js'
 import { useFilterVisit } from '../../composables/useFilterVisit.js'
 
 /*
@@ -36,6 +37,7 @@ const props = defineProps({
   providerTemplates: Object,
   queue: Array,
   needsChecking: { type: Array, default: () => [] },
+  scheduled: { type: Array, default: () => [] },
   activity: Array,
   catalog: Object,
   whatsapp: Object,
@@ -72,8 +74,9 @@ useFilterVisit(route('automation.index'))
 const badge = key => ({
   auto_send: props.autoSend.filter(row => row.template_id).length,
   rules: props.rules.length,
-  templates: props.templates.length,
-  queue: props.queue.filter(m => m.status === 'queued').length + props.needsChecking.length,
+  tags: props.templates.length,
+  queue: props.queue.filter(m => m.status === 'queued' && !m.scheduled).length
+    + props.scheduled.length + props.needsChecking.length,
   alerts: props.counts?.unread ?? 0,
   activity: 0,
 }[key])
@@ -273,7 +276,8 @@ const slotLabel = i => `{{${i + 1}}}`
 
 /* ================= queue ================= */
 
-const queued = computed(() => props.queue.filter(m => m.status === 'queued'))
+// scheduled rows have their own list, so none scrolls off the capped log
+const queued = computed(() => props.queue.filter(m => m.status === 'queued' && !m.scheduled))
 const history = computed(() => props.queue.filter(m => m.status !== 'queued'))
 
 /*
@@ -350,6 +354,25 @@ const confirmSettle = () => {
 
 const sendByApi = message =>
   router.post(route('automation.messages.send', message.id), {}, { preserveScroll: true })
+
+/*
+ | Send later, on a row that can go by API. The time is typed in India time;
+ | the server says no to one already gone. Click-to-send rows are not offered
+ | it: a person has to press send in WhatsApp, which cannot wait for a time.
+ */
+const laterId = ref(null)
+const laterAt = ref('')
+
+const openLater = message => {
+  laterId.value = laterId.value === message.id ? null : message.id
+  laterAt.value = ''
+}
+
+const sendLater = message =>
+  router.post(route('automation.messages.send', message.id), { send_at: laterAt.value }, {
+    preserveScroll: true,
+    onSuccess: () => { laterId.value = null },
+  })
 
 const cancelMessage = message =>
   router.post(route('automation.messages.cancel', message.id), {}, { preserveScroll: true })
@@ -838,7 +861,30 @@ const whenShort = iso => iso
         </div>
       </div>
 
-      <div v-if="!queue.length" class="card px-6 py-10 text-center">
+      <!-- SCHEDULED. Every one, soonest first, cancellable until it goes. -->
+      <div v-if="scheduled.length" class="mb-6">
+        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Scheduled ({{ scheduled.length }})
+        </h3>
+        <div class="card divide-y divide-slate-100">
+          <div v-for="message in scheduled" :key="message.id" class="flex flex-wrap items-center gap-2 px-4 py-2.5">
+            <span class="text-xs font-semibold text-slate-900">{{ when(message.send_at) }}</span>
+            <span class="text-xs font-medium text-slate-700">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
+            <span class="text-[11px] text-slate-400">
+              {{ message.template ? `Tag: ${message.template}` : 'No tag' }}
+              <template v-if="message.user"> · by {{ message.user }}</template>
+            </span>
+            <button class="btn-xs ml-auto hover:border-rose-500 hover:text-rose-600"
+                    @click="cancelMessage(message)">Cancel</button>
+          </div>
+        </div>
+        <p class="mt-1.5 text-[11px] text-slate-400">
+          India time. The lead's number and details are read again when it goes; a lead deleted or
+          left without a number by then is not sent to, and the log says why.
+        </p>
+      </div>
+
+      <div v-if="!queue.length && !scheduled.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">Nothing waiting to be sent</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
           When a lead reaches a stage set up on Auto-send, the message appears here with the customer's
@@ -880,10 +926,23 @@ const whenShort = iso => iso
                 </button>
                 <button v-if="!whatsapp.configured || (whatsapp.api_enabled && message.api_ready)"
                         class="btn-xs" @click="sendByApi(message)">Send by API</button>
+                <button v-if="whatsapp.api_enabled && message.api_ready"
+                        class="btn-xs" @click="openLater(message)">Send later</button>
                 <button class="btn-xs hover:border-rose-500 hover:text-rose-600"
                         @click="cancelMessage(message)">Cancel</button>
               </div>
             </div>
+
+            <div v-if="laterId === message.id" class="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+              <FormField label="Send at (India time)">
+                <input v-model="laterAt" type="datetime-local" class="w-52" :min="localNow()" />
+              </FormField>
+              <button class="btn-xs" :disabled="!laterAt || isPast(laterAt)" @click="sendLater(message)">Schedule</button>
+              <p v-if="isPast(laterAt)" class="w-full text-[11px] text-rose-600">That time has already gone.</p>
+            </div>
+            <p v-else-if="whatsapp.api_enabled && !message.api_ready" class="mt-2 text-[11px] text-slate-400">
+              Can't be scheduled: send later needs API sending, and this one opens in WhatsApp for you to press send.
+            </p>
           </div>
         </div>
 

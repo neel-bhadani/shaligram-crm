@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
+import { localNow, isPast } from '@/lib/localDateTime'
 
 /*
  | WhatsApp for ONE lead: pick a tag, see it filled in with this lead's
@@ -34,6 +35,9 @@ const sending = ref(false)
 const result = ref(null)
 // ticked to send to a customer who opted out; reset whenever the message changes
 const confirmOptedOut = ref(false)
+// send now, or later at a time typed in India time — API only
+const later = ref(false)
+const laterAt = ref('')
 const optOutBusy = ref(false)
 const optOutResult = ref(null)
 
@@ -61,6 +65,8 @@ function reset() {
   result.value = null
   confirmOptedOut.value = false
   optOutResult.value = null
+  later.value = false
+  laterAt.value = ''
 }
 
 /*
@@ -72,6 +78,9 @@ function send() {
   if (!picked.value) return
   if (optedOut.value && !confirmOptedOut.value) return
 
+  const scheduling = picked.value.by_api && later.value
+  if (scheduling && (!laterAt.value || isPast(laterAt.value))) return
+
   const tabRef = picked.value.by_api ? null : window.open('', '_blank')
   sending.value = true
   result.value = null
@@ -79,10 +88,12 @@ function send() {
   axios.post(route('leads.whatsapp.send', props.leadId), {
     template_id: picked.value.id,
     confirm_opted_out: optedOut.value && confirmOptedOut.value,
+    send_at: scheduling ? laterAt.value : null,
   })
     .then(({ data: body }) => {
       if (tabRef && body.url) tabRef.location = body.url
       result.value = { ok: true, message: body.message }
+      if (scheduling) { later.value = false; laterAt.value = '' }
       if (body.history) data.value.history = body.history
     })
     .catch(error => {
@@ -95,6 +106,29 @@ function send() {
       if (body?.history) data.value.history = body.history
     })
     .finally(() => { sending.value = false })
+}
+
+/*
+ | Cancel a message this person scheduled (or any, for an admin). The server
+ | decides who may, and refuses once the worker has picked it up.
+ */
+const cancelling = ref(null)
+
+function cancelScheduled(m) {
+  cancelling.value = m.id
+  result.value = null
+
+  axios.post(route('leads.whatsapp.cancel', [props.leadId, m.id]))
+    .then(({ data: body }) => {
+      result.value = { ok: true, message: body.message }
+      data.value.history = body.history
+    })
+    .catch(error => {
+      const body = error.response?.data
+      result.value = { ok: false, message: body?.message ?? 'The request did not reach the server. Nothing was changed.' }
+      if (body?.history) data.value.history = body.history
+    })
+    .finally(() => { cancelling.value = null })
 }
 
 /*
@@ -196,14 +230,39 @@ watch(pickedId, () => { confirmOptedOut.value = false })
             Not by API: {{ picked.api_reason }}
           </p>
 
+          <!-- send now or later: later is API only, and says so when it cannot be -->
+          <div v-if="picked.by_api" class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-700">
+            <label class="flex items-center gap-1.5">
+              <input v-model="later" type="radio" :value="false" class="h-3.5 w-3.5" /> Send now
+            </label>
+            <label class="flex items-center gap-1.5">
+              <input v-model="later" type="radio" :value="true" class="h-3.5 w-3.5" /> Send later
+            </label>
+          </div>
+          <p v-else class="mt-2 text-[11px] text-slate-400">
+            Send later needs API sending. This one opens in WhatsApp for you to press send, so it cannot wait for a time.
+          </p>
+
+          <div v-if="picked.by_api && later" class="mt-2">
+            <label class="block text-[11px] font-medium text-slate-500" for="wa-send-at">Send at (India time)</label>
+            <input id="wa-send-at" v-model="laterAt" type="datetime-local" class="mt-1 w-56 sm:!py-1.5 sm:text-xs"
+                   :min="localNow()" />
+            <p v-if="isPast(laterAt)" class="mt-1 text-[11px] text-rose-600">That time has already gone.</p>
+            <p v-else class="mt-1 text-[11px] text-slate-400">
+              The lead's details are filled in when it goes. Until then you can cancel it from the list below.
+            </p>
+          </div>
+
           <label v-if="optedOut" class="mt-2 flex items-start gap-2 text-xs text-rose-700">
             <input v-model="confirmOptedOut" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />
             This customer opted out. Send this one message anyway.
           </label>
           <button class="btn-xs mt-2 border-teal-600 text-teal-700"
-                  :disabled="sending || (optedOut && !confirmOptedOut)" @click="send">
-            {{ sending ? 'Sending…' : (picked.by_api ? 'Send by API' : 'Open in WhatsApp') }}
-            to {{ data.number }}
+                  :disabled="sending || (optedOut && !confirmOptedOut)
+                    || (picked.by_api && later && (!laterAt || isPast(laterAt)))" @click="send">
+            <template v-if="sending">Sending…</template>
+            <template v-else-if="picked.by_api && later">Schedule for {{ data.number }}</template>
+            <template v-else>{{ picked.by_api ? 'Send by API' : 'Open in WhatsApp' }} to {{ data.number }}</template>
           </button>
         </div>
 
@@ -223,6 +282,10 @@ watch(pickedId, () => { confirmOptedOut.value = false })
           <span class="block" :class="m.status === 'failed' ? 'text-rose-600' : 'text-slate-500'">
             {{ m.outcome }}<template v-if="m.error"> — {{ m.error }}</template>
           </span>
+          <button v-if="m.can_cancel" class="btn-xs mt-1 hover:border-rose-500 hover:text-rose-600"
+                  :disabled="cancelling === m.id" @click="cancelScheduled(m)">
+            {{ cancelling === m.id ? 'Cancelling…' : 'Cancel' }}
+          </button>
           <details v-if="m.provider_response" class="text-slate-500">
             <summary class="cursor-pointer">11za's response</summary>
             <pre class="mt-1 whitespace-pre-wrap break-all rounded bg-slate-50 p-2 font-mono text-[10px]">{{ m.provider_response }}</pre>

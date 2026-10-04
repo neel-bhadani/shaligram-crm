@@ -38,8 +38,18 @@ class SendWhatsAppMessage implements ShouldQueue
 
     public function handle(WhatsAppSender $sender): void
     {
+        // woken before its time — a scheduled row is never sent early
+        $early = MessageLog::whereKey($this->messageId)->where('status', 'queued')->where('send_at', '>', now())->value('send_at');
+
+        if ($early !== null) {
+            $this->release(max(1, (int) ceil(now()->diffInSeconds($early, true))));
+
+            return;
+        }
+
         $claimed = MessageLog::whereKey($this->messageId)
             ->where('status', 'queued')
+            ->where(fn ($q) => $q->whereNull('send_at')->orWhere('send_at', '<=', now()))
             ->update(['status' => 'sending', 'sending_started_at' => now()]);
 
         // gone, already opened by somebody, cancelled, or another worker has it

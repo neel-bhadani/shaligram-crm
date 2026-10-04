@@ -62,13 +62,30 @@ class MessageQueueController extends Controller
      * An unconfigured API still gets its answer here, in a sentence the office
      * admin can act on and on the row itself: an admin who presses the button
      * finds out what is missing, instead of watching nothing happen.
+     *
+     * With a time, it is scheduled instead: India time, in the future, API only.
      */
     public function send(Request $request, MessageLog $message)
     {
         $this->authoriseFor($request, $message);
 
+        $data = $request->validate(
+            ['send_at' => ['nullable', 'date_format:Y-m-d\TH:i']],
+            ['send_at.date_format' => 'Choose a date and a time to send it.'],
+        );
+
         if ($message->status !== 'queued') {
             return back()->with('error', 'That message has already left the queue.');
+        }
+
+        if ($message->isScheduled()) {
+            return back()->with('error', 'That message is already scheduled. Cancel it first to send it another way.');
+        }
+
+        $sendAt = WhatsAppSender::sendAtFrom($data['send_at'] ?? null);
+
+        if ($sendAt === false) {
+            return back()->with('error', 'Choose a time in the future (India time).');
         }
 
         if ($refusal = $this->optedOutRefusal($message)) {
@@ -81,7 +98,7 @@ class MessageQueueController extends Controller
             return back()->with('error', $outcome['message']);
         }
 
-        $outcome = $this->whatsapp->dispatchQueued($message, $request->user());
+        $outcome = $this->whatsapp->dispatchQueued($message, $request->user(), $sendAt ?: null);
 
         return back()->with($outcome['ok'] ? 'success' : 'error', $outcome['message']);
     }
@@ -92,16 +109,21 @@ class MessageQueueController extends Controller
      * Kept as a row rather than deleted: "we decided not to send this" is a
      * fact worth as much as "we sent this", and a rule that queues messages
      * nobody ever sends is a rule to switch off.
+     *
+     * One conditional update, so it cannot land on a row the worker has
+     * claimed in the meantime: once it is on its way, it cannot be cancelled.
      */
     public function cancel(Request $request, MessageLog $message)
     {
         $this->authoriseFor($request, $message);
 
-        if ($message->status !== 'queued') {
+        $cancelled = MessageLog::whereKey($message->id)
+            ->where('status', 'queued')
+            ->update(['status' => 'cancelled', 'user_id' => $request->user()->id]);
+
+        if (! $cancelled) {
             return back()->with('error', 'That message has already left the queue.');
         }
-
-        $message->update(['status' => 'cancelled', 'user_id' => $request->user()->id]);
 
         return back()->with('success', 'Message cancelled. It will not be sent.');
     }

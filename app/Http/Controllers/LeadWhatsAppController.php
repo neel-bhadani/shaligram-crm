@@ -81,6 +81,10 @@ class LeadWhatsAppController extends Controller
      * By API when the API is on and the message has an 11za template name — queued for the worker, never sent inline. Otherwise
      * click-to-send: the row is written and the wa.me link handed back for
      * the browser to open.
+     *
+     * Send later is API only. The time is typed in India time and must be in
+     * the future; until then the row waits in the Queue, where it can be
+     * cancelled, and the lead's values are read again when it goes.
      */
     public function send(Request $request, Lead $lead): JsonResponse
     {
@@ -88,7 +92,16 @@ class LeadWhatsAppController extends Controller
 
         $data = $request->validate([
             'template_id' => ['required', 'integer'],
+            'send_at' => ['nullable', 'date_format:Y-m-d\TH:i'],
+        ], [
+            'send_at.date_format' => 'Choose a date and a time to send it.',
         ]);
+
+        $sendAt = WhatsAppSender::sendAtFrom($data['send_at'] ?? null);
+
+        if ($sendAt === false) {
+            return response()->json(['ok' => false, 'message' => 'Choose a time in the future (India time).'], 422);
+        }
 
         $template = MessageTemplate::active()->find($data['template_id']);
 
@@ -112,7 +125,7 @@ class LeadWhatsAppController extends Controller
         }
 
         if ($this->whatsapp->apiEnabled() && ! $template->apiUnsendableReason()) {
-            $outcome = $this->whatsapp->queueTemplate($lead, $template, user: $user);
+            $outcome = $this->whatsapp->queueTemplate($lead, $template, user: $user, sendAt: $sendAt);
 
             if ($outcome['result'] === 'skipped') {
                 return response()->json(['ok' => false, 'message' => $outcome['reason'], 'history' => $this->history($lead)], 422);
@@ -121,9 +134,15 @@ class LeadWhatsAppController extends Controller
             return response()->json([
                 'ok' => true,
                 'mode' => 'api',
-                'message' => 'Sending by API. The outcome appears below within a minute.',
+                'message' => $sendAt
+                    ? WhatsAppSender::scheduledFor($sendAt)
+                    : 'Sending by API. The outcome appears below within a minute.',
                 'history' => $this->history($lead),
             ]);
+        }
+
+        if ($sendAt) {
+            return response()->json(['ok' => false, 'message' => WhatsAppSender::NOT_SCHEDULABLE], 422);
         }
 
         $message = $this->whatsapp->queue($lead, $template, user: $user);
@@ -142,6 +161,41 @@ class LeadWhatsAppController extends Controller
             'message' => 'Opened in WhatsApp. Press send there — the CRM cannot tell whether you did.',
             'history' => $this->history($lead),
         ]);
+    }
+
+    /**
+     * Cancel a scheduled message from the lead's history.
+     *
+     * Whoever scheduled it can cancel it, and an admin can cancel any — a
+     * telecaller who picked the wrong time or tag must not have to find an
+     * admin before it reaches the customer. One conditional update, so it
+     * cannot land on a message the worker has already picked up.
+     */
+    public function cancel(Request $request, Lead $lead, MessageLog $message): JsonResponse
+    {
+        $this->authorize('view', $lead);
+
+        $user = $request->user();
+        abort_unless($message->lead_id === $lead->id && $this->canCancel($message, $user), 403);
+
+        $cancelled = MessageLog::whereKey($message->id)
+            ->where('status', 'queued')
+            ->whereNotNull('send_at')
+            ->update(['status' => 'cancelled', 'user_id' => $user->id]);
+
+        return response()->json([
+            'ok' => (bool) $cancelled,
+            'message' => $cancelled
+                ? 'Cancelled. It will not be sent.'
+                : 'Too late to cancel: it has already gone, or is being sent.',
+            'history' => $this->history($lead),
+        ], $cancelled ? 200 : 422);
+    }
+
+    /** A scheduled message, not yet picked up, that this person scheduled — or any, for an admin. */
+    private function canCancel(MessageLog $message, User $user): bool
+    {
+        return $message->isScheduled() && ($user->isAdmin() || $message->user_id === $user->id);
     }
 
     /**
@@ -198,6 +252,8 @@ class LeadWhatsAppController extends Controller
     /** @return array<int, array<string, mixed>> */
     private function history(Lead $lead): array
     {
+        $user = request()->user();
+
         return MessageLog::where('lead_id', $lead->id)
             ->with(['template:id,name', 'rule:id,name', 'user:id,first_name,last_name'])
             ->latest('id')
@@ -216,7 +272,8 @@ class LeadWhatsAppController extends Controller
                 'provider_response' => $m->isUnconfirmed() ? $m->provider_response : null,
                 'outcome' => $m->outcome(),
                 'error' => $m->error,
-                'at' => ($m->sent_at ?? $m->created_at)?->toIso8601String(),
+                'at' => ($m->sent_at ?? $m->send_at ?? $m->created_at)?->toIso8601String(),
+                'can_cancel' => $user !== null && $this->canCancel($m, $user),
             ])
             ->all();
     }
