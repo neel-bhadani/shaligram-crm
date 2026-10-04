@@ -259,20 +259,13 @@ class AutomationController extends Controller
 
     /**
      * 11za's template list as last read, for the Messages dropdown before it
-     * is refreshed. The raw answer comes along so an empty list can be
-     * explained.
+     * is refreshed. `failed` stops the tab asking 11za again by itself.
      *
-     * @return array{templates: list<array<string, mixed>>, raw: ?string, at: ?string}
+     * @return array{templates: list<array<string, mixed>>, total: int, at: ?string, failed: bool}
      */
     private function providerTemplates(): array
     {
-        $saved = (array) $this->whatsapp->integration()->setting('template_list', []);
-
-        return [
-            'templates' => $saved['templates'] ?? [],
-            'raw' => $saved['raw'] ?? null,
-            'at' => $saved['at'] ?? null,
-        ];
+        return $this->whatsapp->providerTemplateList();
     }
 
     /**

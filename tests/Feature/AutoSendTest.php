@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\AutomationRule;
-use App\Models\Integration;
 use App\Models\Lead;
 use App\Models\LeadStage;
 use App\Models\MessageLog;
@@ -14,23 +13,18 @@ use App\Services\Automation\AutoSend;
 use App\Services\LeadFollowUpService;
 use App\Services\WhatsApp\TemplateRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
- * The Auto-send tab — a message per stage, kept as ordinary rules — and the
- * Messages tab's 11za template list and click-to-send wording.
+ * The Auto-send tab — a message per stage, kept as ordinary rules — and
+ * click-to-send wording. The 11za template list is in ProviderTemplateListTest.
  *
  * @see AutoSend
  */
 class AutoSendTest extends TestCase
 {
     use RefreshDatabase;
-
-    private const LIST_URL = 'https://api.11za.in/apis/template/getTemplatesAll';
-
-    private const TOKEN = '11za-live-token/abc+123';
 
     private User $admin;
 
@@ -304,45 +298,6 @@ class AutoSendTest extends TestCase
         $this->assertSame('Old: hi Rahul', $renderer->build($template, $lead)['body']);
     }
 
-    /* ================= 11za's template list ================= */
-
-    public function test_the_template_list_is_read_from_11za_and_its_wording_copied_onto_the_message(): void
-    {
-        $this->configureApi();
-        $template = $this->message();
-
-        Http::fake([self::LIST_URL => Http::response(['Data' => [
-            ['name' => 'welcome', 'language' => 'en', 'body' => 'Hi {{1}}, about {{2}}.'],
-            ['name' => 'site_visit', 'language' => 'en'],
-        ], 'IsSuccess' => true])]);
-
-        $this->actingAs($this->admin)
-            ->postJson(route('automation.templates.provider'))
-            ->assertOk()
-            ->assertJsonPath('ok', true)
-            ->assertJsonPath('templates.0', ['name' => 'welcome', 'language' => 'en', 'body' => 'Hi {{1}}, about {{2}}.', 'variables' => 2])
-            ->assertJsonPath('templates.1', ['name' => 'site_visit', 'language' => 'en', 'body' => null, 'variables' => null]);
-
-        Http::assertSent(fn ($request) => $request->url() === self::LIST_URL && $request['authToken'] === self::TOKEN);
-
-        $this->assertSame('Hi {{1}}, about {{2}}.', $template->fresh()->provider_body);
-    }
-
-    public function test_an_unreadable_template_list_answers_with_11zas_response_and_no_token(): void
-    {
-        $this->configureApi();
-
-        Http::fake([self::LIST_URL => Http::response(['Message' => 'bad token '.self::TOKEN, 'IsSuccess' => false], 400)]);
-
-        $response = $this->actingAs($this->admin)
-            ->postJson(route('automation.templates.provider'))
-            ->assertOk()
-            ->assertJsonPath('ok', false);
-
-        $this->assertStringContainsString('[redacted]', $response->json('raw'));
-        $this->assertStringNotContainsString('11za-live-token', $response->getContent());
-    }
-
     /* ================= helpers ================= */
 
     private function addStage(string $label): LeadStage
@@ -361,17 +316,6 @@ class AutoSendTest extends TestCase
             'provider_template_name' => 'welcome', 'provider_template_language' => 'en',
             'placeholder_map' => ['first_name', 'project'],
         ]);
-    }
-
-    private function configureApi(): void
-    {
-        $integration = Integration::forProvider('whatsapp');
-        $integration->mergeSettings([
-            'auth_token' => self::TOKEN,
-            'origin_website' => 'https://shaligram.example',
-            'api_enabled' => true,
-        ]);
-        $integration->save();
     }
 
     private function lead(): Lead
