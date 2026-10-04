@@ -3,16 +3,15 @@ import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 
 /*
- | WhatsApp for ONE lead: pick a message, see it filled in with this lead's
+ | WhatsApp for ONE lead: pick a tag, see it filled in with this lead's
  | real values, send it. There is no list of leads anywhere in here, on
  | purpose — this is a per-lead action, not a broadcast.
  |
- | By API when the API is on and the message has an 11za template name;
+ | By API when the API is on and the tag has an 11za template name;
  | otherwise click-to-send, which opens WhatsApp with the text typed.
  |
- | The 24-hour window is always "unknown, template required". Knowing it needs
- | the inbound webhook, which is not built; the panel never claims the lead is
- | outside it.
+ | No 24-hour window chip: every tag is a template, so the window never
+ | changes what the user can do.
  */
 const props = defineProps({
   leadId: { type: Number, required: true },
@@ -141,8 +140,6 @@ watch(pickedId, () => { confirmOptedOut.value = false })
   <div class="mt-6 border-t border-slate-100 pt-5">
     <div class="flex flex-wrap items-center gap-2">
       <h4 class="text-xs font-semibold text-slate-500">WhatsApp</h4>
-      <span v-if="data" class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
-                               font-semibold text-slate-500">{{ data.window }}</span>
     </div>
 
     <p v-if="failed" class="mt-2 text-xs text-rose-600">Could not load WhatsApp messages for this lead.</p>
@@ -172,15 +169,13 @@ watch(pickedId, () => { confirmOptedOut.value = false })
       <template v-else-if="data.templates.length">
         <p class="mt-0.5 text-xs text-slate-400">
           {{ data.api_enabled
-            ? 'Messages marked “by API” are sent through 11za. The rest open in WhatsApp for you to send.'
+            ? 'Sent through 11za where possible; otherwise opens in WhatsApp for you to send.'
             : 'Opens in WhatsApp with the message typed, for you to send.' }}
         </p>
 
-        <select v-model="pickedId" class="mt-3 w-full sm:!py-1.5 sm:text-xs" aria-label="WhatsApp message">
-          <option value="">Choose a message…</option>
-          <option v-for="t in data.templates" :key="t.id" :value="t.id">
-            {{ t.name }}{{ t.by_api ? ' · by API' : ' · click-to-send' }}
-          </option>
+        <select v-model="pickedId" class="mt-3 w-full sm:!py-1.5 sm:text-xs" aria-label="WhatsApp tag">
+          <option value="">Choose a tag…</option>
+          <option v-for="t in data.templates" :key="t.id" :value="t.id">{{ t.name }}</option>
         </select>
 
         <div v-if="picked" class="mt-3">
@@ -188,12 +183,15 @@ watch(pickedId, () => { confirmOptedOut.value = false })
             <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs
                         leading-relaxed text-slate-800 shadow-sm">{{ picked.preview }}</div>
           </div>
-          <p v-if="picked.by_api && picked.values.length" class="mt-1.5 text-[11px] text-slate-400">
-            Sent as {{ picked.provider_template }} with
-            <span v-for="(v, i) in picked.values" :key="v.position">
-              {{ i ? ', ' : '' }}{{ variable(v.position) }} = “{{ v.value || '(empty)' }}”
-            </span>
-          </p>
+          <details v-if="picked.by_api" class="mt-1.5 text-[11px] text-slate-400">
+            <summary class="cursor-pointer">What 11za receives</summary>
+            <p class="mt-1">
+              Template {{ picked.provider_template }}<template v-if="picked.values.length"> with
+              <span v-for="(v, i) in picked.values" :key="v.position">
+                {{ i ? ', ' : '' }}{{ variable(v.position) }} = “{{ v.value || '(empty)' }}”
+              </span></template>
+            </p>
+          </details>
           <p v-else-if="picked.api_reason" class="mt-1.5 text-[11px] text-slate-500">
             Not by API: {{ picked.api_reason }}
           </p>
@@ -214,11 +212,11 @@ watch(pickedId, () => { confirmOptedOut.value = false })
         </p>
       </template>
 
-      <p v-else class="mt-2 text-xs text-slate-500">No WhatsApp messages have been written yet.</p>
+      <p v-else class="mt-2 text-xs text-slate-500">No tags yet. An admin creates them on Automation → Tags.</p>
 
       <ul v-if="data.history.length" class="mt-3 space-y-1.5">
         <li v-for="m in data.history" :key="m.id" class="text-[11px] leading-relaxed">
-          <span class="font-medium text-slate-700">{{ m.template ?? 'A deleted message' }}</span>
+          <span class="font-medium text-slate-700">{{ m.template ?? 'A deleted tag' }}</span>
           <span class="text-slate-400">
             · {{ m.rule ? `rule “${m.rule}”` : (m.by ? `by ${m.by}` : '') }} · {{ when(m.at) }}
           </span>

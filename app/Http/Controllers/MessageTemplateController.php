@@ -10,9 +10,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * The Messages tab. Admin only, on the route group.
+ * The Tags tab. Admin only, on the route group.
  *
- * A message is an 11za template and what goes into each of its variables. The
+ * A tag is an 11za template and what goes into each of its variables. The
  * wording is 11za's; nothing here edits it. provider() is the only call to
  * 11za, and it only reads the template list.
  */
@@ -28,21 +28,21 @@ class MessageTemplateController extends Controller
     {
         MessageTemplate::create($request->templateAttributes());
 
-        return back()->with('success', 'Message saved.');
+        return back()->with('success', 'Tag saved.');
     }
 
     public function update(MessageTemplateRequest $request, MessageTemplate $template)
     {
         $template->update($request->templateAttributes());
 
-        return back()->with('success', 'Message updated.');
+        return back()->with('success', 'Tag updated.');
     }
 
     /**
      * Switch a template on or off.
      *
      * A switched-off template disappears from the Auto-send dropdowns but
-     * stays on the Messages tab, and a rule already pointing at it skips with
+     * stays on the Tags tab, and a rule already pointing at it skips with
      * a line in the activity log rather than failing. That is the softer half
      * of deleting, and it is what an admin actually wants when a message is
      * wrong: stop it going out now, fix it later.
@@ -81,7 +81,7 @@ class MessageTemplateController extends Controller
         if ($used->isNotEmpty()) {
             return back()->with('error',
                 "\"{$template->name}\" is used by ".$used->join(', ', ' and ')
-                .'. Choose something else for those stages on Auto-send (or change those rules) first, or switch the message off instead.');
+                .'. Choose something else for those stages on Auto-send (or change those rules) first, or switch the tag off instead.');
         }
 
         $name = $template->name;

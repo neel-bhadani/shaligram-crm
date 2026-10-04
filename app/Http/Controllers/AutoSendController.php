@@ -28,7 +28,7 @@ class AutoSendController extends Controller
         $data = $request->validate([
             'template_id' => ['nullable', 'integer', Rule::exists('message_templates', 'id')->where('is_active', true)],
         ], [
-            'template_id.exists' => 'That message has been deleted or switched off. Choose another.',
+            'template_id.exists' => 'That tag has been deleted or switched off. Choose another.',
         ]);
 
         $label = $this->autoSend->slots()[$slot]['label'];

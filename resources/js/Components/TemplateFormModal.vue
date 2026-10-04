@@ -6,7 +6,8 @@ import FormField from './FormField.vue'
 import HelpTip from './HelpTip.vue'
 
 /*
- | A message: which 11za template, and what goes into each of its variables.
+ | A tag: a name the user picks it by, which 11za template it sends, and what
+ | goes into each of the template's variables.
  |
  | The wording is 11za's, so there is nothing to write here. What only the CRM
  | knows is that the template's {{1}} is the lead's first name and {{2}} the
@@ -121,8 +122,13 @@ const submit = () => {
 </script>
 
 <template>
-  <Modal :show="show" :title="editing ? 'Edit message' : 'New message'" max-width="max-w-2xl" @close="emit('close')">
+  <Modal :show="show" :title="editing ? 'Edit tag' : 'New tag'" max-width="max-w-2xl" @close="emit('close')">
     <div class="space-y-5">
+
+      <FormField label="Tag name" required :error="form.errors.name"
+                 hint="What you pick it by, on a lead or on Auto-send. The customer never sees this.">
+        <input v-model="form.name" type="text" class="w-full" maxlength="120" placeholder="Site visit thanks" />
+      </FormField>
 
       <!-- ---------------- the 11za template ---------------- -->
       <div v-if="fromList">
@@ -197,11 +203,6 @@ const submit = () => {
         </div>
       </div>
 
-      <FormField label="Name in the CRM" required :error="form.errors.name"
-                 hint="What you pick it by on the Auto-send tab. The customer never sees this.">
-        <input v-model="form.name" type="text" class="w-full" maxlength="120" />
-      </FormField>
-
       <!-- wording written before the CRM stopped holding it: kept, never edited -->
       <div v-if="template?.old_body">
         <span class="text-xs font-semibold text-slate-500">Old wording, only used when sending by hand</span>
@@ -211,9 +212,9 @@ const submit = () => {
       <label class="flex items-center gap-2 text-sm text-slate-700">
         <input v-model="form.is_active" type="checkbox" class="h-4 w-4" />
         Can be sent
-        <HelpTip title="Switching a message off">
-          A switched-off message disappears from the Auto-send dropdowns and the lead's WhatsApp
-          button. A stage already set to send it skips it and says so in the Activity tab.
+        <HelpTip title="Switching a tag off">
+          A switched-off tag disappears from every tag list. A stage already set to send it skips
+          it and says so in the Activity tab.
         </HelpTip>
       </label>
     </div>
@@ -221,7 +222,7 @@ const submit = () => {
     <template #footer>
       <button class="btn-ghost flex-1 sm:flex-none" @click="emit('close')">Cancel</button>
       <button class="btn flex-1 sm:flex-none" :disabled="form.processing" @click="submit">
-        {{ form.processing ? 'Saving…' : (editing ? 'Save changes' : 'Save message') }}
+        {{ form.processing ? 'Saving…' : (editing ? 'Save changes' : 'Save tag') }}
       </button>
     </template>
   </Modal>

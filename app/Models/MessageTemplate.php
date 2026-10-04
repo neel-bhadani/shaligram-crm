@@ -72,11 +72,11 @@ class MessageTemplate extends Model
     public function apiUnsendableReason(): ?string
     {
         if (blank($this->provider_template_name)) {
-            return "\"{$this->name}\" has no 11za template name. Add it on the Messages tab.";
+            return "\"{$this->name}\" has no 11za template name. Add it on the Tags tab.";
         }
 
         if (blank($this->provider_template_language)) {
-            return "\"{$this->name}\" has no template language. Add it on the Messages tab.";
+            return "\"{$this->name}\" has no template language. Add it on the Tags tab.";
         }
 
         return null;

@@ -18,7 +18,7 @@ use RuntimeException;
 use Tests\TestCase;
 
 /**
- * The Messages tab's 11za template list: kept in its own table as name,
+ * The Tags tab's 11za template list: kept in its own table as name,
  * language and variable count, never with a raw answer or wording, and read
  * by a refresh that always answers.
  *
@@ -169,7 +169,7 @@ class ProviderTemplateListTest extends TestCase
 
         $this->assertSame(500, ProviderTemplate::count());
 
-        $this->actingAs($this->admin)->get('/automation?tab=templates')
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
             ->assertInertia(fn (Assert $page) => $page
                 ->where('providerTemplates.total', 501)
                 ->has('providerTemplates.templates', 500));
@@ -188,7 +188,7 @@ class ProviderTemplateListTest extends TestCase
 
         Http::assertSentCount(2);
 
-        $this->actingAs($this->admin)->get('/automation?tab=templates')
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
             ->assertInertia(fn (Assert $page) => $page->where('providerTemplates.page_size', 500));
     }
 
@@ -239,12 +239,12 @@ class ProviderTemplateListTest extends TestCase
         });
 
         $this->readList();
-        $this->actingAs($this->admin)->get('/automation?tab=templates')
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
             ->assertInertia(fn (Assert $page) => $page->where('providerTemplates.failed', true));
 
         $up = true;
         $this->readList()->assertJsonPath('ok', true);
-        $this->actingAs($this->admin)->get('/automation?tab=templates')
+        $this->actingAs($this->admin)->get('/automation?tab=tags')
             ->assertInertia(fn (Assert $page) => $page->where('providerTemplates.failed', false));
     }
 
