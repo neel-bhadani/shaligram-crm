@@ -56,6 +56,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'show'])->name('leads.whatsapp.show');
     Route::post('/leads/{lead}/whatsapp', [LeadWhatsAppController::class, 'send'])->name('leads.whatsapp.send');
     Route::put('/leads/{lead}/whatsapp/opt-out', [LeadWhatsAppController::class, 'optOut'])->name('leads.whatsapp.opt-out');
+    Route::post('/leads/{lead}/whatsapp/{message}/cancel', [LeadWhatsAppController::class, 'cancel'])->name('leads.whatsapp.cancel');
     Route::post('/leads/check-duplicate', [LeadController::class, 'checkDuplicate'])
         ->name('leads.check-duplicate');
 

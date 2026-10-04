@@ -20,6 +20,7 @@ class MessageLog extends Model
         'sent_at' => 'datetime',
         'sending_started_at' => 'datetime',
         'checked_at' => 'datetime',
+        'send_at' => 'datetime',
         'params' => 'array',
     ];
 
@@ -59,7 +60,11 @@ class MessageLog extends Model
         return match ($this->status) {
             'sent' => $this->sentOutcome(),
             'opened' => 'Opened in WhatsApp by '.($this->user?->display_name ?? 'somebody').' — not confirmed sent',
-            'queued' => $this->mode === 'api' ? 'Waiting to be sent by API' : 'Waiting for somebody to open it',
+            'queued' => match (true) {
+                $this->isScheduled() => 'Scheduled for '.$this->send_at->format('j M, g:i a').' (India time)',
+                $this->mode === 'api' => 'Waiting to be sent by API',
+                default => 'Waiting for somebody to open it',
+            },
             'sending' => 'Being sent',
             'unknown' => 'Outcome unknown — '.self::UNKNOWN_ADVICE,
             'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
@@ -67,6 +72,12 @@ class MessageLog extends Model
             'cancelled' => 'Cancelled',
             default => $this->status,
         };
+    }
+
+    /** Waiting for the time a person chose. Cancellable until the worker claims it. */
+    public function isScheduled(): bool
+    {
+        return $this->status === 'queued' && $this->send_at !== null && $this->send_at->isFuture();
     }
 
     /** An API send 11za answered 2xx to, without a message id the CRM recognised. */

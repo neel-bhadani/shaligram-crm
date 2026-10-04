@@ -11,6 +11,8 @@ use App\Models\MessageTemplate;
 use App\Models\ProviderTemplate;
 use App\Models\User;
 use App\Support\CrmTaxonomy;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -53,6 +55,12 @@ class WhatsAppSender
 
     /** Why an automatic message did not go to a customer who opted out. */
     public const OPTED_OUT = 'The customer asked not to be messaged on WhatsApp (opted out), so automatic messages skip them.';
+
+    /**
+     * Why Send later is not offered. Click-to-send ends with a person pressing
+     * send in WhatsApp, so there is nothing that could wait for a time.
+     */
+    public const NOT_SCHEDULABLE = 'Send later needs API sending. This one would open in WhatsApp for you to press send, so it cannot wait for a time.';
 
     /** Settings sending needs, and what to call them when missing. */
     public const REQUIRED = [
@@ -189,8 +197,12 @@ class WhatsAppSender
      *                               same template, same values — went out
      *                               this recently, from any lead. Null for a
      *                               hand-sent message.
+     * @param  ?CarbonInterface  $sendAt  send later, at this time. API only:
+     *                                    when the message would fall back to
+     *                                    click-to-send nothing is written and
+     *                                    the result is `refused`
      * @return array{result: string, reason: ?string, message: ?MessageLog}
-     *                                                                      result is dispatched | queued | fallback | skipped
+     *                                                                      result is dispatched | scheduled | queued | fallback | skipped | refused
      */
     public function queueTemplate(
         Lead $lead,
@@ -199,6 +211,7 @@ class WhatsAppSender
         ?User $user = null,
         bool $allowTerminal = true,
         ?int $dedupeMinutes = null,
+        ?CarbonInterface $sendAt = null,
     ): array {
         $lead->loadMissing('project', 'owner');
 
@@ -238,6 +251,10 @@ class WhatsAppSender
 
         $unsendable = $this->apiEnabled() ? $template->apiUnsendableReason() : null;
 
+        if ($sendAt && (! $this->apiEnabled() || $unsendable)) {
+            return ['result' => 'refused', 'reason' => self::NOT_SCHEDULABLE, 'message' => null];
+        }
+
         if (! $this->apiEnabled() || $unsendable) {
             $message = MessageLog::create($row + ['mode' => 'click', 'status' => 'queued']);
 
@@ -254,6 +271,14 @@ class WhatsAppSender
             $name = array_values($template->placeholder_map ?? [])[$empty];
 
             return $this->skipped($row, $this->missingValueReason($name, $lead));
+        }
+
+        if ($sendAt) {
+            $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued', 'send_at' => $sendAt]);
+
+            SendWhatsAppMessage::dispatch($message->id)->delay($sendAt)->afterCommit();
+
+            return ['result' => 'scheduled', 'reason' => null, 'message' => $message];
         }
 
         $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued']);
@@ -280,7 +305,7 @@ class WhatsAppSender
      *
      * @return array{ok: bool, message: string}
      */
-    public function dispatchQueued(MessageLog $message, User $user): array
+    public function dispatchQueued(MessageLog $message, User $user, ?CarbonInterface $sendAt = null): array
     {
         if (! $this->apiEnabled()) {
             return ['ok' => false, 'message' => 'API sending is switched off in the WhatsApp settings. Open the message in WhatsApp instead.'];
@@ -293,9 +318,16 @@ class WhatsAppSender
         $message->update([
             'mode' => 'api',
             'user_id' => $user->id,
+            'send_at' => $sendAt,
             'provider_template_name' => $message->provider_template_name ?? $message->template?->provider_template_name,
             'provider_template_language' => $message->provider_template_language ?? $message->template?->provider_template_language,
         ]);
+
+        if ($sendAt) {
+            SendWhatsAppMessage::dispatch($message->id)->delay($sendAt)->afterCommit();
+
+            return ['ok' => true, 'message' => self::scheduledFor($sendAt)];
+        }
 
         SendWhatsAppMessage::dispatch($message->id)->afterCommit();
 
@@ -390,6 +422,12 @@ class WhatsAppSender
             $message->update(['status' => 'failed', 'error' => self::NOT_CONFIGURED]);
 
             return ['ok' => false, 'message' => self::NOT_CONFIGURED, 'retry' => false];
+        }
+
+        if ($message->send_at !== null && ($reason = $this->resolveAtSendTime($message))) {
+            $message->update(['status' => 'skipped', 'error' => $reason]);
+
+            return ['ok' => false, 'message' => $reason, 'retry' => false];
         }
 
         if ($reason = $this->apiBlocker($message)) {
@@ -802,6 +840,88 @@ class WhatsAppSender
             fn (string $name) => trim((string) preg_replace('/\s+/', ' ', (string) ($values[$name] ?? ''))),
             array_values($template->placeholder_map ?? []),
         );
+    }
+
+    /**
+     * A scheduled message, read again from the lead at the time it goes: the
+     * number, the name and every value are this moment's, not the moment it
+     * was scheduled. Written onto the row, so the log shows what was sent.
+     *
+     * Returns why it must not go, or null. A lead deleted since, a number
+     * gone, a tag switched off, an empty value, or a customer who opted out
+     * after it was scheduled — each is a `skipped` row with the reason, never
+     * a send to a blank number.
+     */
+    private function resolveAtSendTime(MessageLog $message): ?string
+    {
+        $lead = Lead::withTrashed()->with('project', 'owner')->find($message->lead_id);
+
+        if (! $lead || $lead->trashed()) {
+            return 'The lead was deleted before the scheduled time, so it was not sent.';
+        }
+
+        $template = $message->template;
+
+        if ($template && ! $template->is_active) {
+            return "The tag \"{$template->name}\" was switched off before the scheduled time, so it was not sent.";
+        }
+
+        if (! $template) {
+            return null; // apiBlocker() says why
+        }
+
+        $optedOutAt = $lead->whatsapp_opted_out_at;
+
+        if ($optedOutAt && ($message->rule_id !== null || $optedOutAt->gt($message->created_at))) {
+            return 'The customer opted out of WhatsApp after this was scheduled, so it was not sent.';
+        }
+
+        $built = $this->renderer->build($template, $lead);
+
+        if (! $built['number']) {
+            return 'By the scheduled time the lead had no usable mobile number'
+                .(filled($lead->mobile_number) ? " (\"{$lead->mobile_number}\" is not ten digits)" : '')
+                .', so it was not sent.';
+        }
+
+        $params = $this->paramsFor($template, $lead);
+
+        $message->update([
+            'to_number' => $built['number'],
+            'to_name' => $lead->full_name,
+            'body' => $built['body'],
+            'params' => $params,
+            'dedupe_key' => hash('sha256', $built['number'].'|'.$template->id.'|'.json_encode($params)),
+        ]);
+
+        $empty = array_search('', $params, true);
+
+        return $empty === false
+            ? null
+            : $this->missingValueReason(array_values($template->placeholder_map ?? [])[$empty], $lead);
+    }
+
+    /**
+     * "2026-10-05T15:30" from a date-time box, read as India time whatever
+     * the browser's own timezone. Null for send now; false when it is not in
+     * the future.
+     */
+    public static function sendAtFrom(?string $typed): CarbonInterface|false|null
+    {
+        if ($typed === null || $typed === '') {
+            return null;
+        }
+
+        $at = Carbon::createFromFormat('Y-m-d\TH:i', $typed, 'Asia/Kolkata');
+
+        return $at && $at->isFuture() ? $at->setTimezone(config('app.timezone')) : false;
+    }
+
+    /** "Scheduled for 5 Oct, 3:30 pm (India time)…" — said wherever a send is scheduled. */
+    public static function scheduledFor(CarbonInterface $sendAt): string
+    {
+        return 'Scheduled for '.$sendAt->copy()->setTimezone('Asia/Kolkata')->format('j M, g:i a')
+            .' (India time). Until then it can be cancelled, from this lead or the Queue.';
     }
 
     /**
