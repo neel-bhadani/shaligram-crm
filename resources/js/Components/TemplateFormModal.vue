@@ -4,6 +4,7 @@ import { useForm } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
 import HelpTip from './HelpTip.vue'
+import { approvalLabel, marketingNote } from '../lib/templateFacts.js'
 
 /*
  | A tag: a name the user picks it by, which 11za template it sends, and what
@@ -24,7 +25,7 @@ const props = defineProps({
   template: { type: Object, default: null },
   // { name: { label, example } } from config/automation.php
   placeholders: { type: Object, required: true },
-  // [{ name, language, variables }] as last read from 11za
+  // [{ name, language, status, category, variables, extra_variables }] as last read from 11za
   providerTemplates: { type: Array, default: () => [] },
   // 11za listed more than are kept, so a name not in the list may be real
   providerTruncated: { type: Boolean, default: false },
@@ -137,13 +138,25 @@ const submit = () => {
           <select class="w-full" :value="picked ? pickKey(picked) : ''" @change="onPick">
             <option value="">{{ missingFromList ? `${form.provider_template_name} (not in 11za's list)` : 'Choose a template…' }}</option>
             <option v-for="t in providerTemplates" :key="pickKey(t)" :value="pickKey(t)">
-              {{ t.name }}{{ t.language ? ` (${t.language})` : '' }}
+              {{ t.name }}{{ t.language ? ` (${t.language})` : '' }}{{ t.status && t.status !== 'APPROVED' ? ` — ${approvalLabel(t.status)}` : '' }}
             </option>
           </select>
         </FormField>
         <p v-if="missingFromList && !providerTruncated" class="warn-box mt-2">
           11za does not list “{{ form.provider_template_name }}” any more. Sends will fail until you
           choose a template that exists.
+        </p>
+        <p v-if="picked?.status && picked.status !== 'APPROVED'" class="warn-box mt-2 text-xs">
+          Meta has not approved this template ({{ approvalLabel(picked.status).toLowerCase() }}).
+          A tag can point at it, but sends will fail until it is approved.
+        </p>
+        <p v-if="picked?.category === 'MARKETING'" class="mt-2 text-[11px] leading-relaxed text-amber-800">
+          {{ marketingNote }}
+        </p>
+        <p v-if="picked?.extra_variables" class="warn-box mt-2 text-xs">
+          This template also has {{ picked.extra_variables }} header or carousel
+          variable{{ picked.extra_variables === 1 ? '' : 's' }}. The CRM fills only the body's, so 11za
+          may refuse it. Choose a template without them, or have it changed in 11za.
         </p>
         <button v-if="providerTruncated" type="button" class="btn-xs mt-2" @click="typing = true">
           Not in the list? Type the name

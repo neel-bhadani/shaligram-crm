@@ -560,11 +560,12 @@ return [
             // response shape is not documented, so the parser is defensive
             'list_path' => '/apis/template/getTemplatesAll',
             // page sizes asked for, in order. 11za's maximum is undocumented,
-            // so a size 11za refuses falls back to the next; the one that
-            // worked is shown on the tab. The first is more than is kept, so
-            // "the first 500 of N" can say N
+            // so a size 11za refuses falls back to the next. Pages after the
+            // first are read at the size 11za used (its answer's `limit`),
+            // and "of N" is its `totalDocs`
             'list_limits' => [1000, 500, 100],
-            // at most this many are kept for the dropdown; any other is typed
+            // at most this many templates are kept for the dropdown, each in
+            // every language it has; any other is typed
             'list_cap' => 500,
             // how much of 11za's unreadable answer is shown on screen. Shown
             // once, never stored

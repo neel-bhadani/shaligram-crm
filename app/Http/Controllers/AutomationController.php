@@ -110,11 +110,8 @@ class AutomationController extends Controller
      * form ships a masked value it cannot read back, so an admin correcting the
      * origin website must not blank the token by leaving the (empty) token box
      * alone.
-     *
-     * The base URL is held to 11za's own hosts over https. The auth token
-     * travels in the body of every request to it, so a mistyped or pasted
-     * host is a token sent to a stranger, not just a failed send. Empty means
-     * the default in config.
+
+     * There is no host to set here: it is config (WHATSAPP_API_BASE).
      *
      * Neither switch can be switched on while the API is unconfigured, and the
      * refusal is here rather than only in the UI: they turn "a rule queues a
@@ -126,19 +123,16 @@ class AutomationController extends Controller
         $data = $request->validate([
             'auth_token' => ['nullable', 'string', 'max:2000', 'regex:/^\S+$/'],
             'origin_website' => ['nullable', 'string', 'max:255'],
-            'base_url' => ['nullable', 'string', 'max:255', 'regex:#^https://([a-z0-9-]+\.)*11za\.in/?$#i'],
             'api_enabled' => ['boolean'],
             'auto_send' => ['boolean'],
         ], [
             'auth_token.regex' => 'The auth token cannot contain spaces or line breaks. Copy it again without them.',
-            'base_url.regex' => 'The base URL must be an 11za address starting with https://, such as https://api.11za.in. Leave it empty for the default.',
         ]);
 
         $integration = $this->whatsapp->integration();
 
         $changes = [
             'origin_website' => filled($data['origin_website'] ?? null) ? trim($data['origin_website']) : null,
-            'base_url' => filled($data['base_url'] ?? null) ? rtrim($data['base_url'], '/') : null,
         ];
 
         if (filled($data['auth_token'] ?? null)) {
@@ -239,10 +233,11 @@ class AutomationController extends Controller
 
     private function templates(): array
     {
-        return MessageTemplate::withCount('messages')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (MessageTemplate $t) => [
+        $tags = MessageTemplate::withCount('messages')->orderBy('name')->get();
+        $facts = $this->whatsapp->tagFacts($tags);
+
+        return $tags
+            ->map(fn (MessageTemplate $t) => $facts[$t->id] + [
                 'id' => $t->id,
                 'name' => $t->name,
                 'placeholder_map' => $t->placeholder_map ?? [],
@@ -259,8 +254,9 @@ class AutomationController extends Controller
                 'api_unsendable' => $t->apiUnsendableReason(),
                 'is_active' => $t->is_active,
                 'messages_count' => $t->messages_count,
-                // what click-to-send would open with, for the sample customer
-                'preview' => $this->renderer->exampleText($t),
+                // 11za's wording for the example customer, or null when it has
+                // not been read — never a stand-in
+                'preview' => $this->renderer->exampleWording($t),
             ])
             ->all();
     }
@@ -461,8 +457,6 @@ class AutomationController extends Controller
             'api_enabled' => $this->whatsapp->apiEnabled(),
             'auto_send' => $this->whatsapp->autoSends(),
             'origin_website' => $integration->setting('origin_website'),
-            'base_url' => $integration->setting('base_url'),
-            'default_base_url' => config('automation.whatsapp.api.base'),
             'auth_token_tail' => $integration->maskedSetting('auth_token'),
             'last_test' => $integration->setting('last_test'),
             'not_configured' => WhatsAppSender::NOT_CONFIGURED,

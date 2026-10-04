@@ -11,6 +11,7 @@ import RuleFormModal from '../../Components/RuleFormModal.vue'
 import TemplateFormModal from '../../Components/TemplateFormModal.vue'
 import { rulePhrase } from '../../lib/rulePhrase.js'
 import { localNow, isPast } from '../../lib/localDateTime.js'
+import { approvalLabel, categoryLabel, marketingNote } from '../../lib/templateFacts.js'
 import { useFilterVisit } from '../../composables/useFilterVisit.js'
 
 /*
@@ -189,6 +190,7 @@ const confirmDeleteRule = () => {
  | button to forget — and the server writes or updates the stage's rule.
  */
 const activeTemplates = computed(() => props.templates.filter(t => t.is_active))
+const tagById = id => props.templates.find(t => t.id === id) ?? null
 const savingSlot = ref(null)
 
 // Other automation's only action. Off needs no confirmation: stopping is always safe
@@ -452,7 +454,6 @@ const statusChip = status => ({
 const waForm = useForm({
   auth_token: '',
   origin_website: props.whatsapp.origin_website ?? '',
-  base_url: props.whatsapp.base_url ?? '',
   api_enabled: props.whatsapp.api_enabled ?? false,
   auto_send: props.whatsapp.auto_send ?? false,
 })
@@ -693,6 +694,12 @@ const whenShort = iso => iso
                     {{ templates.find(t => t.id === row.template_id)?.name ?? 'A deleted tag' }} (switched off)
                   </option>
                 </select>
+                <p v-if="tagById(row.template_id)?.approval_warning" class="mt-1.5 text-[11px] text-rose-700">
+                  {{ tagById(row.template_id).approval_warning }}
+                </p>
+                <p v-if="tagById(row.template_id)?.marketing" class="mt-1.5 text-[11px] text-amber-800">
+                  {{ marketingNote }}
+                </p>
                 <p v-for="other in row.others" :key="other.id" class="mt-1.5 text-[11px] text-slate-500">
                   Also {{ other.is_active ? '' : '(switched off) ' }}sent by the rule “{{ other.name }}” —
                   see Other automation below.
@@ -811,6 +818,18 @@ const whenShort = iso => iso
                   class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
                          font-semibold uppercase tracking-wide text-slate-500"
                 >Off</span>
+                <span v-if="template.status"
+                      class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                      :class="template.status === 'APPROVED'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-rose-200 bg-rose-50 text-rose-700'"
+                >{{ approvalLabel(template.status) }}</span>
+                <span v-if="template.category"
+                      class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                      :class="template.marketing
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-500'"
+                >{{ categoryLabel(template.category) }}</span>
               </div>
               <p class="mt-1 text-[11px]" :class="template.api_unsendable ? 'text-amber-700' : 'text-slate-500'">
                 {{ template.api_unsendable ?? `11za: ${template.provider_template}` }}
@@ -835,10 +854,17 @@ const whenShort = iso => iso
             </li>
           </ul>
 
-          <details v-if="template.provider_body" class="mt-2 text-[11px] text-slate-500">
-            <summary class="cursor-pointer">The template in 11za</summary>
-            <div class="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 leading-relaxed">{{ template.provider_body }}</div>
-          </details>
+          <p v-if="template.approval_warning" class="warn-box mt-2 text-xs">{{ template.approval_warning }}</p>
+          <p v-if="template.marketing" class="mt-2 text-[11px] leading-relaxed text-amber-800">{{ marketingNote }}</p>
+
+          <!-- 11za's own wording, for the example customer — never a stand-in -->
+          <div v-if="template.preview" class="mt-2">
+            <span class="text-[11px] text-slate-400">As {{ placeholders.lead_name?.example ?? 'a customer' }} would get it</span>
+            <div class="mt-1 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-700">{{ template.preview }}</div>
+          </div>
+          <p v-else-if="template.provider_template" class="mt-2 text-[11px] text-slate-400">
+            11za's wording for this template has not been read yet. Press Refresh from 11za.
+          </p>
           <details v-if="template.old_body" class="mt-2 text-[11px] text-slate-500">
             <summary class="cursor-pointer">Old wording, only used when sending by hand</summary>
             <div class="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 leading-relaxed">{{ template.old_body }}</div>
@@ -1135,11 +1161,6 @@ const whenShort = iso => iso
           <FormField label="Origin website" :error="waForm.errors.origin_website"
                      hint="The website registered with your 11za account.">
             <input v-model="waForm.origin_website" type="text" class="w-full" />
-          </FormField>
-
-          <FormField label="Base URL" :error="waForm.errors.base_url"
-                     :hint="`Leave empty for ${whatsapp.default_base_url}. Only 11za addresses are accepted.`">
-            <input v-model="waForm.base_url" type="url" class="w-full" :placeholder="whatsapp.default_base_url" />
           </FormField>
         </div>
 

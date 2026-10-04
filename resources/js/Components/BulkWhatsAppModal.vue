@@ -5,6 +5,7 @@ import axios from 'axios'
 import Modal from './Modal.vue'
 import FormField from './FormField.vue'
 import { localNow, isPast } from '@/lib/localDateTime'
+import { marketingNote } from '@/lib/templateFacts'
 
 /*
  | One tag to many leads: the ticked ones, or everything matching the list's
@@ -113,6 +114,8 @@ function send() {
         </select>
       </FormField>
       <p v-if="tag?.bulk_refusal" class="warn-box text-xs">{{ tag.bulk_refusal }}</p>
+      <p v-if="tag?.approval_warning" class="warn-box text-xs">{{ tag.approval_warning }}</p>
+      <p v-if="tag?.marketing" class="text-[11px] leading-relaxed text-amber-800">{{ marketingNote }}</p>
 
       <div v-if="tag && !tag.bulk_refusal" class="flex flex-wrap items-center gap-3 text-xs text-slate-700">
         <label class="flex items-center gap-1.5">
@@ -159,9 +162,12 @@ function send() {
 
         <div v-if="plan.sample">
           <p class="text-xs font-semibold text-slate-500">{{ plan.sample.name }} would get</p>
-          <div class="mt-1 rounded-xl bg-slate-100 p-2.5">
+          <div v-if="plan.sample.body" class="mt-1 rounded-xl bg-slate-100 p-2.5">
             <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs leading-relaxed text-slate-800 shadow-sm">{{ plan.sample.body }}</div>
           </div>
+          <p v-else class="mt-1 text-[11px] text-slate-500">
+            11za's wording for this tag has not been read yet, so it cannot be shown. Press Refresh from 11za on the Tags tab first.
+          </p>
           <details v-if="plan.sample.values.length" class="mt-1 text-[11px] text-slate-400">
             <summary class="cursor-pointer">What 11za receives</summary>
             <p class="mt-1">
