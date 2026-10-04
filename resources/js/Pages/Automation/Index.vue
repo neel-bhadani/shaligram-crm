@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Link, router, useForm } from '@inertiajs/vue3'
 import axios from 'axios'
 import AppLayout from '../../Layouts/AppLayout.vue'
@@ -13,7 +13,7 @@ import { rulePhrase } from '../../lib/rulePhrase.js'
 import { useFilterVisit } from '../../composables/useFilterVisit.js'
 
 /*
- | The Automation page. Five tabs, one payload.
+ | The Automation page. Six tabs, one payload.
  |
  | Everything loads in one response rather than a request per tab. These are
  | small tables — a builder's office will have a dozen rules and a handful of
@@ -29,14 +29,17 @@ import { useFilterVisit } from '../../composables/useFilterVisit.js'
  */
 const props = defineProps({
   tab: String,
+  autoSend: Array,
+  otherAutomation: { type: Array, default: () => [] },
   rules: Array,
   templates: Array,
+  providerTemplates: Object,
   queue: Array,
+  needsChecking: { type: Array, default: () => [] },
   activity: Array,
   catalog: Object,
   whatsapp: Object,
   placeholders: Object,
-  categories: Object,
   thresholds: Object,
   schedulerRunning: { type: [Boolean, null], default: null },
   // the alerts tab, from the same trait the /alerts page uses
@@ -46,22 +49,31 @@ const props = defineProps({
 })
 
 const TABS = [
+  { key: 'auto_send', label: 'Auto-send' },
+  { key: 'templates', label: 'Messages' },
   { key: 'rules', label: 'Rules' },
-  { key: 'templates', label: 'Templates' },
   { key: 'queue', label: 'Queue' },
   { key: 'alerts', label: 'Alerts' },
   { key: 'activity', label: 'Activity' },
 ]
 
-const tab = ref(props.tab ?? 'rules')
+const tab = ref(props.tab ?? 'auto_send')
+
+/*
+ | The Rules tab is not in the tab bar. The client sets up messages on
+ | Auto-send and uses no other automation, and the builder only confused them.
+ | It still opens from /automation?tab=rules, for whoever is troubleshooting.
+ */
+const visibleTabs = computed(() => TABS.filter(t => t.key !== 'rules' || props.tab === 'rules'))
 
 // no visit of its own: this is here for the clean address bar on arrival
 useFilterVisit(route('automation.index'))
 
 const badge = key => ({
+  auto_send: props.autoSend.filter(row => row.template_id).length,
   rules: props.rules.length,
   templates: props.templates.length,
-  queue: props.queue.filter(m => m.status === 'queued').length,
+  queue: props.queue.filter(m => m.status === 'queued').length + props.needsChecking.length,
   alerts: props.counts?.unread ?? 0,
   activity: 0,
 }[key])
@@ -166,7 +178,62 @@ const confirmDeleteRule = () => {
   })
 }
 
+/* ================= auto-send ================= */
+
+/*
+ | One dropdown per stage. Changing it saves straight away — there is no Save
+ | button to forget — and the server writes or updates the stage's rule.
+ */
+const activeTemplates = computed(() => props.templates.filter(t => t.is_active))
+const savingSlot = ref(null)
+
+// Other automation's only action. Off needs no confirmation: stopping is always safe
+const switchOff = rule =>
+  router.post(route('automation.rules.toggle', rule.id), { is_active: false }, { preserveScroll: true })
+
+const setAutoSend = (row, value) => {
+  savingSlot.value = row.key
+
+  router.put(route('automation.auto_send.update', row.key), { template_id: value || null }, {
+    preserveScroll: true,
+    onFinish: () => { savingSlot.value = null },
+  })
+}
+
 /* ================= templates ================= */
+
+/*
+ | 11za's template list. Read on demand — the first time the Messages tab is
+ | opened with the API set up, and whenever Refresh is pressed — and kept on
+ | the server, so the dropdown fills straight away next time.
+ */
+const providerList = ref(props.providerTemplates ?? { templates: [], raw: null, at: null })
+const providerResult = ref(null)
+const loadingProvider = ref(false)
+
+const refreshProvider = () => {
+  loadingProvider.value = true
+
+  axios.post(route('automation.templates.provider'))
+    .then(({ data }) => {
+      providerResult.value = data
+      providerList.value = { templates: data.templates ?? [], raw: data.raw, at: data.at ?? providerList.value.at }
+      if (data.ok) router.reload({ only: ['templates'] })
+    })
+    .catch(error => {
+      providerResult.value = {
+        ok: false,
+        message: error.response?.data?.message ?? 'The request did not reach the server. Type the template name and language instead.',
+      }
+    })
+    .finally(() => { loadingProvider.value = false })
+}
+
+watch(tab, key => {
+  if (key === 'templates' && props.whatsapp.configured && !providerList.value.at && !providerResult.value) {
+    refreshProvider()
+  }
+}, { immediate: true })
 
 const templateModal = ref(false)
 const editingTemplate = ref(null)
@@ -189,18 +256,10 @@ const confirmDeleteTemplate = () => {
 }
 
 /*
- | "{{1}} = first_name, {{2}} = project" — how the 11za template is numbered.
- |
- | Built here rather than in the markup because Vue's template parser reads a
- | literal "{{" inside an interpolation as the start of another one, whatever it
- | is nested in. Showing it at all is deliberate: the numbering is stored the
- | moment a message is saved, and an admin setting the template up in 11za
- | should not be meeting it for the first time.
+ | "{{1}}" — built here rather than in the markup because Vue's template parser
+ | reads a literal "{{" inside an interpolation as the start of another one.
  */
-const metaNumbering = template =>
-  (template.placeholder_map ?? [])
-    .map((name, i) => `{{${i + 1}}} = ${name}`)
-    .join(', ')
+const slotLabel = i => `{{${i + 1}}}`
 
 /* ================= queue ================= */
 
@@ -246,6 +305,39 @@ const openInWhatsApp = message => {
     })
 }
 
+/*
+ | Settling a message whose outcome is unknown. Both answers come only after
+ | looking it up in 11za's own message log — the buttons say so, and the
+ | dialog says where to look, because a guess here either marks a customer
+ | contacted who never was or messages them twice.
+ */
+const settling = ref(null)   // { message, answer: 'delivered' | 'not_sent' }
+
+const settleTitle = computed(() => settling.value?.answer === 'delivered'
+  ? 'You found it in the 11za message log?'
+  : 'You checked, and it is not in the 11za message log?')
+
+const settleMessage = computed(() => {
+  const m = settling.value?.message
+  if (!m) return ''
+
+  const where = `Look in the 11za panel's message log for ${m.to_number}, around ${when(m.handed_at)}.`
+
+  return settling.value.answer === 'delivered'
+    ? `${where} Only confirm if you can see it there — this records the message as sent, under your name.`
+    : `${where} If it is not there, it is sent again now. If it did arrive after all, the customer gets it twice.`
+})
+
+const confirmSettle = () => {
+  const { message, answer } = settling.value
+  const name = answer === 'delivered' ? 'automation.messages.checked-delivered' : 'automation.messages.checked-not-sent'
+
+  router.post(route(name, message.id), {}, {
+    preserveScroll: true,
+    onFinish: () => { settling.value = null },
+  })
+}
+
 const sendByApi = message =>
   router.post(route('automation.messages.send', message.id), {}, { preserveScroll: true })
 
@@ -256,6 +348,7 @@ const statusChip = status => ({
   queued: 'border-amber-200 bg-amber-50 text-amber-800',
   opened: 'border-teal-200 bg-teal-50 text-teal-700',
   sending: 'border-sky-200 bg-sky-50 text-sky-700',
+  unknown: 'border-slate-300 bg-white text-slate-600',
   sent: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
   skipped: 'border-slate-200 bg-slate-50 text-slate-500',
@@ -342,15 +435,28 @@ const whenShort = iso => iso
 <template>
   <AppLayout title="Automation" subtitle="Rules that do the routine work for you.">
     <template #actions>
-      <Link :href="route('automation.guide')" class="btn-ghost">How this works</Link>
       <button v-if="tab === 'rules'" class="btn" @click="openRule(null)">New rule</button>
       <button v-if="tab === 'templates'" class="btn" @click="openTemplate(null)">New message</button>
     </template>
 
+    <!--
+      The scheduler warning. Every built-in alert, and any time-based rule,
+      depends on a cron job this application cannot start for itself. When it
+      is not running nothing errors — the alerts simply never appear, which is
+      the worst kind of broken. At the top of the page, not on a tab, so it
+      cannot be missed.
+    -->
+    <div v-if="schedulerRunning === false" class="warn-box mb-4">
+      <strong>The hourly task has not run recently.</strong>
+      The automatic alerts — overdue follow-ups, leads stuck in a stage — will not be raised.
+      Messages sent when a lead reaches a stage are unaffected. Ask whoever set up the server to
+      check that Laravel's scheduler is running.
+    </div>
+
     <!-- ---------------- tabs ---------------- -->
     <div class="mb-5 flex flex-wrap gap-1 border-b border-slate-200">
       <button
-        v-for="t in TABS" :key="t.key"
+        v-for="t in visibleTabs" :key="t.key"
         class="-mb-px border-b-2 px-3 py-2 text-sm font-medium transition"
         :class="tab === t.key
           ? 'border-teal-700 text-teal-800'
@@ -368,19 +474,12 @@ const whenShort = iso => iso
     <!-- ================= RULES ================= -->
     <div v-show="tab === 'rules'">
 
-      <!--
-        The scheduler warning. Time-based rules and every built-in alert depend
-        on a cron job that this application cannot start for itself. When it is
-        not running nothing errors — event rules work perfectly and the time
-        ones simply never fire, which is the worst kind of broken.
-      -->
-      <div v-if="schedulerRunning === false" class="warn-box mb-4">
-        <strong>The hourly task has not run recently.</strong>
-        Rules that watch for overdue follow-ups or stalled leads will not fire, and the automatic
-        alerts will not be raised. Rules that react to something happening — a lead being added, a
-        stage changing — are unaffected. Ask whoever set up the server to check that Laravel's
-        scheduler is running.
-      </div>
+      <p class="info-box mb-4">
+        <strong>For troubleshooting.</strong> This tab is not in the menu. WhatsApp messages are set
+        up on <button class="underline" @click="tab = 'auto_send'">Auto-send</button>; rules marked
+        “Auto-send” are its stage rows, and changing them here changes that row.
+      </p>
+
 
       <!-- ---------------- empty state that teaches ---------------- -->
       <div v-if="!rules.length" class="card px-6 py-10 text-center">
@@ -418,6 +517,11 @@ const whenShort = iso => iso
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : 'border-slate-200 bg-slate-50 text-slate-500'"
                   >{{ rule.is_active ? 'On' : 'Off' }}</span>
+                  <span
+                    v-if="rule.on_auto_send"
+                    class="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 text-[10px]
+                           font-semibold uppercase tracking-wide text-teal-700"
+                  >Auto-send</span>
                   <span
                     v-if="rule.is_time_based"
                     class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
@@ -461,35 +565,136 @@ const whenShort = iso => iso
       </template>
     </div>
 
-    <!-- ================= TEMPLATES ================= -->
+    <!-- ================= AUTO-SEND ================= -->
+    <div v-show="tab === 'auto_send'">
+      <p class="mb-4 max-w-3xl text-sm leading-relaxed text-slate-500">
+        Choose a WhatsApp message for any stage, and every lead that reaches it is sent that
+        message. Choose None to stop. Changes save straight away.
+      </p>
+
+      <p v-if="!activeTemplates.length" class="warn-box mb-4">
+        There are no messages to choose yet.
+        <button class="underline" @click="tab = 'templates'">Set one up on the Messages tab</button>.
+      </p>
+
+      <div class="card overflow-hidden">
+        <table class="w-full text-left text-sm">
+          <thead class="border-b border-slate-100 text-[10px] uppercase tracking-wide text-slate-400">
+            <tr>
+              <th class="px-4 py-2.5 font-semibold">When a lead reaches…</th>
+              <th class="px-4 py-2.5 font-semibold">Send</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in autoSend" :key="row.key" class="border-b border-slate-50 align-top last:border-0">
+              <td class="px-4 py-3 font-medium text-slate-700">{{ row.label }}</td>
+              <td class="px-4 py-3">
+                <select class="w-full max-w-xs" :value="row.template_id ?? ''"
+                        :disabled="savingSlot === row.key"
+                        @change="setAutoSend(row, $event.target.value)">
+                  <option value="">None</option>
+                  <option v-for="t in activeTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+                  <!-- a message switched off since it was chosen: shown, not silently swapped -->
+                  <option v-if="row.template_id && !activeTemplates.some(t => t.id === row.template_id)"
+                          :value="row.template_id">
+                    {{ templates.find(t => t.id === row.template_id)?.name ?? 'A deleted message' }} (switched off)
+                  </option>
+                </select>
+                <p v-for="other in row.others" :key="other.id" class="mt-1.5 text-[11px] text-slate-500">
+                  Also {{ other.is_active ? '' : '(switched off) ' }}sent by the rule “{{ other.name }}” —
+                  see Other automation below.
+                </p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="mt-3 text-[11px] text-slate-400">
+        Messages go by API through 11za when API sending is on (Queue tab). When it is off, they wait
+        in the Queue for somebody to open in WhatsApp.
+      </p>
+
+      <!--
+        OTHER AUTOMATION. Every rule a row above does not show — conditions,
+        other actions, time-based. Only there when one exists. Switch off is
+        the only thing offered: it cannot create or change anything, and it
+        means an admin who finds a rule they do not want can stop it without
+        calling a developer.
+      -->
+      <div v-if="otherAutomation.length" class="mt-6">
+        <h3 class="text-sm font-semibold text-slate-900">Other automation</h3>
+        <p class="mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">
+          These were set up before this screen, or by a developer, and run on their own. You can
+          switch one off here; to change or remove one, ask your developer.
+        </p>
+
+        <div class="card mt-3 divide-y divide-slate-100">
+          <div v-for="rule in otherAutomation" :key="rule.id" class="flex flex-wrap items-start gap-3 px-4 py-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-medium text-slate-800">{{ rule.name }}</span>
+                <span
+                  class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  :class="rule.is_active
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-500'"
+                >{{ rule.is_active ? 'On' : 'Off' }}</span>
+              </div>
+              <p class="mt-1 text-xs leading-relaxed text-slate-600">{{ phrase(rule) }}</p>
+              <p class="mt-1 text-[11px] text-slate-400">
+                Run {{ rule.fire_count }} time{{ rule.fire_count === 1 ? '' : 's' }} ·
+                last {{ whenShort(rule.last_fired_at) }}
+              </p>
+            </div>
+            <button v-if="rule.is_active" class="btn-xs flex-none" @click="switchOff(rule)">Switch off</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="mt-6 text-[11px] text-slate-400">
+        Each stage above is an automation rule underneath. Developers can see them all at
+        /automation?tab=rules.
+      </p>
+    </div>
+
+    <!-- ================= MESSAGES ================= -->
     <div v-show="tab === 'templates'">
       <div class="info-box mb-4 flex items-start gap-2">
         <span class="flex-1">
-          <strong>Sending by API uses templates set up in 11za.</strong>
-          Give a message its 11za template name and language to send it by API. Without one, it is
-          click-to-send only.
+          <strong>The wording lives in 11za.</strong>
+          A message here is an 11za template plus what goes into each of its variables — the
+          lead's first name, the project, and so on.
         </span>
-        <HelpTip title="Why the 11za name matters" align="right">
-          WhatsApp only lets a business message a customer with a template approved in advance.
-          Those templates live in your 11za panel. The CRM sends the name you type here and fills
-          in its variables in the numbering shown on each message. The CRM cannot check the name
-          against 11za — if it is wrong, the first send fails and 11za's answer appears in the
-          Queue's message log.
-        </HelpTip>
+        <button v-if="whatsapp.configured" class="btn-xs flex-none" :disabled="loadingProvider" @click="refreshProvider">
+          {{ loadingProvider ? 'Reading 11za…' : 'Refresh from 11za' }}
+        </button>
       </div>
 
+      <!--
+        Whether the template dropdown can fill itself. When it cannot, the name
+        is typed — and 11za's raw answer is shown so the reason is not a guess.
+      -->
+      <div v-if="!whatsapp.configured" class="warn-box mb-4">
+        The template list is read from 11za once the auth token and origin website are saved (Queue
+        tab). Until then, type each template's name and language.
+      </div>
+      <div v-else-if="providerResult && !providerResult.ok" class="warn-box mb-4 break-words">
+        {{ providerResult.message }}
+        <pre v-if="providerResult.raw" class="mt-1.5 whitespace-pre-wrap break-all rounded bg-white/60 p-2 font-mono text-[10px]">11za said: {{ providerResult.raw }}</pre>
+      </div>
+      <p v-else-if="providerList.at" class="mb-3 text-[11px] text-slate-400">
+        {{ providerList.templates.length }} template{{ providerList.templates.length === 1 ? '' : 's' }}
+        in 11za, read {{ when(providerList.at) }}.
+      </p>
+
       <div v-if="!templates.length" class="card px-6 py-10 text-center">
-        <p class="text-base font-semibold text-slate-800">No messages written yet</p>
+        <p class="text-base font-semibold text-slate-800">No messages set up yet</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          A message is something you write once and send many times — a welcome, a brochure
-          follow-up, a thank you after a site visit. The customer's name and project are filled
-          in automatically when it is used.
+          Pick a template from your 11za account and say what goes into each of its gaps. Then
+          choose which stage sends it on the Auto-send tab.
         </p>
-        <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          A rule puts a message in the Queue for somebody to open in WhatsApp — or, once the API
-          is set up and the message has its 11za template name, sends it by API.
-        </p>
-        <button class="btn mt-5" @click="openTemplate(null)">Write your first message</button>
+        <button class="btn mt-5" @click="openTemplate(null)">Set up your first message</button>
       </div>
 
       <div v-else class="grid gap-3 lg:grid-cols-2">
@@ -499,18 +704,14 @@ const whenShort = iso => iso
               <div class="flex flex-wrap items-center gap-2">
                 <h3 class="text-sm font-semibold text-slate-900">{{ template.name }}</h3>
                 <span
-                  class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                  :class="template.category === 'marketing'
-                    ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : 'border-slate-200 bg-slate-50 text-slate-600'"
-                >{{ categories[template.category]?.label ?? template.category }}</span>
-                <span
                   v-if="!template.is_active"
                   class="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px]
                          font-semibold uppercase tracking-wide text-slate-500"
                 >Off</span>
               </div>
-              <p class="mt-1 text-[11px] text-slate-400">{{ template.cost_note }}</p>
+              <p class="mt-1 text-[11px]" :class="template.api_unsendable ? 'text-amber-700' : 'text-slate-500'">
+                {{ template.api_unsendable ?? `11za: ${template.provider_template}` }}
+              </p>
             </div>
 
             <div class="flex flex-none flex-wrap gap-1.5">
@@ -523,22 +724,26 @@ const whenShort = iso => iso
             </div>
           </div>
 
-          <div class="mt-3 flex-1 rounded-xl bg-slate-100 p-2.5">
-            <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs
-                        leading-relaxed text-slate-800 shadow-sm">{{ template.preview }}</div>
-          </div>
+          <ul class="mt-3 flex-1 space-y-0.5 text-xs text-slate-600">
+            <li v-if="!template.placeholder_map.length" class="text-slate-400">No variables.</li>
+            <li v-for="(field, i) in template.placeholder_map" :key="i">
+              <span class="font-mono text-slate-400">{{ slotLabel(i) }}</span>
+              {{ placeholders[field]?.label ?? field }}
+            </li>
+          </ul>
 
-          <p class="mt-2 text-[11px]"
-             :class="template.api_unsendable ? 'text-slate-500' : 'text-emerald-700'">
-            <template v-if="template.provider_template">11za: {{ template.provider_template }}</template>
-            {{ template.api_unsendable ? `By API: no. ${template.api_unsendable}` : '· Can be sent by API.' }}
-          </p>
+          <details v-if="template.provider_body" class="mt-2 text-[11px] text-slate-500">
+            <summary class="cursor-pointer">The template in 11za</summary>
+            <div class="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 leading-relaxed">{{ template.provider_body }}</div>
+          </details>
+          <details v-if="template.old_body" class="mt-2 text-[11px] text-slate-500">
+            <summary class="cursor-pointer">Old wording, only used when sending by hand</summary>
+            <div class="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 leading-relaxed">{{ template.old_body }}</div>
+            <p v-if="!template.old_body_in_use" class="mt-1 text-slate-400">Not used: 11za's own wording is known.</p>
+          </details>
 
-          <p class="mt-1 text-[11px] text-slate-400">
+          <p class="mt-2 text-[11px] text-slate-400">
             Used {{ template.messages_count }} time{{ template.messages_count === 1 ? '' : 's' }}
-            <template v-if="template.placeholder_map?.length">
-              · Template numbering: {{ metaNumbering(template) }}
-            </template>
           </p>
         </div>
       </div>
@@ -574,13 +779,52 @@ const whenShort = iso => iso
         </HelpTip>
       </div>
 
+      <!--
+        OUTCOME UNKNOWN. Every one, however old, above everything else: each
+        is a customer who may or may not have heard from us.
+      -->
+      <div v-if="needsChecking.length" class="mb-6">
+        <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Outcome unknown — check 11za ({{ needsChecking.length }})
+        </h3>
+        <div class="space-y-2">
+          <div v-for="message in needsChecking" :key="message.id" class="card border-slate-300 p-4">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-sm font-semibold text-slate-900">{{ message.to_name ?? message.lead?.name ?? 'Deleted lead' }}</span>
+              <span class="text-xs text-slate-500">{{ message.to_number }}</span>
+              <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    :class="statusChip('unknown')">Outcome unknown</span>
+            </div>
+            <p class="mt-1.5 text-xs leading-relaxed text-slate-600">
+              Handed to 11za {{ when(message.handed_at) }}, then the send was interrupted before 11za
+              answered. It may or may not have reached the customer.
+              <strong>Look in the 11za panel's message log for {{ message.to_number }} around
+              {{ when(message.handed_at) }}</strong>, then say what you found.
+            </p>
+            <p class="mt-1 text-[11px] text-slate-400">
+              {{ message.template ?? 'No template' }}
+              <template v-if="message.rule"> · rule “{{ message.rule }}”</template>
+              <template v-else-if="message.user"> · by {{ message.user }}</template>
+            </p>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <button class="btn-xs" @click="settling = { message, answer: 'delivered' }">
+                I checked 11za — it delivered
+              </button>
+              <button class="btn-xs" @click="settling = { message, answer: 'not_sent' }">
+                I checked 11za — it never went
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div v-if="!queue.length" class="card px-6 py-10 text-center">
         <p class="text-base font-semibold text-slate-800">Nothing waiting to be sent</p>
         <p class="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-500">
-          When a rule with a WhatsApp action fires, the message appears here with the customer's
+          When a lead reaches a stage set up on Auto-send, the message appears here with the customer's
           details already filled in, along with what happened to it.
         </p>
-        <button class="btn-ghost mt-5" @click="tab = 'rules'">See the rules</button>
+        <button class="btn-ghost mt-5" @click="tab = 'auto_send'">Set up Auto-send</button>
       </div>
 
       <template v-else>
@@ -597,6 +841,9 @@ const whenShort = iso => iso
                   <span class="text-xs text-slate-400">{{ message.to_number }}</span>
                   <span class="rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase
                                tracking-wide" :class="statusChip(message.status)">{{ message.outcome }}</span>
+                  <span v-if="message.lead?.opted_out"
+                        class="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold
+                               uppercase tracking-wide text-rose-700">Opted out</span>
                 </div>
                 <div class="mt-2 whitespace-pre-wrap rounded-xl rounded-tl-sm bg-slate-50 px-3 py-2
                             text-xs leading-relaxed text-slate-700">{{ message.body }}</div>
@@ -872,7 +1119,7 @@ const whenShort = iso => iso
 
     <TemplateFormModal
       :show="templateModal" :template="editingTemplate"
-      :placeholders="placeholders" :categories="categories"
+      :placeholders="placeholders" :provider-templates="providerList.templates"
       @close="templateModal = false"
     />
 
@@ -884,6 +1131,15 @@ const whenShort = iso => iso
       :processing="toggleBusy || toggleCount === null"
       @close="toggling = null"
       @confirm="confirmToggle"
+    />
+
+    <ConfirmDialog
+      :show="!!settling"
+      :title="settleTitle"
+      :message="settleMessage"
+      :confirm-text="settling?.answer === 'delivered' ? 'Yes, it is in the log' : 'Not in the log — send again'"
+      @close="settling = null"
+      @confirm="confirmSettle"
     />
 
     <ConfirmDialog

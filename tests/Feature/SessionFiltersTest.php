@@ -346,11 +346,11 @@ class SessionFiltersTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('filters', ['status' => 'all', 'severity' => 'all']));
 
-        // the refresh: the tab falls back to Rules, the alert filters do not
+        // the refresh: the tab falls back to Auto-send, the alert filters do not
         $this->actingAs($this->admin)
             ->get('/automation')
             ->assertInertia(fn (Assert $page) => $page
-                ->where('tab', 'rules')
+                ->where('tab', 'auto_send')
                 ->where('filters', ['status' => 'unread', 'severity' => 'warning']));
     }
 

@@ -17,7 +17,9 @@ use Throwable;
  * stale row.
  *
  * The row is claimed (queued → sending) in one UPDATE before anything goes
- * to 11za, so two workers, or a worker and a retry, cannot both send it.
+ * to 11za, so two workers, or a worker and a retry, cannot both send it. The
+ * claim is timed: a worker that dies mid-send leaves the row `sending`, and
+ * `whatsapp:sweep-abandoned` marks it `unknown` once it is clearly abandoned.
  *
  * Retries only what is worth retrying — timeouts, 429 and 5xx, as decided by
  * WhatsAppApiException. Any other refusal from 11za fails once, with 11za's
@@ -38,7 +40,7 @@ class SendWhatsAppMessage implements ShouldQueue
     {
         $claimed = MessageLog::whereKey($this->messageId)
             ->where('status', 'queued')
-            ->update(['status' => 'sending']);
+            ->update(['status' => 'sending', 'sending_started_at' => now()]);
 
         // gone, already opened by somebody, cancelled, or another worker has it
         if (! $claimed) {
@@ -64,17 +66,25 @@ class SendWhatsAppMessage implements ShouldQueue
     }
 
     /**
-     * Something threw that send() did not catch. The row must not be left
-     * at `sending`, where it would look busy for ever.
+     * The job gave up — something threw that send() did not catch, or the
+     * worker ran out of time on the last attempt. The row must not be left
+     * looking busy for ever.
+     *
+     * Which way depends on how far it got. Still `queued`: it never left, so
+     * `failed` is the truth. `sending`: it had been handed to 11za, and
+     * whether 11za sent it is not known — `unknown`, never `failed`, because
+     * "failed" invites somebody to send it again and the customer may already
+     * have it.
      */
     public function failed(?Throwable $e): void
     {
-        MessageLog::whereKey($this->messageId)
-            ->whereIn('status', ['queued', 'sending'])
-            ->update([
-                'status' => 'failed',
-                'error' => 'The send job stopped unexpectedly: '.($e?->getMessage() ?? 'no reason given'),
-            ]);
+        $why = 'The send job stopped unexpectedly: '.($e?->getMessage() ?? 'no reason given');
+
+        MessageLog::whereKey($this->messageId)->where('status', 'queued')
+            ->update(['status' => 'failed', 'error' => $why]);
+
+        MessageLog::whereKey($this->messageId)->where('status', 'sending')
+            ->update(['status' => 'unknown', 'error' => $why]);
     }
 
     private function backoffFor(int $attempt): int

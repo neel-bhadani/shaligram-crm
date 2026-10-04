@@ -38,6 +38,10 @@ class MessageQueueController extends Controller
     {
         $this->authoriseFor($request, $message);
 
+        if ($refusal = $this->optedOutRefusal($message)) {
+            return response()->json(['ok' => false, 'message' => $refusal], 422);
+        }
+
         $url = $this->whatsapp->clickUrlFor($message);
 
         if (! $url) {
@@ -65,6 +69,10 @@ class MessageQueueController extends Controller
 
         if ($message->status !== 'queued') {
             return back()->with('error', 'That message has already left the queue.');
+        }
+
+        if ($refusal = $this->optedOutRefusal($message)) {
+            return back()->with('error', $refusal);
         }
 
         if (! $this->whatsapp->isConfigured()) {
@@ -96,6 +104,44 @@ class MessageQueueController extends Controller
         $message->update(['status' => 'cancelled', 'user_id' => $request->user()->id]);
 
         return back()->with('success', 'Message cancelled. It will not be sent.');
+    }
+
+    /**
+     * "I checked 11za — it delivered." Settles an `unknown` row as sent.
+     *
+     * Only after looking: the wording on the button and in the dialog sends
+     * the admin to 11za's log first, because a guess here marks a customer
+     * contacted who never was.
+     */
+    public function checkedDelivered(Request $request, MessageLog $message)
+    {
+        $this->authoriseFor($request, $message);
+
+        return $this->whatsapp->markCheckedDelivered($message, $request->user())
+            ? back()->with('success', 'Recorded as sent, with your name as the person who checked 11za.')
+            : back()->with('error', 'That message has already been settled.');
+    }
+
+    /** "I checked 11za — it never went." Sends it again, as the same row. */
+    public function checkedNotSent(Request $request, MessageLog $message)
+    {
+        $this->authoriseFor($request, $message);
+
+        $outcome = $this->whatsapp->resendCheckedNotSent($message, $request->user());
+
+        return back()->with($outcome['ok'] ? 'success' : 'error', $outcome['message']);
+    }
+
+    /**
+     * The Queue's buttons send without a warning, so they refuse a customer
+     * who opted out. The lead's own WhatsApp section can still send one,
+     * after asking.
+     */
+    private function optedOutRefusal(MessageLog $message): ?string
+    {
+        return $message->lead?->hasOptedOutOfWhatsApp()
+            ? 'This customer asked not to be messaged on WhatsApp. If you must, send from the WhatsApp section on the lead, which asks you to confirm — or cancel this message.'
+            : null;
     }
 
     /** The lead behind the message has to be one this user could open. */

@@ -222,7 +222,7 @@ class WhatsAppStageMessagingTest extends TestCase
         $this->assertSame('Welcome Rahul.', $message->body);
     }
 
-    public function test_terminal_stages_are_messaged_only_when_the_rule_opts_in(): void
+    public function test_a_rule_that_targets_booking_done_or_lost_sends_without_the_opt_in(): void
     {
         $this->fakeElevenZa();
         $this->configureApi();
@@ -234,20 +234,44 @@ class WhatsAppStageMessagingTest extends TestCase
         $number = 9876500000;
 
         foreach (['booking_done', 'lost'] as $stage) {
-            foreach (['skip' => 'skipped', 'send' => 'sent'] as $terminal => $expected) {
-                AutomationRule::query()->delete();
-                $this->apiRule('stage_changed', $template, ['stage' => $stage], ['terminal' => $terminal]);
+            AutomationRule::query()->delete();
+            // no `terminal` key: the rule was saved without the opt-in
+            $this->apiRule('stage_changed', $template, ['stage' => $stage]);
 
-                $lead = $this->lead(['stage' => 'in_discussion', 'mobile_number' => (string) $number++]);
-                $this->todoFor($lead);
+            $lead = $this->lead(['stage' => 'in_discussion', 'mobile_number' => (string) $number++]);
+            $this->todoFor($lead);
 
-                $service->changeStage($lead->fresh(), $stage);
+            $service->changeStage($lead->fresh(), $stage);
 
-                $this->assertSame($expected, MessageLog::where('lead_id', $lead->id)->sole()->status, "$stage / $terminal");
-            }
+            $this->assertSame('sent', MessageLog::where('lead_id', $lead->id)->sole()->status, $stage);
         }
 
         Http::assertSentCount(2);
+    }
+
+    public function test_a_lead_that_is_booked_or_lost_incidentally_is_messaged_only_when_the_rule_opts_in(): void
+    {
+        $this->fakeElevenZa();
+        $this->configureApi();
+
+        $template = $this->namedTemplate('Welcome {first_name}.', ['first_name']);
+        $this->actingAs($this->admin);
+
+        $number = 9876500000;
+
+        // a new-lead rule does not name a stage, so a lead that arrives
+        // already booked is the case the opt-in guards against
+        foreach (['skip' => 'skipped', 'send' => 'sent'] as $terminal => $expected) {
+            AutomationRule::query()->delete();
+            $this->apiRule('lead_created', $template, [], ['terminal' => $terminal]);
+
+            $lead = $this->lead(['stage' => 'booking_done', 'mobile_number' => (string) $number++]);
+            app(LeadFollowUpService::class)->onLeadCreated($lead);
+
+            $this->assertSame($expected, MessageLog::where('lead_id', $lead->id)->sole()->status, $terminal);
+        }
+
+        Http::assertSentCount(1);
     }
 
     /* ================= failures ================= */

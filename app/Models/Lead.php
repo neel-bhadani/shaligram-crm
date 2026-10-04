@@ -16,7 +16,18 @@ class Lead extends Model
         'stage_changed_at' => 'datetime',
         'last_activity_at' => 'datetime',
         'booking_date' => 'date',
+        'whatsapp_opted_out_at' => 'datetime',
     ];
+
+    /**
+     * The customer asked not to be messaged on WhatsApp. Bulk and automatic
+     * sends skip them, always; a single send by hand still can, after a
+     * warning.
+     */
+    public function hasOptedOutOfWhatsApp(): bool
+    {
+        return $this->whatsapp_opted_out_at !== null;
+    }
 
     protected $appends = ['full_name', 'days_in_stage'];
 

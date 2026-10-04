@@ -5,10 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\Lead;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Models\User;
+use App\Services\LeadActivityRecorder;
 use App\Services\WhatsApp\TemplateRenderer;
 use App\Services\WhatsApp\WhatsAppSender;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The WhatsApp panel on one lead: pick a message, see it filled in with this
@@ -28,9 +31,10 @@ class LeadWhatsAppController extends Controller
     public function __construct(
         private WhatsAppSender $whatsapp,
         private TemplateRenderer $renderer,
+        private LeadActivityRecorder $activities,
     ) {}
 
-    public function show(Lead $lead): JsonResponse
+    public function show(Request $request, Lead $lead): JsonResponse
     {
         $this->authorize('view', $lead);
 
@@ -48,7 +52,9 @@ class LeadWhatsAppController extends Controller
                     'id' => $t->id,
                     'name' => $t->name,
                     'category' => $t->category,
-                    'preview' => $this->renderer->render($t->body, $lead),
+                    // the same text click-to-send would open with: 11za's wording,
+                    // the old wording, or the generic line
+                    'preview' => $this->renderer->build($t, $lead)['body'],
                     'values' => collect(array_values($t->placeholder_map ?? []))
                         ->map(fn (string $name, int $i) => ['position' => $i + 1, 'name' => $name, 'value' => $params[$i]])
                         ->all(),
@@ -59,9 +65,12 @@ class LeadWhatsAppController extends Controller
             })
             ->all();
 
+        $user = $request->user();
+
         return response()->json([
             'api_enabled' => $apiEnabled,
             'number' => $this->renderer->waNumber($lead->mobile_number),
+            'opt_out' => $this->optOutState($lead, $user),
             'window' => 'Window unknown, template required',
             'templates' => $templates,
             'history' => $this->history($lead),
@@ -90,6 +99,19 @@ class LeadWhatsAppController extends Controller
         }
 
         $user = $request->user();
+
+        /*
+         | An opted-out customer can still be sent one message by hand — the
+         | person sending may have a reason — but never without being told
+         | first. The browser asks; this is what holds when it did not.
+         */
+        if ($lead->hasOptedOutOfWhatsApp() && ! $request->boolean('confirm_opted_out')) {
+            return response()->json([
+                'ok' => false,
+                'needs_confirmation' => true,
+                'message' => 'This customer asked not to be messaged on WhatsApp. Confirm you still want to send this.',
+            ], 422);
+        }
 
         if ($this->whatsapp->apiEnabled() && ! $template->apiUnsendableReason()) {
             $outcome = $this->whatsapp->queueTemplate($lead, $template, user: $user);
@@ -122,6 +144,57 @@ class LeadWhatsAppController extends Controller
             'message' => 'Opened in WhatsApp. Press send there — the CRM cannot tell whether you did.',
             'history' => $this->history($lead),
         ]);
+    }
+
+    /**
+     * Switch the WhatsApp opt-out on or off.
+     *
+     * Deliberately lopsided. ON: anybody who can edit the lead — respecting a
+     * customer who said stop must never wait for an admin. OFF: admins only,
+     * and recorded on the lead's history with who and when — a telecaller
+     * chasing a target must not be able to undo a customer's opt-out.
+     */
+    public function optOut(Request $request, Lead $lead): JsonResponse
+    {
+        $data = $request->validate(['opted_out' => ['required', 'boolean']]);
+        $user = $request->user();
+        $optingOut = (bool) $data['opted_out'];
+
+        $this->authorize('update', $lead);
+        abort_unless($optingOut || $user->isAdmin(), 403, 'Only an admin can allow WhatsApp messages to a customer who opted out.');
+
+        if ($optingOut !== $lead->hasOptedOutOfWhatsApp()) {
+            DB::transaction(function () use ($lead, $user, $optingOut) {
+                $lead->update($optingOut
+                    ? ['whatsapp_opted_out_at' => now(), 'whatsapp_opt_out_source' => 'manual', 'whatsapp_opted_out_by' => $user->id]
+                    : ['whatsapp_opted_out_at' => null, 'whatsapp_opt_out_source' => null, 'whatsapp_opted_out_by' => null]);
+
+                $this->activities->whatsAppOptOut($lead, $user->id, $optingOut);
+            });
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => $optingOut
+                ? 'Opted out. Bulk and automatic WhatsApp messages will skip this customer.'
+                : 'WhatsApp messages to this customer are allowed again.',
+            'opt_out' => $this->optOutState($lead->fresh(), $user),
+        ]);
+    }
+
+    /** @return array{active: bool, at: ?string, by: ?string, source: ?string, can_switch_on: bool, can_switch_off: bool} */
+    private function optOutState(Lead $lead, User $user): array
+    {
+        $canEdit = $user->can('update', $lead);
+
+        return [
+            'active' => $lead->hasOptedOutOfWhatsApp(),
+            'at' => $lead->whatsapp_opted_out_at?->toIso8601String(),
+            'by' => $lead->whatsapp_opted_out_by ? User::find($lead->whatsapp_opted_out_by)?->display_name : null,
+            'source' => $lead->whatsapp_opt_out_source,
+            'can_switch_on' => $canEdit,
+            'can_switch_off' => $canEdit && $user->isAdmin(),
+        ];
     }
 
     /** @return array<int, array<string, mixed>> */

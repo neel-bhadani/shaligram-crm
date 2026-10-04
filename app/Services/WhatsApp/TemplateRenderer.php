@@ -48,11 +48,7 @@ class TemplateRenderer
      */
     public function preview(string $body): string
     {
-        $values = collect($this->placeholders())
-            ->map(fn (array $meta) => $meta['example'])
-            ->all();
-
-        return $this->replace($body, $values);
+        return $this->replace($body, $this->exampleValues());
     }
 
     /**
@@ -197,6 +193,84 @@ class TemplateRenderer
             .'?text='.rawurlencode($body);
     }
 
+    /* ---------------- what click-to-send says ---------------- */
+
+    /**
+     * The text a message opens WhatsApp with, for one set of values.
+     *
+     * The CRM no longer holds wording, so this is whichever of three it has,
+     * best first:
+     *
+     *   11za's own wording   copied from 11za's template list, its {{1}},
+     *                        {{2}} filled in by `placeholder_map` — the same
+     *                        values the API send would carry.
+     *   the old wording      a message written in the CRM before it stopped
+     *                        holding wording. Kept, read-only, for this.
+     *   a generic line       "Hello Rahul, regarding Skyline Residency." Not
+     *                        the template, but not an empty box either — when
+     *                        11za is unreachable, this is what is left.
+     *
+     * @param  array<string, string>  $values  from valuesFor(), or the examples
+     */
+    public function clickText(MessageTemplate $template, array $values): string
+    {
+        if (filled($template->provider_body)) {
+            return $this->fillNumbered($template->provider_body, $template->placeholder_map ?? [], $values);
+        }
+
+        if (filled($template->body)) {
+            return $this->replace($template->body, $values);
+        }
+
+        return $this->fallbackLine($values);
+    }
+
+    /** The same, against the invented lead the placeholder examples describe. */
+    public function exampleText(MessageTemplate $template): string
+    {
+        return $this->clickText($template, $this->exampleValues());
+    }
+
+    /** @return array<string, string> each placeholder's example, from config */
+    public function exampleValues(): array
+    {
+        return collect($this->placeholders())
+            ->map(fn (array $meta) => $meta['example'])
+            ->all();
+    }
+
+    /**
+     * 11za's {{1}}, {{2}} filled in by position. A slot the map does not cover
+     * becomes empty rather than staying as "{{3}}", for the same reason an
+     * unknown named placeholder does.
+     *
+     * @param  array<int, string>  $map
+     * @param  array<string, string>  $values
+     */
+    public function fillNumbered(string $text, array $map, array $values): string
+    {
+        $map = array_values($map);
+
+        return (string) preg_replace_callback(
+            '/\{\{\s*(\d+)\s*\}\}/',
+            fn (array $m) => (string) ($values[$map[(int) $m[1] - 1] ?? ''] ?? ''),
+            $text,
+        );
+    }
+
+    /** @param array<string, string> $values */
+    public function fallbackLine(array $values): string
+    {
+        $line = config('automation.whatsapp.fallback_line');
+        $text = rtrim($this->replace($line['greeting'], $values));
+
+        if (filled($values['project'] ?? null)) {
+            $text .= $this->replace($line['project'], $values);
+        }
+
+        return $text.$line['end'];
+    }
+
     /* ---------------- internals ---------------- */
 
     /** @param array<string, string> $values */
@@ -216,7 +290,7 @@ class TemplateRenderer
      */
     public function build(MessageTemplate $template, Lead $lead): array
     {
-        $body = $this->render($template->body, $lead);
+        $body = $this->clickText($template, $this->valuesFor($lead));
 
         return [
             'body' => $body,

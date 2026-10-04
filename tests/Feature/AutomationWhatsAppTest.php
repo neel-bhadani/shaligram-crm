@@ -132,27 +132,32 @@ class AutomationWhatsAppTest extends TestCase
         $this->assertStringNotContainsString('{', $rendered, 'nothing was left unreplaced');
     }
 
-    public function test_the_template_numbering_is_stored_when_the_template_is_saved(): void
+    public function test_a_message_stores_the_variable_mapping_and_no_wording(): void
     {
         $this->actingAs($this->admin)
             ->post(route('automation.templates.store'), [
                 'name' => 'Welcome',
-                'category' => 'utility',
-                'body' => 'Hi {first_name}, welcome to {project}. {first_name}, we will call you soon.',
+                'provider_template_name' => 'welcome_v2',
+                'provider_template_language' => 'en',
+                // 11za's {{1}} and {{3}} are both the first name; {{2}} the project
+                'placeholder_map' => ['first_name', 'project', 'first_name'],
+                // ignored: the CRM no longer holds wording
+                'body' => 'Hi {first_name}',
                 'is_active' => true,
             ])
             ->assertSessionHasNoErrors();
 
         $template = MessageTemplate::firstOrFail();
 
-        // first appearance wins, and a repeat does not get a second number —
-        // which is exactly what a WhatsApp template expects
-        $this->assertSame(['first_name', 'project'], $template->placeholder_map);
+        $this->assertSame(['first_name', 'project', 'first_name'], $template->placeholder_map);
+        $this->assertNull($template->body);
 
-        $this->assertSame(
-            'Hi {{1}}, welcome to {{2}}. {{1}}, we will call you soon.',
-            app(TemplateRenderer::class)->toMetaBody($template->body, $template->placeholder_map),
-        );
+        $this->actingAs($this->admin)
+            ->post(route('automation.templates.store'), [
+                'name' => 'Bad', 'provider_template_name' => 'x', 'provider_template_language' => 'en',
+                'placeholder_map' => ['customer_shoe_size'],
+            ])
+            ->assertSessionHasErrors('placeholder_map.0');
     }
 
     /* ================= queue, not send ================= */

@@ -7,15 +7,17 @@ use App\Models\AutomationLog;
 use App\Models\AutomationRule;
 use App\Models\MessageLog;
 use App\Models\MessageTemplate;
+use App\Services\Automation\AutoSend;
 use App\Services\Automation\RuleCatalog;
 use App\Services\WhatsApp\TemplateRenderer;
 use App\Services\WhatsApp\WhatsAppSender;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 /**
- * The Automation page. Five tabs, one Inertia page, admin only.
+ * The Automation page. Six tabs, one Inertia page, admin only.
  *
  * Admin only for real: `role:admin` sits on the route group in routes/web.php,
  * so typing /automation as a telecaller is a 403 rather than an empty screen.
@@ -35,9 +37,10 @@ class AutomationController extends Controller
 {
     use ListsAlerts;
 
-    public const TABS = ['rules', 'templates', 'queue', 'alerts', 'activity'];
+    public const TABS = ['auto_send', 'templates', 'rules', 'queue', 'alerts', 'activity'];
 
     public function __construct(
+        private AutoSend $autoSend,
         private RuleCatalog $catalogue,
         private WhatsAppSender $whatsapp,
         private TemplateRenderer $renderer,
@@ -47,18 +50,25 @@ class AutomationController extends Controller
     {
         $tab = in_array($request->query('tab'), self::TABS, true)
             ? $request->query('tab')
-            : 'rules';
+            : 'auto_send';
+
+        $rowRuleIds = $this->autoSend->rowRuleIds();
 
         return Inertia::render('Automation/Index', [
             'tab' => $tab,
-            'rules' => $this->rules(),
+            'autoSend' => $this->autoSend->rows(),
+            // every rule the Auto-send rows do not show, so none is invisible
+            'otherAutomation' => $this->autoSend->otherRules()->map(fn (AutomationRule $rule) => $this->ruleRow($rule))->all(),
+            // the Rules tab: not in the tab bar, reached by /automation?tab=rules
+            'rules' => $this->rules($rowRuleIds),
             'templates' => $this->templates(),
+            'providerTemplates' => $this->providerTemplates(),
             'queue' => $this->queue(),
+            'needsChecking' => $this->needsChecking(),
             'activity' => $this->activity(),
             'catalog' => $this->catalogue->payload(),
             'whatsapp' => $this->whatsappCard(),
             'placeholders' => $this->renderer->placeholders(),
-            'categories' => config('automation.whatsapp.categories'),
             'thresholds' => config('crm.alerts'),
             'schedulerRunning' => $this->schedulerRunning(),
         ] + $this->alertList($request, $request->user(), 'automation-alerts'));
@@ -69,8 +79,8 @@ class AutomationController extends Controller
      *
      * A separate page rather than a panel on the tabs, because it is read once
      * — properly, start to finish, by somebody who has just been handed this
-     * feature — and then never again. A collapsible box on the Rules tab would
-     * be skipped by exactly the person it is written for.
+     * feature — and then never again. Nothing links to it any more: it is
+     * mostly about the rule builder, which is now for troubleshooting only.
      */
     public function guide()
     {
@@ -172,30 +182,51 @@ class AutomationController extends Controller
 
     /* ---------------- the tabs ---------------- */
 
-    private function rules(): array
+    /**
+     * The Rules tab — every rule, for whoever is troubleshooting. It is not
+     * in the tab bar; /automation?tab=rules opens it. A rule an Auto-send row
+     * owns is marked, because changing it here changes that row.
+     *
+     * @param  list<int>  $rowRuleIds
+     * @return list<array<string, mixed>>
+     */
+    private function rules(array $rowRuleIds): array
     {
         return AutomationRule::with('creator:id,first_name,last_name')
             ->orderByDesc('is_active')
             ->orderBy('name')
             ->get()
-            ->map(fn (AutomationRule $rule) => [
-                'id' => $rule->id,
-                'name' => $rule->name,
+            ->map(fn (AutomationRule $rule) => $this->ruleRow($rule) + [
                 'description' => $rule->description,
-                'trigger' => $rule->trigger,
-                'trigger_config' => $rule->trigger_config ?? [],
-                'conditions' => $rule->conditionList(),
-                'actions' => $rule->actionList(),
-                'is_active' => $rule->is_active,
-                'fire_count' => $rule->fire_count,
-                'last_fired_at' => $rule->last_fired_at?->toIso8601String(),
                 'created_by' => $rule->creator?->display_name,
+                'on_auto_send' => in_array($rule->id, $rowRuleIds, true),
                 // the save-time warning, recomputed on read so a rule written
                 // before the check existed still shows it
                 'could_loop' => $rule->couldLoop(),
-                'is_time_based' => config("automation.triggers.{$rule->trigger}.kind") === 'time',
             ])
             ->all();
+    }
+
+    /**
+     * What it takes to say a rule in plain words (rulePhrase.js) and show
+     * whether it is on and has run.
+     *
+     * @return array<string, mixed>
+     */
+    private function ruleRow(AutomationRule $rule): array
+    {
+        return [
+            'id' => $rule->id,
+            'name' => $rule->name,
+            'trigger' => $rule->trigger,
+            'trigger_config' => $rule->trigger_config ?? [],
+            'conditions' => $rule->conditionList(),
+            'actions' => $rule->actionList(),
+            'is_active' => $rule->is_active,
+            'fire_count' => $rule->fire_count,
+            'last_fired_at' => $rule->last_fired_at?->toIso8601String(),
+            'is_time_based' => config("automation.triggers.{$rule->trigger}.kind") === 'time',
+        ];
     }
 
     private function templates(): array
@@ -206,12 +237,13 @@ class AutomationController extends Controller
             ->map(fn (MessageTemplate $t) => [
                 'id' => $t->id,
                 'name' => $t->name,
-                'category' => $t->category,
-                'body' => $t->body,
                 'placeholder_map' => $t->placeholder_map ?? [],
-                // the body as the WhatsApp template is numbered, shown read-only
-                // so the numbering is not a surprise when it is set up in 11za
-                'meta_body' => $this->renderer->toMetaBody($t->body, $t->placeholder_map),
+                // 11za's own wording, when its template list carried it
+                'provider_body' => $t->provider_body,
+                // wording written in the CRM before it stopped holding any;
+                // read-only, and only used when 11za's is not known
+                'old_body' => $t->body,
+                'old_body_in_use' => filled($t->body) && blank($t->provider_body),
                 'provider_template_name' => $t->provider_template_name,
                 'provider_template_language' => $t->provider_template_language,
                 'provider_template' => $t->providerTemplateLabel(),
@@ -219,10 +251,28 @@ class AutomationController extends Controller
                 'api_unsendable' => $t->apiUnsendableReason(),
                 'is_active' => $t->is_active,
                 'messages_count' => $t->messages_count,
-                'preview' => $this->renderer->preview($t->body),
-                'cost_note' => $t->costNote(),
+                // what click-to-send would open with, for the sample customer
+                'preview' => $this->renderer->exampleText($t),
             ])
             ->all();
+    }
+
+    /**
+     * 11za's template list as last read, for the Messages dropdown before it
+     * is refreshed. The raw answer comes along so an empty list can be
+     * explained.
+     *
+     * @return array{templates: list<array<string, mixed>>, raw: ?string, at: ?string}
+     */
+    private function providerTemplates(): array
+    {
+        $saved = (array) $this->whatsapp->integration()->setting('template_list', []);
+
+        return [
+            'templates' => $saved['templates'] ?? [],
+            'raw' => $saved['raw'] ?? null,
+            'at' => $saved['at'] ?? null,
+        ];
     }
 
     /**
@@ -236,48 +286,80 @@ class AutomationController extends Controller
      */
     private function queue(): array
     {
-        return MessageLog::with([
-            'lead:id,first_name,middle_name,last_name,mobile_number,assigned_to',
-            'template:id,name,category,provider_template_name,provider_template_language,placeholder_map',
-            'rule:id,name',
-            'user:id,first_name,last_name',
-        ])
+        return $this->messageQuery()
             ->latest('id')
             ->limit((int) config('automation.queue_limit', 100))
             ->get()
-            ->map(fn (MessageLog $m) => [
-                'id' => $m->id,
-                'status' => $m->status,
-                'mode' => $m->mode,
-                'outcome' => $m->outcome(),
-                'body' => $m->body,
-                'to_number' => $m->to_number,
-                'to_name' => $m->to_name ?? $m->lead?->full_name,
-                'provider_message_id' => $m->provider_message_id,
-                'unconfirmed' => $m->isUnconfirmed(),
-                'provider_response' => $m->provider_response,
-                'error' => $m->error,
-                'error_code' => $m->error_code,
-                'sent_at' => $m->sent_at?->toIso8601String(),
-                'created_at' => $m->created_at?->toIso8601String(),
-                'lead' => $m->lead ? [
-                    'id' => $m->lead->id,
-                    'name' => $m->lead->full_name,
-                ] : null,
-                'template' => $m->template?->name,
-                'provider_template' => $m->provider_template_name
-                    ? "{$m->provider_template_name} ({$m->provider_template_language})"
-                    : null,
-                'rule' => $m->rule?->name,
-                'user' => $m->user?->display_name,
-                // built server-side so the browser never has to know the
-                // country code or the encoding rules
-                'click_url' => $m->status === 'queued' ? $this->whatsapp->clickUrlFor($m) : null,
-                // whether Send by API is worth offering on this row at all
-                'api_ready' => $m->status === 'queued' && $m->template && $m->params !== null
-                    && ! $m->template->apiUnsendableReason(),
-            ])
+            ->map(fn (MessageLog $m) => $this->messageRow($m))
             ->all();
+    }
+
+    /**
+     * Every message whose outcome is unknown, however old. Kept out of the
+     * capped log above on purpose: one that scrolled off the end would never
+     * be settled, and the customer would never hear either way.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function needsChecking(): array
+    {
+        return $this->messageQuery()
+            ->where('status', 'unknown')
+            ->oldest('id')
+            ->get()
+            ->map(fn (MessageLog $m) => $this->messageRow($m))
+            ->all();
+    }
+
+    private function messageQuery(): Builder
+    {
+        return MessageLog::with([
+            'lead:id,first_name,middle_name,last_name,mobile_number,assigned_to,whatsapp_opted_out_at',
+            'template:id,name,category,provider_template_name,provider_template_language,placeholder_map',
+            'rule:id,name',
+            'user:id,first_name,last_name',
+            'checker:id,first_name,last_name',
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function messageRow(MessageLog $m): array
+    {
+        return [
+            'id' => $m->id,
+            'status' => $m->status,
+            'mode' => $m->mode,
+            'outcome' => $m->outcome(),
+            'body' => $m->body,
+            'to_number' => $m->to_number,
+            'to_name' => $m->to_name ?? $m->lead?->full_name,
+            'provider_message_id' => $m->provider_message_id,
+            'unconfirmed' => $m->isUnconfirmed(),
+            // when it was handed to 11za: where to look in 11za's log
+            'handed_at' => $m->sending_started_at?->toIso8601String(),
+            'provider_response' => $m->provider_response,
+            'error' => $m->error,
+            'error_code' => $m->error_code,
+            'sent_at' => $m->sent_at?->toIso8601String(),
+            'created_at' => $m->created_at?->toIso8601String(),
+            'lead' => $m->lead ? [
+                'id' => $m->lead->id,
+                'name' => $m->lead->full_name,
+                'opted_out' => $m->lead->hasOptedOutOfWhatsApp(),
+            ] : null,
+            'template' => $m->template?->name,
+            'provider_template' => $m->provider_template_name
+                ? "{$m->provider_template_name} ({$m->provider_template_language})"
+                : null,
+            'rule' => $m->rule?->name,
+            'user' => $m->user?->display_name,
+            // built server-side so the browser never has to know the
+            // country code or the encoding rules
+            'click_url' => $m->status === 'queued' ? $this->whatsapp->clickUrlFor($m) : null,
+            // whether Send by API is worth offering on this row at all
+            'api_ready' => $m->status === 'queued' && $m->template && $m->params !== null
+                && ! $m->template->apiUnsendableReason(),
+        ];
     }
 
     private function activity(): array
@@ -329,7 +411,8 @@ class AutomationController extends Controller
      * Time-based rules and every built-in alert depend on `schedule:run` being
      * on a cron. When it is not, nothing errors: event rules go on working
      * perfectly and the time ones simply never fire, which is the worst kind of
-     * broken. The Rules tab prints a warning when this is false.
+     * broken. The top of the Automation page prints a warning when this is
+     * false.
      *
      * A unix timestamp written by `automation:run` itself, and read back
      * defensively. Two things make that worth spelling out.
@@ -346,7 +429,7 @@ class AutomationController extends Controller
      * is worth taking a page down for.
      *
      * Null means unknown — the cache was cleared, or nothing has run yet — and
-     * the Rules tab stays quiet rather than accusing a healthy server.
+     * the page stays quiet rather than accusing a healthy server.
      */
     private function schedulerRunning(): ?bool
     {

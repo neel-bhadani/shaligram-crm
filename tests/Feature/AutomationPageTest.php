@@ -77,9 +77,11 @@ class AutomationPageTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Automation/Index')
-                ->where('tab', 'rules')
+                ->where('tab', 'auto_send')
+                ->has('autoSend', 9)
                 ->has('rules')
                 ->has('templates')
+                ->has('providerTemplates')
                 ->has('queue')
                 ->has('activity')
                 ->has('alerts')
@@ -89,7 +91,6 @@ class AutomationPageTest extends TestCase
                 ->has('catalog.options.stages')
                 ->has('catalog.alert_recipients')
                 ->has('placeholders')
-                ->has('categories')
                 ->has('thresholds'));
     }
 
@@ -100,7 +101,7 @@ class AutomationPageTest extends TestCase
 
         // and a made-up tab falls back rather than erroring
         $this->actingAs($this->admin)->get('/automation?tab=nonsense')
-            ->assertInertia(fn (Assert $page) => $page->where('tab', 'rules'));
+            ->assertInertia(fn (Assert $page) => $page->where('tab', 'auto_send'));
     }
 
     public function test_the_guide_renders_for_an_admin(): void

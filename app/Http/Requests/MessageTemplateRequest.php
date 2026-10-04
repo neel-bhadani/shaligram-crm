@@ -2,23 +2,21 @@
 
 namespace App\Http\Requests;
 
-use App\Services\WhatsApp\TemplateRenderer;
+use App\Services\WhatsApp\WhatsAppSender;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * A WhatsApp template.
+ * A message: which 11za template, and what goes into each of its variables.
  *
- * The interesting part is what this does NOT refuse. An unknown placeholder —
- * {custamer_name} — is a warning in the editor, not a validation error: a body
- * may legitimately contain a brace, and blocking a save on a false positive
- * would leave the admin with no way to write the message they meant. The editor
- * shows the misspelling beside a live preview where the gap is obvious.
+ * The CRM does not hold the wording — 11za does. What only the CRM can know is
+ * that 11za's {{1}} is the lead's first name and {{2}} the project, and that is
+ * `placeholder_map`: one CRM field per variable, in 11za's numbering. Without
+ * it every send goes out with blank or wrong values, so it is the one thing
+ * this form exists to collect.
  *
- * The 11za template name is typed, not picked: templates live in 11za's panel
- * and there is nothing to list them from. A name that does not exist there is
- * found out when 11za answers the first send, and that answer is kept on the
- * message.
+ * `body` is not accepted at all. A message written before the CRM stopped
+ * holding wording keeps it untouched; a new one has none.
  */
 class MessageTemplateRequest extends FormRequest
 {
@@ -27,61 +25,62 @@ class MessageTemplateRequest extends FormRequest
         return (bool) $this->user()?->isAdmin();
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'provider_template_name' => trim((string) $this->input('provider_template_name')),
+            'provider_template_language' => trim((string) $this->input('provider_template_language')),
+        ]);
+    }
+
     public function rules(): array
     {
         return [
             'name' => ['required', 'string', 'max:120'],
-            'category' => ['required', Rule::in(array_keys(config('automation.whatsapp.categories')))],
-            /*
-             | 1024 is the practical ceiling for a WhatsApp template body. The
-             | limit is here rather than only in the column so the admin is told
-             | while they are writing, instead of after Meta rejects it.
-             */
-            'body' => ['required', 'string', 'max:1024'],
             'is_active' => ['boolean'],
-            // the template this message is sent as by API, exactly as it is
-            // named in 11za's panel; empty means click-to-send only
-            'provider_template_name' => ['nullable', 'string', 'max:255', 'regex:/^\S+$/'],
+            // exactly as named in 11za — picked from 11za's list when it can
+            // be read, typed when it cannot
+            'provider_template_name' => ['required', 'string', 'max:255', 'regex:/^\S+$/'],
             // WhatsApp's language code: en, hi, en_US
-            'provider_template_language' => ['nullable', 'required_with:provider_template_name', 'string', 'regex:/^[a-z]{2,3}(_[A-Z]{2})?$/'],
+            'provider_template_language' => ['required', 'string', 'regex:/^[a-z]{2,3}(_[A-Z]{2})?$/'],
+            // {{1}}, {{2}}… in order. The same field twice is allowed: a
+            // template may well say the customer's name in two places
+            'placeholder_map' => ['nullable', 'array', 'max:10'],
+            'placeholder_map.*' => ['required', 'string', Rule::in(array_keys(config('automation.whatsapp.placeholders')))],
         ];
     }
 
     public function messages(): array
     {
         return [
-            'body.required' => 'Write the message. Use the placeholder buttons to drop in the customer\'s name.',
-            'body.max' => 'WhatsApp templates cannot be longer than 1024 characters.',
+            'name.required' => 'Give the message a name you will recognise on the Auto-send tab.',
+            'provider_template_name.required' => 'Choose the 11za template this message is sent as.',
             'provider_template_name.regex' => 'An 11za template name has no spaces in it. Copy it exactly as it appears in the 11za panel.',
-            'provider_template_language.required_with' => 'Give the template\'s language code too — usually "en".',
+            'provider_template_language.required' => 'Give the template\'s language code — usually "en".',
             'provider_template_language.regex' => 'The language is a code like "en", "hi" or "en_US", as shown in the 11za panel.',
+            'placeholder_map.*.required' => 'Say what goes into this variable.',
+            'placeholder_map.*.in' => 'That is not something the CRM can fill in. Choose again.',
         ];
     }
 
     /**
-     * What gets stored, including the numbering the WhatsApp template uses.
-     *
-     * The map is worked out here, at save time, and not at send time. The
-     * template wants {{1}} and {{2}}; only this application knows that {{1}}
-     * was meant to be the customer's first name. Deriving it later would mean
-     * re-deriving it for every template already written and hoping the order
-     * had not changed in the meantime.
+     * What gets stored. 11za's wording comes along when the last template list
+     * read from 11za carried it — never from the browser.
      *
      * @return array<string, mixed>
      */
     public function templateAttributes(): array
     {
-        $body = trim($this->input('body'));
-        $providerName = trim((string) $this->input('provider_template_name')) ?: null;
+        $name = $this->input('provider_template_name');
+        $language = $this->input('provider_template_language');
 
         return [
             'name' => trim($this->input('name')),
-            'category' => $this->input('category'),
-            'body' => $body,
-            'placeholder_map' => app(TemplateRenderer::class)->mapFor($body),
             'is_active' => $this->boolean('is_active'),
-            'provider_template_name' => $providerName,
-            'provider_template_language' => $providerName ? $this->input('provider_template_language') : null,
+            'provider_template_name' => $name,
+            'provider_template_language' => $language,
+            'provider_body' => app(WhatsAppSender::class)->providerBodyFor($name, $language),
+            'placeholder_map' => array_values((array) $this->input('placeholder_map')),
         ];
     }
 }

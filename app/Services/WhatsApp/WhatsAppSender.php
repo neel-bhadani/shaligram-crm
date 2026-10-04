@@ -47,6 +47,9 @@ class WhatsAppSender
         .'Save the 11za auth token and origin website in the WhatsApp settings on the Queue tab. '
         .'Until then, open the message from the Queue and send it yourself.';
 
+    /** Why an automatic message did not go to a customer who opted out. */
+    public const OPTED_OUT = 'The customer asked not to be messaged on WhatsApp (opted out), so automatic messages skip them.';
+
     /** Settings sending needs, and what to call them when missing. */
     public const REQUIRED = [
         'auth_token' => '11za auth token',
@@ -296,6 +299,68 @@ class WhatsAppSender
     }
 
     /**
+     * Settle an `unknown` row: a person looked it up in 11za's own message
+     * log and found it delivered. Recorded as sent, at the time it was handed
+     * to 11za, with who checked and when.
+     */
+    public function markCheckedDelivered(MessageLog $message, User $user): bool
+    {
+        return (bool) MessageLog::whereKey($message->id)->where('status', 'unknown')->update([
+            'status' => 'sent',
+            'sent_at' => $message->sending_started_at ?? now(),
+            'check_result' => 'delivered',
+            'checked_by' => $user->id,
+            'checked_at' => now(),
+        ]);
+    }
+
+    /**
+     * Settle an `unknown` row the other way: a person looked it up in 11za's
+     * log and it never went. Sent again, as the same row, through the worker.
+     *
+     * Checked here, where the admin is looking, rather than left for the job
+     * to fail on — and a customer who has opted out since is not sent to.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function resendCheckedNotSent(MessageLog $message, User $user): array
+    {
+        if ($message->status !== 'unknown') {
+            return ['ok' => false, 'message' => 'That message has already been settled.'];
+        }
+
+        if ($message->lead?->hasOptedOutOfWhatsApp()) {
+            return ['ok' => false, 'message' => 'This customer has opted out of WhatsApp since. It was not sent again.'];
+        }
+
+        if (! $this->apiEnabled()) {
+            return ['ok' => false, 'message' => 'API sending is switched off in the WhatsApp settings, so it cannot be sent again from here.'];
+        }
+
+        if ($reason = $this->apiBlocker($message)) {
+            return ['ok' => false, 'message' => $reason];
+        }
+
+        $settled = MessageLog::whereKey($message->id)->where('status', 'unknown')->update([
+            'status' => 'queued',
+            'sending_started_at' => null,
+            'error' => null,
+            'user_id' => $user->id,
+            'check_result' => 'not_sent',
+            'checked_by' => $user->id,
+            'checked_at' => now(),
+        ]);
+
+        if (! $settled) {
+            return ['ok' => false, 'message' => 'That message has already been settled.'];
+        }
+
+        SendWhatsAppMessage::dispatch($message->id)->afterCommit();
+
+        return ['ok' => true, 'message' => 'Sending it again. The outcome appears in the message log.'];
+    }
+
+    /**
      * Send through 11za. Called by SendWhatsAppMessage and nothing else —
      * except for one case: an unconfigured API, which says so on the row and
      * on screen rather than failing somewhere nobody reads.
@@ -327,6 +392,14 @@ class WhatsAppSender
             $message->update(['status' => 'failed', 'error' => $reason]);
 
             return ['ok' => false, 'message' => $reason, 'retry' => false];
+        }
+
+        // checked again here, at the last moment: a customer can opt out
+        // between a rule queueing the message and the worker sending it
+        if ($message->rule_id !== null && $message->lead?->hasOptedOutOfWhatsApp()) {
+            $message->update(['status' => 'skipped', 'error' => self::OPTED_OUT]);
+
+            return ['ok' => false, 'message' => self::OPTED_OUT, 'retry' => false];
         }
 
         $templateName = $message->provider_template_name ?: $message->template->provider_template_name;
@@ -438,6 +511,98 @@ class WhatsAppSender
                     .'but no message id was recognised in its response. '.MessageLog::UNCONFIRMED_ADVICE,
             'response' => $sent['raw'],
         ]);
+    }
+
+    /* ---------------- 11za's template list ---------------- */
+
+    /**
+     * Read the template list from 11za, for the Messages tab's dropdown.
+     *
+     * Kept on the settings row with 11za's raw answer, so the dropdown still
+     * fills after a reload and the raw answer can be read when the list comes
+     * back empty. 11za's wording, when the list carries it, is copied onto
+     * every message set up as that template — that copy is the only wording
+     * the CRM keeps for a new message, and it is never typed by anybody.
+     *
+     * Always answers. When 11za cannot be asked, or answers with nothing the
+     * parser recognises, the tab falls back to typing the name and language.
+     *
+     * @return array{ok: bool, message: string, templates: list<array<string, mixed>>, raw: ?string, at: ?string}
+     */
+    public function refreshProviderTemplates(): array
+    {
+        $missing = $this->missingSettings();
+
+        if ($missing !== []) {
+            return [
+                'ok' => false,
+                'message' => 'The 11za template list cannot be read until the '.collect($missing)->join(', ', ' and ')
+                    .' are saved. Type the template name and language instead.',
+                'templates' => [],
+                'raw' => null,
+                'at' => null,
+            ];
+        }
+
+        try {
+            $list = $this->client->listTemplates((string) $this->integration()->setting('auth_token'), $this->baseUrl());
+        } catch (WhatsAppApiException $e) {
+            return [
+                'ok' => false,
+                'message' => 'Could not read the template list from 11za. '.$e->getMessage().' Type the template name and language instead.',
+                'templates' => $this->providerTemplates(),
+                'raw' => $e->raw,
+                'at' => null,
+            ];
+        }
+
+        $saved = [
+            'templates' => $list['templates'],
+            'raw' => $list['raw'],
+            'at' => now()->toIso8601String(),
+        ];
+
+        $integration = $this->integration();
+        $integration->mergeSettings(['template_list' => $saved]);
+        $integration->save();
+
+        foreach ($list['templates'] as $template) {
+            if ($template['body'] !== null) {
+                MessageTemplate::where('provider_template_name', $template['name'])
+                    ->when($template['language'], fn ($q, $language) => $q->where('provider_template_language', $language))
+                    ->update(['provider_body' => $template['body']]);
+            }
+        }
+
+        $count = count($list['templates']);
+
+        return $saved + [
+            'ok' => $count > 0,
+            'message' => $count > 0
+                ? "11za lists {$count} template".($count === 1 ? '' : 's').'.'
+                : '11za answered, but no template could be recognised in its answer (shown below). Type the template name and language instead.',
+        ];
+    }
+
+    /**
+     * The list as last read from 11za, or empty.
+     *
+     * @return list<array{name: string, language: ?string, body: ?string, variables: ?int}>
+     */
+    public function providerTemplates(): array
+    {
+        return (array) data_get($this->integration()->setting('template_list'), 'templates', []);
+    }
+
+    /** 11za's wording for one template, from the last list read, or null. */
+    public function providerBodyFor(?string $name, ?string $language): ?string
+    {
+        if (blank($name)) {
+            return null;
+        }
+
+        return collect($this->providerTemplates())
+            ->first(fn (array $t) => $t['name'] === $name && ($t['language'] === null || $t['language'] === $language))['body'] ?? null;
     }
 
     /* ---------------- internals ---------------- */
