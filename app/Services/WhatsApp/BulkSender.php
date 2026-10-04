@@ -71,7 +71,7 @@ class BulkSender
      * @param  Collection<int, Lead>  $leads
      * @return array{selected: int, recipients: int, cap: int, over_cap: bool,
      *               excluded: list<array{reason: string, leads: list<array{id: int, name: string, number: ?string}>}>,
-     *               sample: ?array{name: string, body: string, values: list<array{position: int, value: string}>},
+     *               sample: ?array{name: string, body: ?string, values: list<array{position: int, value: string}>},
      *               rows: list<array{lead: Lead, reason: ?string}>}
      */
     public function plan(Collection $leads, MessageTemplate $template): array
@@ -131,7 +131,8 @@ class BulkSender
                 ->all(),
             'sample' => $first ? [
                 'name' => $first->full_name,
-                'body' => $this->renderer->build($template, $first)['body'],
+                // 11za's wording, or null when not read — never a stand-in
+                'body' => $this->renderer->wordingFor($template, $first),
                 'values' => collect($this->whatsapp->paramsFor($template, $first))
                     ->map(fn (string $value, int $i) => ['position' => $i + 1, 'value' => $value])
                     ->all(),

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import axios from 'axios'
 import { localNow, isPast } from '@/lib/localDateTime'
+import { marketingNote } from '@/lib/templateFacts'
 
 /*
  | WhatsApp for ONE lead: pick a tag, see it filled in with this lead's
@@ -213,10 +214,18 @@ watch(pickedId, () => { confirmOptedOut.value = false })
         </select>
 
         <div v-if="picked" class="mt-3">
-          <div class="rounded-xl bg-slate-100 p-2.5">
+          <p v-if="picked.approval_warning" class="warn-box mb-2 text-xs">{{ picked.approval_warning }}</p>
+          <p v-if="picked.marketing" class="mb-2 text-[11px] leading-relaxed text-amber-800">{{ marketingNote }}</p>
+
+          <!-- 11za's wording for this lead, or a plain "not known" — never a stand-in -->
+          <div v-if="picked.preview" class="rounded-xl bg-slate-100 p-2.5">
             <div class="whitespace-pre-wrap rounded-xl rounded-tl-sm bg-white px-3 py-2 text-xs
                         leading-relaxed text-slate-800 shadow-sm">{{ picked.preview }}</div>
           </div>
+          <p v-else class="text-[11px] text-slate-500">
+            11za's wording for this tag has not been read yet, so it cannot be shown. An admin can press
+            Refresh from 11za on the Tags tab.
+          </p>
           <details v-if="picked.by_api" class="mt-1.5 text-[11px] text-slate-400">
             <summary class="cursor-pointer">What 11za receives</summary>
             <p class="mt-1">

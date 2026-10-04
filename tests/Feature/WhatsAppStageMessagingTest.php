@@ -108,21 +108,24 @@ class WhatsAppStageMessagingTest extends TestCase
         $this->assertSame('Accepted by 11za (11za-TEST1)', $message->outcome());
     }
 
-    public function test_the_saved_base_url_replaces_the_default_host(): void
+    public function test_the_host_is_config_only_and_a_posted_base_url_is_never_saved(): void
     {
+        config(['automation.whatsapp.api.base' => 'https://app.11za.in']);
         Http::fake(['https://app.11za.in/apis/template/sendTemplate' => Http::response(['messageId' => 'X1'])]);
-        $this->configureApi(extra: ['base_url' => 'https://app.11za.in']);
 
+        // a host posted to the settings form goes nowhere
+        $this->actingAs($this->admin)->put(route('automation.whatsapp.update'), [
+            'auth_token' => self::TOKEN,
+            'origin_website' => 'https://shaligram.example',
+            'base_url' => 'https://api.11za.in.attacker.example',
+        ])->assertSessionHasNoErrors();
+        $this->assertArrayNotHasKey('base_url', Integration::forProvider('whatsapp')->settings);
+
+        $this->configureApi();
         $template = $this->namedTemplate('Welcome {first_name}.', ['first_name']);
-        $this->apiRule('lead_created', $template);
-        $lead = $this->lead();
-        $this->todoFor($lead);
-
-        $this->actingAs($this->admin);
-        app(LeadFollowUpService::class)->onLeadCreated($lead);
+        app(WhatsAppSender::class)->queueTemplate($this->lead(), $template, user: $this->admin);
 
         Http::assertSent(fn (Request $request) => $request->url() === 'https://app.11za.in/apis/template/sendTemplate');
-        $this->assertSame('sent', MessageLog::sole()->status);
     }
 
     public function test_the_cooldown_stops_a_second_send(): void
@@ -481,29 +484,17 @@ class WhatsAppStageMessagingTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_a_base_url_that_is_not_11za_is_refused(): void
+    public function test_a_token_with_spaces_is_refused(): void
     {
-        $this->actingAs($this->admin)
-            ->put(route('automation.whatsapp.update'), [
-                'auth_token' => self::TOKEN,
-                'origin_website' => 'https://shaligram.example',
-                'base_url' => 'https://api.11za.in.attacker.example',
-            ])
-            ->assertSessionHasErrors('base_url');
-
         $this->actingAs($this->admin)
             ->put(route('automation.whatsapp.update'), [
                 'auth_token' => 'two words',
                 'origin_website' => 'https://shaligram.example',
-                'base_url' => 'https://app.11za.in/',
             ])
-            ->assertSessionHasErrors('auth_token')
-            ->assertSessionDoesntHaveErrors('base_url');
+            ->assertSessionHasErrors('auth_token');
 
         $this->assertNull(Integration::forProvider('whatsapp')->setting('auth_token'));
     }
-
-    /* ================= from the lead ================= */
 
     public function test_the_lead_owner_can_send_one_message_from_the_lead(): void
     {
@@ -517,7 +508,8 @@ class WhatsAppStageMessagingTest extends TestCase
             ->getJson(route('leads.whatsapp.show', $lead))
             ->assertOk()
             ->assertJsonMissingPath('window')
-            ->assertJsonPath('templates.0.preview', 'Welcome Rahul.')
+            // only 11za's wording is previewed; this tag's is the CRM's old one
+            ->assertJsonPath('templates.0.preview', null)
             ->assertJsonPath('templates.0.by_api', true);
 
         $this->actingAs($this->tele)

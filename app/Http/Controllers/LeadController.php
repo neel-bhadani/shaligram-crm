@@ -19,6 +19,7 @@ use App\Services\LeadFollowUpService;
 use App\Services\LeadListQuery;
 use App\Services\LeadTimeline;
 use App\Services\WhatsApp\BulkSender;
+use App\Services\WhatsApp\WhatsAppSender;
 use App\Support\CrmTaxonomy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -151,14 +152,16 @@ class LeadController extends Controller
      * Every tag that can be switched on, by name, with why it cannot go in
      * bulk when it cannot — so the dropdown can say so rather than hide it.
      *
-     * @return list<array{id: int, name: string, bulk_refusal: ?string}>
+     * @return list<array{id: int, name: string, bulk_refusal: ?string, status: ?string, category: ?string, approval_warning: ?string, marketing: bool}>
      */
     private function bulkTags(): array
     {
         $bulk = app(BulkSender::class);
+        $tags = MessageTemplate::active()->orderBy('name')->get();
+        $facts = app(WhatsAppSender::class)->tagFacts($tags);
 
-        return MessageTemplate::active()->orderBy('name')->get()
-            ->map(fn (MessageTemplate $t) => ['id' => $t->id, 'name' => $t->name, 'bulk_refusal' => $bulk->refusal($t)])
+        return $tags
+            ->map(fn (MessageTemplate $t) => ['id' => $t->id, 'name' => $t->name, 'bulk_refusal' => $bulk->refusal($t)] + $facts[$t->id])
             ->all();
     }
 

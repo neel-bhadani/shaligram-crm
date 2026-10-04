@@ -40,10 +40,11 @@ class LeadWhatsAppController extends Controller
         $lead->loadMissing('project', 'owner');
         $apiEnabled = $this->whatsapp->apiEnabled();
 
-        $templates = MessageTemplate::active()
-            ->orderBy('name')
-            ->get()
-            ->map(function (MessageTemplate $t) use ($lead, $apiEnabled) {
+        $tags = MessageTemplate::active()->orderBy('name')->get();
+        $facts = $this->whatsapp->tagFacts($tags);
+
+        $templates = $tags
+            ->map(function (MessageTemplate $t) use ($lead, $apiEnabled, $facts) {
                 $reason = $apiEnabled ? $t->apiUnsendableReason() : null;
                 $params = $this->whatsapp->paramsFor($t, $lead);
 
@@ -51,16 +52,16 @@ class LeadWhatsAppController extends Controller
                     'id' => $t->id,
                     'name' => $t->name,
                     'category' => $t->category,
-                    // the same text click-to-send would open with: 11za's wording,
-                    // the old wording, or the generic line
-                    'preview' => $this->renderer->build($t, $lead)['body'],
+                    // 11za's wording filled in for this lead, or null when it
+                    // has not been read — never a stand-in
+                    'preview' => $this->renderer->wordingFor($t, $lead),
                     'values' => collect(array_values($t->placeholder_map ?? []))
                         ->map(fn (string $name, int $i) => ['position' => $i + 1, 'name' => $name, 'value' => $params[$i]])
                         ->all(),
                     'provider_template' => $t->providerTemplateLabel(),
                     'by_api' => $apiEnabled && $reason === null,
                     'api_reason' => $reason,
-                ];
+                ] + $facts[$t->id];
             })
             ->all();
 

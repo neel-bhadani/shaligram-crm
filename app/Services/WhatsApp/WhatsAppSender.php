@@ -88,14 +88,13 @@ class WhatsAppSender
     }
 
     /**
-     * The 11za host: the admin's override if one is saved, otherwise config.
-     *
-     * 11za's docs name two hosts; which is right is not yet confirmed, so it
-     * can be changed without a deploy.
+     * The 11za host, from config (WHATSAPP_API_BASE). Not a setting on the
+     * screen: api.11za.in is what production uses, and a host typed into a
+     * form is where the auth token would be posted.
      */
     public function baseUrl(): string
     {
-        return (string) ($this->integration()->setting('base_url') ?: config('automation.whatsapp.api.base'));
+        return (string) config('automation.whatsapp.api.base');
     }
 
     /** "Use API sending" is on AND there is something to send with. */
@@ -573,18 +572,19 @@ class WhatsAppSender
     /**
      * Read the template list from 11za, for the Tags tab's dropdown.
      *
-     * Kept in `provider_templates`: name, language and variable count, at most
-     * `list_cap` of them, replaced whole on every successful read. 11za's
-     * wording, when the list carries it, is copied onto every message set up
-     * as that template — that copy is the only wording the CRM keeps, and it
-     * is never typed by anybody. 11za's raw answer is never stored: when it
-     * cannot be read it comes back once, trimmed, for the screen.
+     * Kept in `provider_templates`: one row per template and language, with
+     * its variable counts, for at most `list_cap` templates, replaced whole on
+     * every successful read, with each language's approval status, the
+     * category and 11za's BODY wording. The wording is also copied onto the
+     * tags set up as each template — never typed by anybody.
+     * Its raw answer is never stored: when it cannot be read it comes back
+     * once, trimmed, for the screen.
      *
-     * 11za's maximum page size is undocumented, so the sizes in `list_limits`
-     * are tried in turn: an answer from 11za that is a refusal, or carries no
-     * template, moves on to the next size. No answer at all (a timeout) does
-     * not — that is not about the size. The size that worked is stored and
-     * shown, so the first real read says what 11za's limit is.
+     * The first page is asked for at each size in `list_limits` in turn: a
+     * refusal, or an answer that is not a list, moves on to the next size. No
+     * answer at all (a timeout) does not — that is not about the size. Then
+     * every further page, at the size 11za used, until it says there are no
+     * more or the cap is reached. "Of N" is 11za's own totalDocs.
      *
      * Always answers, and never throws. A timeout, an outage, an answer the
      * parser does not recognise and a database error all come back as `ok`
@@ -613,24 +613,24 @@ class WhatsAppSender
     /**
      * The list as last read from 11za, and when, for the page.
      *
-     * `total` is how many 11za listed at that read; more than the templates
-     * here means the list was cut at `list_cap`.
+     * `total` is how many templates 11za listed at that read; more than are
+     * here means the list was cut at `list_cap`. A template in two languages
+     * is two entries and one template.
      *
-     * @return array{templates: list<array{name: string, language: ?string, variables: ?int}>, total: int, at: ?string, page_size: ?int, failed: bool}
+     * @return array{templates: list<array{name: string, language: ?string, status: ?string, category: ?string, variables: ?int, extra_variables: ?int, body: ?string}>, total: int, at: ?string, page_size: ?int, failed: bool}
      */
     public function providerTemplateList(): array
     {
         $read = (array) $this->integration()->setting('template_list_read', []);
 
         $templates = ProviderTemplate::orderBy('id')
-            ->limit($this->listCap())
             ->get()
             ->map(fn (ProviderTemplate $t) => $t->toListEntry())
             ->all();
 
         return [
             'templates' => $templates,
-            'total' => max((int) ($read['total'] ?? 0), count($templates)),
+            'total' => max((int) ($read['total'] ?? 0), collect($templates)->pluck('name')->unique()->count()),
             'at' => $read['at'] ?? null,
             'page_size' => $read['page_size'] ?? null,
             'failed' => ($read['failed_at'] ?? null) !== null,
@@ -651,9 +651,10 @@ class WhatsAppSender
         $sizes = $this->listPageSizes();
         $refused = [];
 
+        // the first page, at the first size 11za accepts
         foreach ($sizes as $size) {
             try {
-                $list = $this->client->listTemplates((string) $this->integration()->setting('auth_token'), $this->baseUrl(), $size);
+                $first = $this->listPage($size, 1);
             } catch (WhatsAppApiException $e) {
                 // no answer at all is not about the size: asking again smaller
                 // would only wait out the same timeout
@@ -671,16 +672,12 @@ class WhatsAppSender
                 continue;
             }
 
-            $entries = collect($list['templates'])
-                ->filter(fn (array $t) => $t['name'] !== '' && mb_strlen($t['name']) <= 255)
-                ->values();
-
-            if ($entries->isNotEmpty()) {
+            if ($first['templates'] !== null) {
                 break;
             }
 
             $refused[] = $size;
-            $last = ['message' => '11za answered, but no template could be recognised in its answer (shown below).', 'raw' => $list['raw']];
+            $last = ['message' => '11za answered, but not with a template list (shown below).', 'raw' => $first['raw']];
         }
 
         if (count($refused) === count($sizes)) {
@@ -688,13 +685,53 @@ class WhatsAppSender
 
             return $this->listAnswer(false,
                 'Could not read the template list from 11za. '.$last['message']
-                .' Tried page sizes '.implode(', ', $sizes).'; 11za refused or gave no templates for each — its last answer is shown.'
+                .' Tried page sizes '.implode(', ', $sizes).'; 11za refused or gave no list for each — its last answer is shown.'
                 .' Nothing was changed. Press Refresh to try again, or type the template name and language instead.',
                 $last['raw']);
         }
 
+        // the rest, page by page, until 11za says there are no more or the
+        // cap is reached. A page that fails fails the whole read: half a
+        // list would look like templates had been deleted
+        $cap = $this->listCap();
+        $perPage = $first['limit'] ?? $size;
+        $entries = collect($first['templates']);
+        $pages = 1;
+        $next = $first['has_next'];
+
+        while ($next && $entries->pluck('name')->unique()->count() < $cap && $pages < (int) ceil($cap / max(1, $perPage)) + 1) {
+            try {
+                $page = $this->listPage($size, $pages + 1);
+            } catch (WhatsAppApiException $e) {
+                $this->rememberListFailure();
+
+                return $this->listAnswer(false,
+                    'Could not read page '.($pages + 1).' of the template list from 11za. '.$e->getMessage()
+                    .' Nothing was changed. Press Refresh to try again.', $e->raw);
+            }
+
+            if ($page['templates'] === null) {
+                $this->rememberListFailure();
+
+                return $this->listAnswer(false,
+                    'Page '.($pages + 1).' of the template list from 11za was not a list (shown below). Nothing was changed. Press Refresh to try again.',
+                    $page['raw']);
+            }
+
+            $entries = $entries->concat($page['templates']);
+            $next = $page['has_next'];
+            $pages++;
+        }
+
+        $names = $entries->pluck('name')->unique()->values();
+        $kept = $names->take($cap)->flip();
+        $entries = $entries->filter(fn (array $t) => isset($kept[$t['name']]))
+            ->unique(fn (array $t) => $t['name'].'|'.$t['language'])
+            ->values();
+        $total = max($first['total'] ?? 0, $names->count());
+
         try {
-            $this->storeProviderTemplates($entries->all(), $size);
+            $this->storeProviderTemplates($entries->all(), $total, $perPage);
         } catch (Throwable $e) {
             Log::warning('11za template list could not be saved: '.class_basename($e).': '.$this->redactQuietly($e->getMessage()));
 
@@ -705,13 +742,22 @@ class WhatsAppSender
                 .'Press Refresh to try again.');
         }
 
-        $total = $entries->count();
-        $cap = $this->listCap();
-
         return $this->listAnswer(true, ($total > $cap
             ? "Showing the first {$cap} of {$total} templates from 11za. Type the name for any other."
             : "11za lists {$total} template".($total === 1 ? '' : 's').'.')
-            ." Read with page size {$size}".$this->triedSizes($refused).'.');
+            ." Read {$pages} page".($pages === 1 ? '' : 's')." of up to {$perPage}"
+            .($perPage < $size ? " (asked for {$size}; 11za sends at most {$perPage} a page)" : '')
+            .$this->triedSizes($refused).'.');
+    }
+
+    /**
+     * @return array{templates: ?list<array<string, mixed>>, total: ?int, limit: ?int, has_next: bool, raw: string}
+     *
+     * @throws WhatsAppApiException
+     */
+    private function listPage(int $size, int $page): array
+    {
+        return $this->client->listTemplates((string) $this->integration()->setting('auth_token'), $this->baseUrl(), $size, $page);
     }
 
     /** ", after 1000 was refused" — so the first real refresh tells us 11za's limit. */
@@ -733,25 +779,34 @@ class WhatsAppSender
     }
 
     /**
-     * Replace the stored list, copy 11za's wording onto the messages set up
-     * as each template, and note when — all or nothing.
+     * Replace the stored list, copy 11za's wording onto the tags set up as
+     * each template and language, and note when — all or nothing.
      *
-     * @param  list<array{name: string, language: ?string, body: ?string, variables: ?int}>  $entries
-     * @param  int  $pageSize  the size 11za accepted, kept so the tab can show it
+     * A tag whose template is not in the list keeps the wording it had.
+     *
+     * @param  list<array{name: string, language: ?string, status: ?string, category: ?string, body: ?string, variables: ?int, extra_variables: ?int}>  $entries
+     * @param  int  $total  how many templates 11za said it has
+     * @param  int  $pageSize  the page size 11za used, kept so the tab can show it
      */
-    private function storeProviderTemplates(array $entries, int $pageSize): void
+    private function storeProviderTemplates(array $entries, int $total, int $pageSize): void
     {
-        DB::transaction(function () use ($entries, $pageSize) {
+        $count = fn (?int $n) => $n !== null && $n >= 0 && $n <= 1000 ? $n : null;
+
+        DB::transaction(function () use ($entries, $total, $pageSize, $count) {
             ProviderTemplate::query()->delete();
 
             $now = now();
 
             collect($entries)
-                ->take($this->listCap())
+                ->filter(fn (array $t) => mb_strlen($t['name']) <= 255)
                 ->map(fn (array $t) => [
                     'name' => $t['name'],
                     'language' => $t['language'] !== null && mb_strlen($t['language']) <= 32 ? $t['language'] : null,
-                    'variables' => $t['variables'] !== null && $t['variables'] >= 0 && $t['variables'] <= 1000 ? $t['variables'] : null,
+                    'status' => $t['status'] !== null && mb_strlen($t['status']) <= 20 ? $t['status'] : null,
+                    'category' => $t['category'] !== null && mb_strlen($t['category']) <= 30 ? $t['category'] : null,
+                    'variables' => $count($t['variables']),
+                    'extra_variables' => $count($t['extra_variables']),
+                    'body' => $t['body'],
                     'created_at' => $now,
                     'updated_at' => $now,
                 ])
@@ -769,7 +824,7 @@ class WhatsAppSender
             $integration = $this->integration();
             $integration->mergeSettings(['template_list_read' => [
                 'at' => $now->toIso8601String(),
-                'total' => count($entries),
+                'total' => $total,
                 'page_size' => $pageSize,
                 'failed_at' => null,
             ]]);
@@ -853,6 +908,51 @@ class WhatsAppSender
             fn (string $name) => trim((string) preg_replace('/\s+/', ' ', (string) ($values[$name] ?? ''))),
             array_values($template->placeholder_map ?? []),
         );
+    }
+
+    /**
+     * What each tag's 11za template is, as of the last read: Meta's approval
+     * for its language, its category, and — when it will not send — why, in
+     * words for the screen. Keyed by tag id. One query for the lot.
+     *
+     * No warning when it cannot be known: the list never read, or cut at the
+     * cap before reaching this template.
+     *
+     * @param  iterable<MessageTemplate>  $tags
+     * @return array<int, array{status: ?string, category: ?string, approval_warning: ?string, marketing: bool}>
+     */
+    public function tagFacts(iterable $tags): array
+    {
+        $list = ProviderTemplate::keyed();
+        $read = (array) $this->integration()->setting('template_list_read', []);
+        $complete = ($read['at'] ?? null) !== null
+            && (int) ($read['total'] ?? 0) <= $list->pluck('name')->unique()->count();
+
+        $facts = [];
+
+        foreach ($tags as $tag) {
+            $found = $list->get($tag->provider_template_name.'|'.$tag->provider_template_language);
+
+            $warning = match (true) {
+                blank($tag->provider_template_name) => null,
+                $found === null => $complete
+                    ? "11za's list has no template \"{$tag->provider_template_name}\" in \"{$tag->provider_template_language}\". Sends will fail until this tag points at one that exists."
+                    : null,
+                $found->status === 'PENDING' => 'Meta has not approved this template yet (pending). Sends will fail until it is approved.',
+                $found->status === 'REJECTED' => 'Meta rejected this template. Sends will fail — fix it in 11za, or point this tag at another template.',
+                $found->status !== null && ! $found->isApproved() => "This template is {$found->status} in 11za, not approved. Sends will fail.",
+                default => null,
+            };
+
+            $facts[$tag->id] = [
+                'status' => $found?->status,
+                'category' => $found?->category,
+                'approval_warning' => $warning,
+                'marketing' => (bool) $found?->isMarketing(),
+            ];
+        }
+
+        return $facts;
     }
 
     /**

@@ -225,6 +225,26 @@ class TemplateRenderer
         return $this->fallbackLine($values);
     }
 
+    /**
+     * 11za's own wording for this lead, filled in — or null when 11za's
+     * wording has not been read. For every preview: a preview shows what the
+     * template actually says, or says it is not known, and never a stand-in.
+     */
+    public function wordingFor(MessageTemplate $template, Lead $lead): ?string
+    {
+        return filled($template->provider_body)
+            ? $this->fillNumbered($template->provider_body, $template->placeholder_map ?? [], $this->valuesFor($lead))
+            : null;
+    }
+
+    /** The same, for the example customer ("Rahul Mehta"), or null. */
+    public function exampleWording(MessageTemplate $template): ?string
+    {
+        return filled($template->provider_body)
+            ? $this->fillNumbered($template->provider_body, $template->placeholder_map ?? [], $this->exampleValues())
+            : null;
+    }
+
     /** The same, against the invented lead the placeholder examples describe. */
     public function exampleText(MessageTemplate $template): string
     {

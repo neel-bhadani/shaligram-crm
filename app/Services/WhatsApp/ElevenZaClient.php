@@ -47,15 +47,6 @@ class ElevenZaClient
      */
     private const MESSAGE_ID_KEYS = ['messageid', 'msgid', 'wamid'];
 
-    /** Keys, normalised the same way, read from each entry of the template list. */
-    private const TEMPLATE_NAME_KEYS = ['templatename', 'elementname', 'name'];
-
-    private const TEMPLATE_LANGUAGE_KEYS = ['language', 'languagecode', 'lang'];
-
-    private const TEMPLATE_BODY_KEYS = ['body', 'bodytext', 'templatebody', 'text', 'content'];
-
-    private const TEMPLATE_COUNT_KEYS = ['dynamicvaluecount', 'dynamiccount', 'variablecount', 'variables', 'count'];
-
     /**
      * Send one template message.
      *
@@ -107,21 +98,36 @@ class ElevenZaClient
     }
 
     /**
-     * The templates in the 11za account, for the Tags tab's dropdown.
+     * One page of the templates in the 11za account, for the Tags tab.
      *
-     * 11za documents the request and not the answer, so the answer is read
-     * defensively: the first list in it whose entries carry a name is the
-     * template list, and from each entry the name, language, wording and
-     * variable count are taken from whichever key looks like one. Anything
-     * missing comes back null rather than guessed. The raw response (token
-     * removed) always comes back too, so the shape can be seen and this
-     * tightened.
+     * The answer of getTemplatesAll, as seen from production (October 2026),
+     * trimmed to what is read:
      *
-     * @return array{templates: list<array{name: string, language: ?string, body: ?string, variables: ?int}>, raw: string}
+     *   {"IsSuccess": true, "Data": {
+     *     "docs": [{"name": "vanam_won", "category": "MARKETING",
+     *               "localizations": [{"language": "en", "status": "APPROVED",
+     *                                  "components": [{"type": "BODY", "text": "…"},
+     *                                                 {"type": "FOOTER", "text": "…"}]}],
+     *               "dynamicValues": [{"language": "en", "bodyDynamic": 0}],
+     *               "variables": [{"localization": "en", "headerDynamics": [],
+     *                              "bodyDynamics": [], "carouselDynamics": []}]}],
+     *     "totalDocs": 1, "limit": 100, "page": 1, "hasNextPage": false}}
+     *
+     * Each localization is its own entry, with its own approval status and
+     * wording — the same template in English and Hindi is two things a tag
+     * can be sent as, and either can be pending while the other is approved.
+     *
+     * A field that is missing comes back null rather than throwing, so one odd
+     * template cannot sink the list. `docs` itself missing means the answer is
+     * not the list (null `templates`); an empty `docs` is a real, empty list.
+     *
+     * @return array{templates: ?list<array{name: string, language: ?string, status: ?string, category: ?string,
+     *                                       body: ?string, variables: ?int, extra_variables: ?int}>,
+     *               total: ?int, limit: ?int, has_next: bool, raw: string}
      *
      * @throws WhatsAppApiException
      */
-    public function listTemplates(#[SensitiveParameter] string $authToken, string $baseUrl, int $limit = 100): array
+    public function listTemplates(#[SensitiveParameter] string $authToken, string $baseUrl, int $limit = 100, int $page = 1): array
     {
         $url = rtrim($baseUrl, '/').config('automation.whatsapp.api.list_path');
 
@@ -132,7 +138,7 @@ class ElevenZaClient
                 ->post($url, [
                     'authToken' => $authToken,
                     'limit' => $limit,
-                    'page' => 1,
+                    'page' => $page,
                     'search' => '',
                 ]);
         } catch (ConnectionException $e) {
@@ -148,8 +154,21 @@ class ElevenZaClient
         }
 
         $json = $response->json();
+        $data = is_array($json) && ($json['IsSuccess'] ?? true) !== false ? ($json['Data'] ?? null) : null;
+        $docs = is_array($data) && is_array($data['docs'] ?? null) && array_is_list($data['docs']) ? $data['docs'] : null;
 
-        return ['templates' => is_array($json) ? $this->templatesIn($json) : [], 'raw' => $raw];
+        return [
+            'templates' => $docs === null ? null : collect($docs)
+                ->filter(fn ($doc) => is_array($doc))
+                ->flatMap(fn (array $doc) => $this->entriesFor($doc))
+                ->unique(fn (array $t) => $t['name'].'|'.$t['language'])
+                ->values()
+                ->all(),
+            'total' => is_int($data['totalDocs'] ?? null) ? $data['totalDocs'] : null,
+            'limit' => is_int($data['limit'] ?? null) ? $data['limit'] : null,
+            'has_next' => ($data['hasNextPage'] ?? false) === true,
+            'raw' => $raw,
+        ];
     }
 
     /**
@@ -182,83 +201,85 @@ class ElevenZaClient
     }
 
     /**
-     * The first list of named entries anywhere in the response, read as
-     * templates. One entry per name and language.
+     * One entry per localization of a template, or one with no language when
+     * it lists none.
      *
-     * @return list<array{name: string, language: ?string, body: ?string, variables: ?int}>
+     * `variables` is the body's count — what the `data` array of a send
+     * fills. Read from `dynamicValues[].bodyDynamic` for that language; failing
+     * that, the length of its `variables[].bodyDynamics`; failing that, the
+     * highest {{n}} in the wording. `extra_variables` is the header and
+     * carousel ones, which a send from this CRM does not fill.
+     *
+     * `body` is the BODY component's text — 11za's own wording, with its own
+     * {{1}}, {{2}}. Kept in the list and copied onto the tags set up as it.
+     *
+     * @return list<array{name: string, language: ?string, status: ?string, category: ?string,
+     *                    body: ?string, variables: ?int, extra_variables: ?int}>
      */
-    private function templatesIn(array $json): array
+    private function entriesFor(array $doc): array
     {
-        if (array_is_list($json) && $json !== [] && collect($json)->contains(fn ($item) => is_array($item) && $this->field($item, self::TEMPLATE_NAME_KEYS) !== null)) {
-            return collect($json)
-                ->filter(fn ($item) => is_array($item) && is_string($this->field($item, self::TEMPLATE_NAME_KEYS)))
-                ->map(fn (array $item) => $this->templateFrom($item))
-                ->unique(fn (array $t) => $t['name'].'|'.$t['language'])
-                ->values()
-                ->all();
+        $name = is_string($doc['name'] ?? null) ? trim($doc['name']) : '';
+
+        if ($name === '') {
+            return [];
         }
 
-        foreach ($json as $value) {
-            if (is_array($value) && ($found = $this->templatesIn($value)) !== []) {
-                return $found;
-            }
+        $category = is_string($doc['category'] ?? null) && trim($doc['category']) !== '' ? strtoupper(trim($doc['category'])) : null;
+
+        $byLanguage = fn (string $key, string $languageKey) => collect(is_array($doc[$key] ?? null) ? $doc[$key] : [])
+            ->filter(fn ($v) => is_array($v) && is_string($v[$languageKey] ?? null))
+            ->keyBy(fn (array $v) => trim($v[$languageKey]));
+
+        $dynamicValues = $byLanguage('dynamicValues', 'language');
+        $dynamics = $byLanguage('variables', 'localization');
+
+        $localizations = collect(is_array($doc['localizations'] ?? null) ? $doc['localizations'] : [])
+            ->filter(fn ($l) => is_array($l) && is_string($l['language'] ?? null) && trim($l['language']) !== '');
+
+        if ($localizations->isEmpty()) {
+            return [['name' => $name, 'language' => null, 'status' => null, 'category' => $category,
+                'body' => null, 'variables' => null, 'extra_variables' => null]];
         }
 
-        return [];
+        return $localizations->map(function (array $localization) use ($name, $category, $dynamicValues, $dynamics) {
+            $language = trim($localization['language']);
+            $these = $dynamics->get($language);
+            $body = $this->bodyText($localization['components'] ?? null);
+
+            $count = $dynamicValues->get($language)['bodyDynamic'] ?? $localization['bodyDynamic'] ?? null;
+
+            $variables = match (true) {
+                is_int($count) && $count >= 0 => $count,
+                is_array($these['bodyDynamics'] ?? null) => count($these['bodyDynamics']),
+                $body !== null => preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $m) ? max(array_map('intval', $m[1])) : 0,
+                default => null,
+            };
+
+            $extra = is_array($these)
+                ? (is_array($these['headerDynamics'] ?? null) ? count($these['headerDynamics']) : 0)
+                    + (is_array($these['carouselDynamics'] ?? null) ? count($these['carouselDynamics']) : 0)
+                : null;
+
+            $status = is_string($localization['status'] ?? null) && trim($localization['status']) !== ''
+                ? strtoupper(trim($localization['status']))
+                : null;
+
+            return ['name' => $name, 'language' => $language, 'status' => $status, 'category' => $category,
+                'body' => $body, 'variables' => $variables, 'extra_variables' => $extra];
+        })->values()->all();
     }
 
-    /** @return array{name: string, language: ?string, body: ?string, variables: ?int} */
-    private function templateFrom(array $item): array
+    /** The text of the BODY component, or null. */
+    private function bodyText(mixed $components): ?string
     {
-        $language = $this->field($item, self::TEMPLATE_LANGUAGE_KEYS);
-
-        if (is_array($language)) {
-            $language = $this->field($language, ['code', 'language']);
+        if (! is_array($components)) {
+            return null;
         }
 
-        $body = $this->field($item, self::TEMPLATE_BODY_KEYS);
+        $text = collect($components)
+            ->first(fn ($c) => is_array($c) && strtoupper((string) ($c['type'] ?? '')) === 'BODY')['text'] ?? null;
 
-        // WhatsApp's own shape: components[{type: BODY, text}]
-        if (! is_string($body) && is_array($components = $this->field($item, ['components']))) {
-            $body = collect($components)
-                ->first(fn ($c) => is_array($c) && strtoupper((string) ($c['type'] ?? '')) === 'BODY')['text'] ?? null;
-        }
-
-        $body = is_string($body) && trim($body) !== '' ? $body : null;
-
-        $variables = $body !== null && preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $m)
-            ? max(array_map('intval', $m[1]))
-            : ($body !== null ? 0 : null);
-
-        if ($variables === null && is_numeric($count = $this->field($item, self::TEMPLATE_COUNT_KEYS))) {
-            $variables = (int) $count;
-        }
-
-        return [
-            'name' => trim((string) $this->field($item, self::TEMPLATE_NAME_KEYS)),
-            'language' => is_string($language) && $language !== '' ? $language : null,
-            'body' => $body,
-            'variables' => $variables,
-        ];
-    }
-
-    /**
-     * The value under the first key that, lowercased with underscores and
-     * spaces removed, is one of these. One level deep only.
-     *
-     * @param  list<string>  $keys
-     */
-    private function field(array $item, array $keys): mixed
-    {
-        foreach ($keys as $wanted) {
-            foreach ($item as $key => $value) {
-                if (str_replace(['_', ' '], '', strtolower((string) $key)) === $wanted && $value !== null && $value !== '') {
-                    return $value;
-                }
-            }
-        }
-
-        return null;
+        return is_string($text) && trim($text) !== '' ? $text : null;
     }
 
     /** The first non-empty scalar under a message-id-looking key, anywhere in the response. */
