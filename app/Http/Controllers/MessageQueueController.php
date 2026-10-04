@@ -112,6 +112,7 @@ class MessageQueueController extends Controller
      *
      * One conditional update, so it cannot land on a row the worker has
      * claimed in the meantime: once it is on its way, it cannot be cancelled.
+     * Who cancelled is kept apart from who queued or scheduled it.
      */
     public function cancel(Request $request, MessageLog $message)
     {
@@ -119,7 +120,7 @@ class MessageQueueController extends Controller
 
         $cancelled = MessageLog::whereKey($message->id)
             ->where('status', 'queued')
-            ->update(['status' => 'cancelled', 'user_id' => $request->user()->id]);
+            ->update(['status' => 'cancelled', 'cancelled_by' => $request->user()->id, 'cancelled_at' => now()]);
 
         if (! $cancelled) {
             return back()->with('error', 'That message has already left the queue.');

@@ -336,6 +336,7 @@ class AutomationController extends Controller
             'rule:id,name',
             'user:id,first_name,last_name',
             'checker:id,first_name,last_name',
+            'canceller:id,first_name,last_name',
         ]);
     }
 

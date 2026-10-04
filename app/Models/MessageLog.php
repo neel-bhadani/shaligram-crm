@@ -21,6 +21,8 @@ class MessageLog extends Model
         'sending_started_at' => 'datetime',
         'checked_at' => 'datetime',
         'send_at' => 'datetime',
+        'scheduled_at' => 'datetime',
+        'cancelled_at' => 'datetime',
         'params' => 'array',
     ];
 
@@ -69,9 +71,31 @@ class MessageLog extends Model
             'unknown' => 'Outcome unknown — '.self::UNKNOWN_ADVICE,
             'failed' => 'Failed'.($this->error_code ? " (error {$this->error_code})" : ''),
             'skipped' => 'Not sent',
-            'cancelled' => 'Cancelled',
+            'cancelled' => $this->cancelledOutcome(),
             default => $this->status,
         };
+    }
+
+    /**
+     * "Cancelled by Ann on 5 Oct, 2:10 pm. Scheduled by Tara on 5 Oct,
+     * 11:00 am for 5 Oct, 3:30 pm." Who stopped it, and who set it up.
+     */
+    private function cancelledOutcome(): string
+    {
+        $at = fn ($time) => $time->format('j M, g:i a');
+
+        $outcome = 'Cancelled'
+            .($this->cancelled_by ? ' by '.($this->canceller?->display_name ?? 'a removed user') : '')
+            .($this->cancelled_at ? ' on '.$at($this->cancelled_at) : '');
+
+        if ($this->send_at) {
+            $outcome .= '. Scheduled'
+                .($this->user ? " by {$this->user->display_name}" : '')
+                .($this->scheduled_at ? ' on '.$at($this->scheduled_at) : '')
+                .' for '.$at($this->send_at);
+        }
+
+        return $outcome;
     }
 
     /** Waiting for the time a person chose. Cancellable until the worker claims it. */
@@ -122,6 +146,12 @@ class MessageLog extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** Who cancelled it. `user` stays whoever sent or scheduled it. */
+    public function canceller()
+    {
+        return $this->belongsTo(User::class, 'cancelled_by');
     }
 
     /** Who looked it up in 11za and settled an `unknown` row. */

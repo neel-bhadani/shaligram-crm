@@ -274,7 +274,7 @@ class WhatsAppSender
         }
 
         if ($sendAt) {
-            $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued', 'send_at' => $sendAt]);
+            $message = MessageLog::create($row + ['mode' => 'api', 'status' => 'queued', 'send_at' => $sendAt, 'scheduled_at' => now()]);
 
             SendWhatsAppMessage::dispatch($message->id)->delay($sendAt)->afterCommit();
 
@@ -319,6 +319,7 @@ class WhatsAppSender
             'mode' => 'api',
             'user_id' => $user->id,
             'send_at' => $sendAt,
+            'scheduled_at' => $sendAt ? now() : null,
             'provider_template_name' => $message->provider_template_name ?? $message->template?->provider_template_name,
             'provider_template_language' => $message->provider_template_language ?? $message->template?->provider_template_language,
         ]);
