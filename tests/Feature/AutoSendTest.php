@@ -10,9 +10,11 @@ use App\Models\MessageTemplate;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Automation\AutoSend;
+use App\Services\Automation\RuleEngine;
 use App\Services\LeadFollowUpService;
 use App\Services\WhatsApp\TemplateRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -296,6 +298,121 @@ class AutoSendTest extends TestCase
 
         $template->update(['provider_body' => null]);
         $this->assertSame('Old: hi Rahul', $renderer->build($template, $lead)['body']);
+    }
+
+    /* ================= per project ================= */
+
+    public function test_rules_set_before_projects_existed_are_the_all_projects_default(): void
+    {
+        $template = $this->message();
+        AutomationRule::create([
+            'name' => 'Welcome', 'trigger' => 'lead_created', 'trigger_config' => [], 'conditions' => [],
+            'actions' => [['type' => 'queue_whatsapp', 'mode' => 'api', 'template_id' => $template->id]],
+            'is_active' => true, 'created_by' => $this->admin->id,
+        ]);
+
+        $this->assertNull(AutomationRule::sole()->project_id);
+        $this->assertSame([], collect(app(AutoSend::class)->projects())->firstWhere('id', $this->project->id)['overrides']);
+
+        $lead = $this->lead();
+        app(LeadFollowUpService::class)->onLeadCreated($lead);
+
+        $this->assertSame($template->id, MessageLog::where('lead_id', $lead->id)->sole()->template_id);
+    }
+
+    public function test_a_projects_own_tag_replaces_the_default_for_its_leads_only(): void
+    {
+        $default = $this->message('Default');
+        $vanamTag = $this->message('Vanam welcome');
+        $vanam = Project::create(['name' => 'Vanam']);
+        $this->actingAs($this->admin);
+
+        $this->put(route('automation.auto_send.update', 'new_enquiry'), ['template_id' => $default->id]);
+        $this->put(route('automation.auto_send.update', 'new_enquiry'), [
+            'project_id' => $vanam->id, 'choice' => AutoSend::OWN, 'template_id' => $vanamTag->id,
+        ])->assertSessionHasNoErrors();
+
+        $vanamLead = $this->lead();
+        $vanamLead->update(['project_id' => $vanam->id]);
+        app(LeadFollowUpService::class)->onLeadCreated($vanamLead);
+
+        $skylineLead = $this->lead();
+        $skylineLead->update(['mobile_number' => '9876500000']);
+        app(LeadFollowUpService::class)->onLeadCreated($skylineLead);
+
+        $this->assertSame($vanamTag->id, MessageLog::where('lead_id', $vanamLead->id)->sole()->template_id, 'one message, not two');
+        $this->assertSame($default->id, MessageLog::where('lead_id', $skylineLead->id)->sole()->template_id);
+
+        $projects = collect(app(AutoSend::class)->projects());
+        $this->assertSame(['new_enquiry' => ['choice' => AutoSend::OWN, 'template_id' => $vanamTag->id]], $projects->firstWhere('id', $vanam->id)['overrides']);
+        $this->assertSame([], $projects->firstWhere('id', $this->project->id)['overrides']);
+        $this->assertSame([], app(AutoSend::class)->otherRules()->all(), 'an override is not Other automation');
+    }
+
+    public function test_send_nothing_holds_when_a_default_is_set_later_and_same_follows_the_default(): void
+    {
+        $template = $this->message();
+        $this->actingAs($this->admin);
+
+        // the default is None when the project chooses nothing
+        $this->put(route('automation.auto_send.update', 'site_visit_done'), [
+            'project_id' => $this->project->id, 'choice' => AutoSend::NOTHING,
+        ])->assertSessionHasNoErrors();
+        $this->put(route('automation.auto_send.update', 'site_visit_done'), ['template_id' => $template->id]);
+
+        $lead = $this->lead();
+        app(RuleEngine::class)->dispatch('stage_changed', $lead, ['stage' => 'site_visit_done']);
+        $this->assertSame(0, MessageLog::where('lead_id', $lead->id)->count());
+
+        $this->put(route('automation.auto_send.update', 'site_visit_done'), [
+            'project_id' => $this->project->id, 'choice' => AutoSend::SAME,
+        ])->assertSessionHasNoErrors();
+
+        $override = AutomationRule::whereNotNull('project_id')->sole();
+        $this->assertFalse($override->is_active, 'back to same switches the override off, it does not delete it');
+
+        app(RuleEngine::class)->dispatch('stage_changed', $lead, ['stage' => 'site_visit_done']);
+        $this->assertSame($template->id, MessageLog::where('lead_id', $lead->id)->sole()->template_id);
+    }
+
+    public function test_dispatch_reads_the_rules_in_one_query_with_overrides(): void
+    {
+        $vanam = Project::create(['name' => 'Vanam']);
+        $this->actingAs($this->admin);
+        $this->put(route('automation.auto_send.update', 'new_enquiry'), ['template_id' => $this->message()->id]);
+        $this->put(route('automation.auto_send.update', 'new_enquiry'), [
+            'project_id' => $vanam->id, 'choice' => AutoSend::NOTHING,
+        ]);
+        $lead = $this->lead();
+
+        DB::enableQueryLog();
+        app(RuleEngine::class)->dispatch('lead_created', $lead);
+        $reads = collect(DB::getQueryLog())->filter(fn (array $q) => str_starts_with($q['query'], 'select') && str_contains($q['query'], 'from `automation_rules`'));
+
+        $this->assertCount(1, $reads);
+    }
+
+    public function test_deleting_a_project_switches_its_overrides_off(): void
+    {
+        $empty = Project::create(['name' => 'Never launched']);
+        $this->actingAs($this->admin);
+        $this->put(route('automation.auto_send.update', 'new_enquiry'), [
+            'project_id' => $empty->id, 'choice' => AutoSend::NOTHING,
+        ]);
+
+        $this->delete(route('projects.destroy', $empty))->assertSessionHas('success');
+
+        $this->assertFalse(AutomationRule::sole()->is_active);
+        $this->assertNull(collect(app(AutoSend::class)->projects())->firstWhere('id', $empty->id));
+    }
+
+    public function test_a_projects_own_tag_must_be_chosen(): void
+    {
+        $this->actingAs($this->admin)
+            ->put(route('automation.auto_send.update', 'new_enquiry'), ['project_id' => $this->project->id, 'choice' => AutoSend::OWN])
+            ->assertSessionHasErrors('template_id');
+
+        $this->assertSame(0, AutomationRule::count());
     }
 
     /* ================= helpers ================= */

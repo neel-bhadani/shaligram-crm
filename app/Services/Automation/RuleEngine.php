@@ -48,6 +48,7 @@ class RuleEngine
         private ConditionMatcher $matcher,
         private LoopGuard $guard,
         private ActionRunner $runner,
+        private AutoSend $autoSend,
         private AlertService $alerts,
     ) {}
 
@@ -60,8 +61,8 @@ class RuleEngine
      * activity log rather than a 500.
      *
      * @param  array<string, mixed>  $context  what the trigger needs to be
-     *          matched against — `['stage' => 'site_visit_done']` for a stage
-     *          change. Conditions are about the lead; this is about the event.
+     *                                         matched against — `['stage' => 'site_visit_done']` for a stage
+     *                                         change. Conditions are about the lead; this is about the event.
      */
     public function dispatch(string $trigger, Lead $lead, array $context = []): void
     {
@@ -69,11 +70,19 @@ class RuleEngine
             return;
         }
 
+        /*
+         | The All-projects rules and this lead's project's Auto-send overrides,
+         | in the same one query; which override replaces which default is
+         | then settled in memory. A lead with no project gets the defaults.
+         */
         $rules = AutomationRule::active()
             ->forTrigger($trigger)
+            ->where(fn ($query) => $query->whereNull('project_id')->orWhere('project_id', $lead->project_id))
             ->orderBy('id')
             ->get()
             ->filter(fn (AutomationRule $rule) => $this->triggerMatches($rule, $context));
+
+        $rules = $this->autoSend->applyOverrides($rules->values());
 
         if ($rules->isEmpty()) {
             return;
@@ -103,7 +112,7 @@ class RuleEngine
      * decided which rule and which leads, and going back through dispatch()
      * would make it re-answer a question it just answered.
      *
-     * @return string  fired | no_match | loop_guard | cooldown | failed
+     * @return string fired | no_match | loop_guard | cooldown | failed
      */
     public function run(AutomationRule $rule, Lead $lead): string
     {
@@ -139,7 +148,7 @@ class RuleEngine
 
             $rule->forceFill([
                 'last_fired_at' => now(),
-                'fire_count'    => $rule->fire_count + 1,
+                'fire_count' => $rule->fire_count + 1,
             ])->save();
 
             return $this->runActions($rule, $lead);
@@ -181,7 +190,7 @@ class RuleEngine
                 // everything before the failure was rolled back with it, so it
                 // is logged as abandoned rather than as the success it briefly
                 // was
-                $this->log($rule, $lead, $type, 'failed', 'Rolled back: ' . $e->getMessage());
+                $this->log($rule, $lead, $type, 'failed', 'Rolled back: '.$e->getMessage());
             }
 
             $this->log($rule, $lead, 'rule_failed', 'failed', $e->getMessage());
@@ -246,7 +255,7 @@ class RuleEngine
             type: 'automation_suppressed',
             title: "Automation held back: {$rule->name}",
             body: $this->suppressionReason($reason, $rule)
-                . ' Open the Activity tab on the Automation page to see what happened.',
+                .' Open the Activity tab on the Automation page to see what happened.',
             lead: $lead,
             severity: 'warning',
             rule: $rule,
@@ -256,14 +265,14 @@ class RuleEngine
 
     private function suppressionReason(string $reason, AutomationRule $rule): string
     {
-        $max      = config('automation.loop_protection.max_touches_per_chain', 3);
+        $max = config('automation.loop_protection.max_touches_per_chain', 3);
         $cooldown = $this->guard->cooldownFor($rule);
 
         return $reason === 'loop_guard'
             ? "Automation had already changed this lead {$max} times in a row, so it stopped. "
-                . 'That usually means two rules are undoing each other.'
+                .'That usually means two rules are undoing each other.'
             : "This rule already ran on this lead within the last {$cooldown} minutes, "
-                . 'so it was not run again.';
+                .'so it was not run again.';
     }
 
     /* ---------------- logging ---------------- */
@@ -276,11 +285,11 @@ class RuleEngine
         ?string $error = null,
     ): void {
         AutomationLog::create([
-            'rule_id'  => $rule->id,
-            'lead_id'  => $lead?->id,
-            'action'   => $action,
-            'result'   => $result,
-            'error'    => $error,
+            'rule_id' => $rule->id,
+            'lead_id' => $lead?->id,
+            'action' => $action,
+            'result' => $result,
+            'error' => $error,
             'fired_at' => now(),
         ]);
     }
@@ -298,7 +307,7 @@ class RuleEngine
      */
     public function withoutRules(callable $work): mixed
     {
-        $was             = $this->suspended;
+        $was = $this->suspended;
         $this->suspended = true;
 
         try {

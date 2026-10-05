@@ -344,8 +344,12 @@ class PipelineController extends Controller
             $rules = $this->stageRules($stage->key);
             $reasons = [];
 
-            if ($rules['auto_send']->isNotEmpty()) {
+            if ($rules['auto_send']->whereNull('project_id')->isNotEmpty()) {
                 $reasons[] = 'Auto-send sends a message when a lead reaches this stage. Set it to None on the Auto-send tab first.';
+            }
+
+            if ($rules['auto_send']->whereNotNull('project_id')->isNotEmpty()) {
+                $reasons[] = 'A project has its own Auto-send choice for this stage. Set it back to Same as all projects on the Auto-send tab first.';
             }
 
             if ($rules['other']->isNotEmpty()) {

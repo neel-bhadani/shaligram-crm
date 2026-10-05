@@ -22,15 +22,22 @@ class AutomationRule extends Model
 
     protected $casts = [
         'trigger_config' => 'array',
-        'conditions'     => 'array',
-        'actions'        => 'array',
-        'is_active'      => 'boolean',
-        'last_fired_at'  => 'datetime',
+        'project_id' => 'integer',
+        'conditions' => 'array',
+        'actions' => 'array',
+        'is_active' => 'boolean',
+        'last_fired_at' => 'datetime',
     ];
 
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Set only on an Auto-send project override; null is "All projects". */
+    public function project()
+    {
+        return $this->belongsTo(Project::class)->withTrashed();
     }
 
     public function logs()
