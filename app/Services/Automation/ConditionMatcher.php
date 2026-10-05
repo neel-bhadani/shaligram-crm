@@ -4,8 +4,8 @@ namespace App\Services\Automation;
 
 use App\Models\AutomationRule;
 use App\Models\Lead;
-use Illuminate\Database\Eloquent\Builder;
 use App\Support\CrmTaxonomy;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Two questions about the same rule, answered by one piece of code.
@@ -48,6 +48,10 @@ class ConditionMatcher
         $this->applyTrigger($query, $rule);
         $this->applyConditions($query, $rule->conditionList());
 
+        if ($rule->project_id !== null) {
+            $query->where('project_id', $rule->project_id);
+        }
+
         return $query;
     }
 
@@ -64,6 +68,11 @@ class ConditionMatcher
      */
     public function matches(AutomationRule $rule, Lead $lead): bool
     {
+        // an Auto-send project override is about that project's leads only
+        if ($rule->project_id !== null && (int) $rule->project_id !== (int) $lead->project_id) {
+            return false;
+        }
+
         $conditions = $rule->conditionList();
 
         if ($conditions === []) {
@@ -122,7 +131,7 @@ class ConditionMatcher
 
             case 'stage_idle':
                 $stage = $rule->triggerSetting('stage');
-                $days  = (int) $rule->triggerSetting('days', 0);
+                $days = (int) $rule->triggerSetting('days', 0);
 
                 $query->where('stage', $stage ?? '__none__')
                     // still moving forward is not stuck

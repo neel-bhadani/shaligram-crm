@@ -63,6 +63,8 @@ class AutomationController extends Controller
         return Inertia::render('Automation/Index', [
             'tab' => $tab,
             'autoSend' => $this->autoSend->rows(),
+            // the project picker, with each project's own choices per row
+            'autoSendProjects' => $this->autoSend->projects(),
             // every rule the Auto-send rows do not show, so none is invisible
             'otherAutomation' => $this->autoSend->otherRules()->map(fn (AutomationRule $rule) => $this->ruleRow($rule))->all(),
             // the Rules tab: not in the tab bar, reached by /automation?tab=rules

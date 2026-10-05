@@ -10,6 +10,7 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\AlertService;
+use App\Services\Automation\AutoSend;
 use App\Support\CrmTaxonomy;
 use App\Support\RecordSearch;
 use Illuminate\Database\Eloquent\Builder;
@@ -466,6 +467,9 @@ class ProjectController extends Controller
         // soft delete: the row stays, so the cascade on leads.project_id never
         // fires and this is reversible in the database
         $project->delete();
+
+        // its Auto-send overrides could never send again; off, not deleted
+        app(AutoSend::class)->switchOffProject($project);
 
         return back()->with('success', "\"{$name}\" deleted. It had no leads, so nothing was lost.");
     }

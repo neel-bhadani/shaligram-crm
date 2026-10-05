@@ -32,6 +32,7 @@ import { useFilterVisit } from '../../composables/useFilterVisit.js'
 const props = defineProps({
   tab: String,
   autoSend: Array,
+  autoSendProjects: { type: Array, default: () => [] },
   otherAutomation: { type: Array, default: () => [] },
   rules: Array,
   templates: Array,
@@ -202,6 +203,60 @@ const setAutoSend = (row, value) => {
 
   router.put(route('automation.auto_send.update', row.key), { template_id: value || null }, {
     preserveScroll: true,
+    onFinish: () => { savingSlot.value = null },
+  })
+}
+
+/*
+ | Per project. "All projects" is the rows above; a project shows the same rows,
+ | each Same as all projects, a tag of its own, or Send nothing — the server
+ | keeps "nothing" apart from "same", so it holds if a default is set later.
+ */
+const autoSendProjectId = ref('')
+const autoSendProject = computed(() =>
+  props.autoSendProjects.find(p => p.id === Number(autoSendProjectId.value)) ?? null)
+
+const overrideCount = project => Object.keys(project.overrides).length
+
+const projectOptionLabel = project => {
+  const count = overrideCount(project)
+
+  return project.name
+    + (project.is_active ? '' : ' (switched off)')
+    + (count ? ` — ${count} stage${count === 1 ? '' : 's'} differ` : '')
+}
+
+const overrideFor = row => autoSendProject.value?.overrides[row.key] ?? null
+
+// 'same', 'nothing', or the override's own tag id
+const projectChoice = row => {
+  const override = overrideFor(row)
+
+  return override ? (override.choice === 'own' ? override.template_id : 'nothing') : 'same'
+}
+
+// the tag a lead on this row is actually sent, for the warnings
+const resolvedTemplateId = row => {
+  if (!autoSendProject.value) return row.template_id
+
+  const override = overrideFor(row)
+
+  return override ? override.template_id : row.template_id
+}
+
+const setProjectAutoSend = (row, value) => {
+  savingSlot.value = row.key
+
+  const choice = value === 'same' || value === 'nothing' ? value : 'own'
+
+  router.put(route('automation.auto_send.update', row.key), {
+    project_id: autoSendProject.value.id,
+    choice,
+    template_id: choice === 'own' ? Number(value) : null,
+  }, {
+    preserveScroll: true,
+    // keeps the picker on this project
+    preserveState: true,
     onFinish: () => { savingSlot.value = null },
   })
 }
@@ -666,6 +721,17 @@ const whenShort = iso => iso
         to stop. Changes save straight away.
       </p>
 
+      <div class="mb-4 flex flex-wrap items-center gap-3">
+        <label for="auto-send-project" class="text-sm font-medium text-slate-700">Project</label>
+        <select id="auto-send-project" v-model="autoSendProjectId" class="w-full max-w-sm">
+          <option value="">All projects</option>
+          <option v-for="p in autoSendProjects" :key="p.id" :value="String(p.id)">{{ projectOptionLabel(p) }}</option>
+        </select>
+        <span v-if="autoSendProject" class="text-xs text-slate-500">
+          Rows set to Same as all projects follow the All projects choice, including later changes to it.
+        </span>
+      </div>
+
       <p v-if="!activeTemplates.length" class="warn-box mb-4">
         There are no tags to choose yet.
         <button class="underline" @click="tab = 'tags'">Set one up on the Tags tab</button>.
@@ -683,7 +749,18 @@ const whenShort = iso => iso
             <tr v-for="row in autoSend" :key="row.key" class="border-b border-slate-50 align-top last:border-0">
               <td class="px-4 py-3 font-medium text-slate-700">{{ row.label }}</td>
               <td class="px-4 py-3">
-                <select class="w-full max-w-xs" :value="row.template_id ?? ''"
+                <select v-if="autoSendProject" class="w-full max-w-xs" :value="String(projectChoice(row))"
+                        :disabled="savingSlot === row.key"
+                        @change="setProjectAutoSend(row, $event.target.value)">
+                  <option value="same">Same as all projects ({{ tagById(row.template_id)?.name ?? 'None' }})</option>
+                  <option value="nothing">Send nothing for this project</option>
+                  <option v-for="t in activeTemplates" :key="t.id" :value="String(t.id)">{{ t.name }}</option>
+                  <option v-if="overrideFor(row)?.template_id && !activeTemplates.some(t => t.id === overrideFor(row).template_id)"
+                          :value="String(overrideFor(row).template_id)">
+                    {{ tagById(overrideFor(row).template_id)?.name ?? 'A deleted tag' }} (switched off)
+                  </option>
+                </select>
+                <select v-else class="w-full max-w-xs" :value="row.template_id ?? ''"
                         :disabled="savingSlot === row.key"
                         @change="setAutoSend(row, $event.target.value)">
                   <option value="">None</option>
@@ -694,10 +771,10 @@ const whenShort = iso => iso
                     {{ templates.find(t => t.id === row.template_id)?.name ?? 'A deleted tag' }} (switched off)
                   </option>
                 </select>
-                <p v-if="tagById(row.template_id)?.approval_warning" class="mt-1.5 text-[11px] text-rose-700">
-                  {{ tagById(row.template_id).approval_warning }}
+                <p v-if="tagById(resolvedTemplateId(row))?.approval_warning" class="mt-1.5 text-[11px] text-rose-700">
+                  {{ tagById(resolvedTemplateId(row)).approval_warning }}
                 </p>
-                <p v-if="tagById(row.template_id)?.marketing" class="mt-1.5 text-[11px] text-amber-800">
+                <p v-if="tagById(resolvedTemplateId(row))?.marketing" class="mt-1.5 text-[11px] text-amber-800">
                   {{ marketingNote }}
                 </p>
                 <p v-for="other in row.others" :key="other.id" class="mt-1.5 text-[11px] text-slate-500">
