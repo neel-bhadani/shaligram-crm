@@ -22,6 +22,8 @@ class LeadListQuery
 {
     use ResolvesDateRange;
 
+    public function __construct(private LossEvents $losses) {}
+
     /**
      * The filters the leads page owns, as validation rules. The page and the
      * bulk send resolve the same session state with the same rules.
@@ -40,7 +42,7 @@ class LeadListQuery
             'source' => ['sometimes', 'string', Rule::in(CrmTaxonomy::sourceKeys())],
             'channel_partner_id' => ['sometimes', 'integer', 'min:1'],
             'assigned_to' => ['sometimes', 'integer', 'min:1'],
-        ] + $this->dateRangeRules();
+        ] + $this->losses->rules() + $this->dateRangeRules();
     }
 
     /**
@@ -51,7 +53,7 @@ class LeadListQuery
      */
     public function normalise(array $state): array
     {
-        return $this->sanitiseDates($state);
+        return $this->losses->normalise($this->sanitiseDates($state));
     }
 
     /**
@@ -64,7 +66,16 @@ class LeadListQuery
     {
         [$from, $to] = $this->dateWindow($filters);
 
+        /*
+         | "Dates apply to: Marked lost" — the window is on the loss, not on
+         | arrival, through the same LossEvents query the loss-reason report
+         | counts with. It is the only date clause then: a lead lost this week
+         | that arrived last year is in the list.
+         */
+        $byLoss = $this->losses->byLossDate($filters, $from);
+
         return Lead::visibleTo($user)
+            ->when($byLoss, fn ($q) => $this->losses->narrowLeads($q, $from, $to, $filters['reason'] ?? null))
             ->tap(fn (Builder $q) => RecordSearch::apply($q, $filters['search'] ?? null,
                 ['first_name', 'middle_name', 'last_name', 'mobile_number', 'email'],
                 ['first_name', 'middle_name', 'last_name'], ['mobile_number']))
@@ -75,7 +86,7 @@ class LeadListQuery
             ->when($filters['assigned_to'] ?? null, fn ($q, $v) => $q->where('assigned_to', $v))
             // one clause, both bounds, on real datetimes rather than DATE() —
             // see dateWindow() for why the boundaries are built where they are
-            ->when($from, fn ($q) => $q->whereBetween('created_at', [$from, $to]));
+            ->when($from && ! $byLoss, fn ($q) => $q->whereBetween('created_at', [$from, $to]));
     }
 
     /**
@@ -85,7 +96,17 @@ class LeadListQuery
      */
     public function filtered(User $user, array $filters): Builder
     {
+        [$from] = $this->dateWindow($filters);
+
+        // marked lost in the window IS the Lost filter — a lead reopened since
+        // was still lost then, and the report counts it
+        if ($this->losses->byLossDate($filters, $from)) {
+            return $this->withoutStage($user, $filters);
+        }
+
         return $this->withoutStage($user, $filters)
-            ->when($filters['stage'] ?? null, fn ($q, $v) => $q->where('stage', $v));
+            ->when($filters['stage'] ?? null, fn ($q, $v) => $q->where('stage', $v))
+            // the lead's current reason: a question about where it stands now
+            ->tap(fn ($q) => $this->losses->whereReason($q, 'reason', $filters['reason'] ?? null));
     }
 }

@@ -183,6 +183,9 @@ const reports = computed(() => [
        */
       { name: 'By channel partner', group: 'channel_partner' },
       ...(wideLeads.value ? [{ name: 'By assigned to', group: 'assigned_to' }] : []),
+    ]).concat([
+      // a page of its own rather than a grouping: it counts losses, not leads
+      { name: 'By loss reason', href: route('reports.loss-reasons'), routeName: 'reports.loss-reasons' },
     ]),
   },
   {
@@ -227,8 +230,9 @@ watch(onReports, (isOn) => { if (isOn) showReports.value = true }, { immediate: 
  | route().current() cannot tell two links to the same route apart, and because
  | the address bar is wiped clean once the visit lands.
  */
-const activeChild = (group, item) =>
-  route().current(group.routeName) && (page.props.filters ?? {}).group === item.group
+const activeChild = (group, item) => item.routeName
+  ? route().current(item.routeName)
+  : route().current(group.routeName) && (page.props.filters ?? {}).group === item.group
 
 const logout = () => router.post(route('logout'))
 

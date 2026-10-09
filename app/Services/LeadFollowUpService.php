@@ -214,6 +214,9 @@ class LeadFollowUpService
                 'status' => 'completed',
                 'remarks' => $remarks,
                 'outcome_stage' => $stage,
+                // what applyStage() is about to write to leads.reason, kept on
+                // this loss so a later loss cannot overwrite it
+                'lost_reason' => $stage === 'lost' ? ($extra['reason'] ?? $lead->reason) : null,
                 'completed_at' => now(),
                 'completed_by' => $this->actorId(),
             ]);
@@ -651,6 +654,8 @@ class LeadFollowUpService
             'status' => 'completed',
             'remarks' => $remarks,
             'outcome_stage' => $stage,
+            // called after applyStage(), so this is the reason just saved
+            'lost_reason' => $stage === 'lost' ? $lead->reason : null,
             'completed_at' => now(),
             'completed_by' => $this->actorId(),
         ]);

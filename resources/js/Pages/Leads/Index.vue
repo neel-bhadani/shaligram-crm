@@ -45,6 +45,14 @@ const f = reactive({
   // where the leads report's "By channel partner" rows drill through to
   channel_partner_id: props.filters.channel_partner_id ?? '',
   assigned_to: props.filters.assigned_to ?? '',
+  /*
+   | The two Lost-only filters. '' is Created — the dates mean what they mean
+   | everywhere else — and 'lost' moves them onto the loss. Both are cleared
+   | the moment the stage leaves Lost, here and again on the server, so a
+   | filter nobody can see never narrows the list.
+   */
+  date_basis: props.filters.date_basis ?? '',
+  reason: props.filters.reason ?? '',
 
   // '' is All time. 'custom' is a state of this control only — the server
   // stores the pair of dates and derives the word on the way back out
@@ -134,7 +142,12 @@ const chips = computed(() => [
 
 /** Clicking the active chip clears the filter, exactly as All does. */
 const setStage = key => {
-  filters.silently(() => { f.stage = f.stage === key ? '' : key })
+  filters.silently(() => {
+    f.stage = f.stage === key ? '' : key
+    // Marked lost is where Lost starts; any other stage goes back to Created
+    f.date_basis = f.stage === 'lost' ? 'lost' : ''
+    if (f.stage !== 'lost') f.reason = ''
+  })
   filters.cancel()
   push()
 }
@@ -269,6 +282,29 @@ const ageClass = d => d === null ? 'text-slate-400'
                  class="w-full md:!w-40" aria-label="From date" />
           <input v-model="f.to" type="date" :min="f.from" :max="options.today"
                  class="w-full md:!w-40" aria-label="To date" />
+        </template>
+
+        <!--
+          Only while the stage is Lost. Which column the dates read is a choice
+          the user can see, never one made behind their back — a date field
+          that silently changed meaning with the stage is how a number gets
+          misread.
+        -->
+        <template v-if="f.stage === 'lost'">
+          <fieldset class="flex w-full items-center gap-3 rounded-md border border-slate-200 px-3 py-1.5 text-sm md:w-auto">
+            <legend class="sr-only">Dates apply to</legend>
+            <span class="text-xs font-semibold text-slate-500" aria-hidden="true">Dates apply to</span>
+            <label class="flex items-center gap-1.5">
+              <input v-model="f.date_basis" type="radio" value="" /> Created
+            </label>
+            <label class="flex items-center gap-1.5">
+              <input v-model="f.date_basis" type="radio" value="lost" /> Marked lost
+            </label>
+          </fieldset>
+          <select v-model="f.reason" class="w-full md:!w-48" aria-label="Reason for loss">
+            <option value="">All reasons</option>
+            <option v-for="(label, key) in options.lossReasons" :key="key" :value="key">{{ label }}</option>
+          </select>
         </template>
 
         <button class="btn-ghost w-full md:w-auto" @click="clearFilters">Clear</button>

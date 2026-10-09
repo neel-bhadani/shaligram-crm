@@ -9,12 +9,15 @@ use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\LossEvents;
+use App\Support\CrmTaxonomy;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
-use App\Support\CrmTaxonomy;
 
 /**
  * The Reporting section: two pages, ten sidebar links.
@@ -70,8 +73,8 @@ class ReportController extends Controller
 
     public function leads(Request $request)
     {
-        $user      = $request->user();
-        $filters   = $this->leadFilters($request, $user);
+        $user = $request->user();
+        $filters = $this->leadFilters($request, $user);
         $dimension = $filters['group'];
 
         [$from, $to] = $this->dateWindow($filters);
@@ -97,10 +100,10 @@ class ReportController extends Controller
         $rows = $this->leadRows($scope, $dimension, $from, $to);
 
         return Inertia::render('Reports/Leads', [
-            'rows'    => $rows,
-            'totals'  => $this->leadTotals($rows),
+            'rows' => $rows,
+            'totals' => $this->leadTotals($rows),
             'filters' => $this->rangeWord($filters),
-            'range'   => $this->rangePayload($filters, $from, $to),
+            'range' => $this->rangePayload($filters, $from, $to),
             'options' => $this->options($user, 'leads'),
         ]);
     }
@@ -108,7 +111,7 @@ class ReportController extends Controller
     /**
      * One row per group: intake, three history counts, and the two percentages.
      *
-     * @param  callable(): \Illuminate\Database\Eloquent\Builder  $scope
+     * @param  callable(): Builder  $scope
      * @return list<array<string, mixed>>
      */
     private function leadRows(callable $scope, string $dimension, Carbon $from, Carbon $to): array
@@ -164,21 +167,21 @@ class ReportController extends Controller
             $byStage[$this->groupKey($row->g)][$row->os] = (int) $row->total;
         }
 
-        $groups   = $this->leadGroups($dimension, array_merge(array_keys($totals), array_keys($byStage)));
+        $groups = $this->leadGroups($dimension, array_merge(array_keys($totals), array_keys($byStage)));
         $sumTotal = array_sum($totals);
 
         return collect($groups)->map(function (array $group) use ($totals, $byStage, $sumTotal) {
-            $key    = $group['key'];
-            $total  = $totals[$key] ?? 0;
+            $key = $group['key'];
+            $total = $totals[$key] ?? 0;
             $booked = $byStage[$key]['booking_done'] ?? 0;
 
             return [
-                'key'    => $key,
-                'label'  => $group['label'],
-                'total'  => $total,
+                'key' => $key,
+                'label' => $group['label'],
+                'total' => $total,
                 'visits' => $byStage[$key]['site_visit_done'] ?? 0,
                 'booked' => $booked,
-                'lost'   => $byStage[$key]['lost'] ?? 0,
+                'lost' => $byStage[$key]['lost'] ?? 0,
                 /*
                  | Bookings in the range over leads created in the range, which
                  | is what the brief asked for and what makes "conversion by
@@ -199,9 +202,9 @@ class ReportController extends Controller
                  */
                 'conversion' => $total > 0 ? round($booked / $total * 100, 1) : null,
                 // this group's share of the leads that came in during the range
-                'share'      => $sumTotal > 0 ? round($total / $sumTotal * 100, 1) : null,
+                'share' => $sumTotal > 0 ? round($total / $sumTotal * 100, 1) : null,
                 // an Unassigned row has no user id to hand the Leads page
-                'drillable'  => $key !== self::NO_GROUP,
+                'drillable' => $key !== self::NO_GROUP,
             ];
         })->all();
     }
@@ -221,14 +224,14 @@ class ReportController extends Controller
      */
     private function leadTotals(array $rows): array
     {
-        $total  = array_sum(array_column($rows, 'total'));
+        $total = array_sum(array_column($rows, 'total'));
         $booked = array_sum(array_column($rows, 'booked'));
 
         return [
-            'total'      => $total,
-            'visits'     => array_sum(array_column($rows, 'visits')),
-            'booked'     => array_sum(array_column($rows, 'booked')),
-            'lost'       => array_sum(array_column($rows, 'lost')),
+            'total' => $total,
+            'visits' => array_sum(array_column($rows, 'visits')),
+            'booked' => array_sum(array_column($rows, 'booked')),
+            'lost' => array_sum(array_column($rows, 'lost')),
             // a dash when there is nothing to divide by. Never 0%.
             'conversion' => $total > 0 ? round($booked / $total * 100, 1) : null,
         ];
@@ -258,8 +261,8 @@ class ReportController extends Controller
              | drops off the ones it has nothing in — which is the whole promise
              | deactivation makes.
              */
-            'stage'   => CrmTaxonomy::stageUniverse($present),
-            'source'  => CrmTaxonomy::sourceUniverse($present),
+            'stage' => CrmTaxonomy::stageUniverse($present),
+            'source' => CrmTaxonomy::sourceUniverse($present),
             // every project, not only the active ones: a lead on a project that
             // has since been switched off still has to have a row to sit in
             'project' => Project::orderBy('name')->pluck('name', 'id')->all(),
@@ -284,10 +287,140 @@ class ReportController extends Controller
              | realtors" and then be believed.
              */
             'channel_partner' => $this->channelPartnerLabels() + [self::NO_GROUP => 'No channel partner'],
-            default   => $this->staffLabels() + [self::NO_GROUP => 'Unassigned'],
+            default => $this->staffLabels() + [self::NO_GROUP => 'Unassigned'],
         };
 
         return $this->zeroFill($universe, $present);
+    }
+
+    /* ====================================================================
+     | Leads · By loss reason
+     ==================================================================== */
+
+    /**
+     * Why leads were lost over a window, with each reason broken down by
+     * project and by who marked the lead lost.
+     *
+     * Counted from the loss events — LossEvents::latest(), the HISTORY rule
+     * above narrowed to each lead's latest loss in the window — so every lead
+     * lost in the window is in exactly one reason's row and the rows sum to
+     * the Lost figure the By stage report prints for the same range. The scope
+     * is joined the way leadRows() joins it, so visibleTo() and the soft-delete
+     * scope decide which leads this is about in the same one place.
+     */
+    public function lossReasons(Request $request, LossEvents $losses)
+    {
+        $user = $request->user();
+        $filters = $this->resolveFilters(
+            $request,
+            'reports.loss_reasons',
+            $this->dateRangeRules(),
+            ['range' => config('crm.reports.default_range')],
+            fn (array $state) => $this->sanitiseDates($state),
+        );
+
+        [$from, $to] = $this->dateWindow($filters);
+
+        $leads = Lead::visibleTo($user)->select(['leads.id', 'leads.project_id']);
+
+        /*
+         | Who marked it lost, as a group key. A loss brought in by
+         | import:legacy carries the sheet's lead owner in completed_by, not
+         | the person who lost it, so it is "Imported" rather than a name; a
+         | loss with nobody behind it was automation's.
+         */
+        $who = "case when exists (select 1 from todo_import_records tir where tir.todo_id = e.id) then 'imported'"
+            ." when e.completed_by is null then 'automation' else e.completed_by end";
+
+        $events = fn () => DB::query()
+            ->fromSub($losses->latest($from, $to), 'e')
+            ->joinSub($leads, 'l', 'l.id', '=', 'e.lead_id');
+
+        $byReason = $this->keyBy(
+            $events()->selectRaw('e.lost_reason as g, count(distinct e.lead_id) as total')->groupBy('g')->get(),
+            fn ($row) => (int) $row->total,
+        );
+
+        $breakdown = function (string $column) use ($events): array {
+            $out = [];
+
+            foreach ($events()->selectRaw("e.lost_reason as g, $column as b, count(distinct e.lead_id) as total")->groupBy('g', 'b')->get() as $row) {
+                $out[$this->groupKey($row->g)][$this->groupKey($row->b)] = (int) $row->total;
+            }
+
+            return $out;
+        };
+
+        $byProject = $breakdown('l.project_id');
+        $byPerson = $breakdown($who);
+
+        $total = array_sum($byReason);
+
+        $projectLabels = Project::withTrashed()->pluck('name', 'id')->all();
+        $personLabels = $this->staffLabels() + ['imported' => 'Imported', 'automation' => 'Automation'];
+
+        $split = fn (array $counts, array $labels, int $of) => collect($counts)
+            ->map(fn (int $n, $key) => [
+                'key' => (string) $key,
+                'label' => $labels[$key] ?? ($key === self::NO_GROUP ? 'No project' : (string) $key),
+                'total' => $n,
+                'share' => $of > 0 ? round($n / $of * 100, 1) : null,
+            ])
+            ->sortByDesc('total')
+            ->values()
+            ->all();
+
+        /*
+         | Every reason, zero-filled like every other report, plus any reason a
+         | loss carries that config has since dropped. The no-reason bucket is
+         | always a row of its own — never hidden, never folded into Other —
+         | because when the legacy import dominates a period, that row is the
+         | finding.
+         */
+        $universe = (array) config('crm.lost_reasons');
+
+        foreach (array_keys($byReason) as $key) {
+            if ($key !== self::NO_GROUP && ! array_key_exists($key, $universe)) {
+                $universe[$key] = (string) $key;
+            }
+        }
+
+        $universe[self::NO_GROUP] = LossEvents::NO_REASON_LABEL;
+
+        $rows = collect($universe)
+            ->map(function ($label, $key) use ($byReason, $byProject, $byPerson, $total, $split, $projectLabels, $personLabels) {
+                $key = (string) $key;
+                $n = $byReason[$key] ?? 0;
+
+                return [
+                    // the Leads page's reason filter names the no-reason bucket this way
+                    'key' => $key === self::NO_GROUP ? LossEvents::NO_REASON : $key,
+                    'label' => (string) $label,
+                    'total' => $n,
+                    'share' => $total > 0 ? round($n / $total * 100, 1) : null,
+                    'projects' => $split($byProject[$key] ?? [], $projectLabels, $n),
+                    'people' => $split($byPerson[$key] ?? [], $personLabels, $n),
+                ];
+            })
+            ->sortByDesc('total')
+            ->values()
+            ->all();
+
+        $began = $losses->attributionBegan();
+
+        return Inertia::render('Reports/LossReasons', [
+            'rows' => $rows,
+            'totals' => [
+                'lost' => $total,
+                'noReason' => $byReason[self::NO_GROUP] ?? 0,
+                // a state, not an event: leads.stage, and never date-filtered
+                'inLostNow' => Lead::visibleTo($user)->where('stage', 'lost')->count(),
+            ],
+            'attributionBegan' => $began?->format('j M Y'),
+            'filters' => $this->rangeWord($filters),
+            'range' => $this->rangePayload($filters, $from, $to),
+            'options' => ['ranges' => config('crm.date_ranges')],
+        ]);
     }
 
     /* ====================================================================
@@ -296,10 +429,10 @@ class ReportController extends Controller
 
     public function followUps(Request $request)
     {
-        $user      = $request->user();
-        $filters   = $this->followUpFilters($request, $user);
+        $user = $request->user();
+        $filters = $this->followUpFilters($request, $user);
         $dimension = $filters['group'];
-        $status    = $filters['status'];
+        $status = $filters['status'];
 
         [$from, $to] = $this->dateWindow($filters);
 
@@ -322,10 +455,10 @@ class ReportController extends Controller
         $rows = $this->followUpRows($base, $dimension, $status);
 
         return Inertia::render('Reports/FollowUps', [
-            'rows'    => $rows,
-            'totals'  => $this->followUpTotals($rows),
+            'rows' => $rows,
+            'totals' => $this->followUpTotals($rows),
             'filters' => $this->rangeWord($filters),
-            'range'   => $this->rangePayload($filters, $from, $to),
+            'range' => $this->rangePayload($filters, $from, $to),
             'options' => $this->options($user, 'followups'),
         ]);
     }
@@ -360,16 +493,16 @@ class ReportController extends Controller
     private function applyStatus($query, string $status, Carbon $from, Carbon $to)
     {
         return match ($status) {
-            'overdue'   => $query->overdue(),
-            'upcoming'  => $query->upcoming(),
+            'overdue' => $query->overdue(),
+            'upcoming' => $query->upcoming(),
             'completed' => $query->where('status', 'completed')
                 ->whereBetween('completed_at', [$from, $to]),
-            default     => $query->dueToday(),
+            default => $query->dueToday(),
         };
     }
 
     /**
-     * @param  callable(): \Illuminate\Database\Eloquent\Builder  $base
+     * @param  callable(): Builder  $base
      * @return list<array<string, mixed>>
      */
     private function followUpRows(callable $base, string $dimension, string $status): array
@@ -404,18 +537,18 @@ class ReportController extends Controller
             : [];
 
         $groups = $this->followUpGroups($dimension, array_keys($counts));
-        $sum    = array_sum($counts);
+        $sum = array_sum($counts);
 
         return collect($groups)->map(function (array $group) use ($counts, $averages, $sum) {
             $key = $group['key'];
 
             return [
-                'key'      => $key,
-                'label'    => $group['label'],
-                'total'    => $counts[$key] ?? 0,
-                'share'    => $sum > 0 ? round(($counts[$key] ?? 0) / $sum * 100, 1) : null,
+                'key' => $key,
+                'label' => $group['label'],
+                'total' => $counts[$key] ?? 0,
+                'share' => $sum > 0 ? round(($counts[$key] ?? 0) / $sum * 100, 1) : null,
                 // null for a pending status, and for a group with nothing in it
-                'avgDays'  => $averages[$key] ?? null,
+                'avgDays' => $averages[$key] ?? null,
                 'drillable' => $key !== self::NO_GROUP,
             ];
         })->all();
@@ -432,22 +565,22 @@ class ReportController extends Controller
          | closed on time is not an average of half a day late.
          */
         $weighted = 0.0;
-        $counted  = 0;
+        $counted = 0;
 
         foreach ($rows as $row) {
             if ($row['avgDays'] !== null) {
                 $weighted += $row['avgDays'] * $row['total'];
-                $counted  += $row['total'];
+                $counted += $row['total'];
             }
         }
 
         $largest = collect($rows)->sortByDesc('total')->first();
 
         return [
-            'total'   => $total,
+            'total' => $total,
             // groups with anything in them, out of every group that could have
             'covered' => count(array_filter($rows, fn ($r) => $r['total'] > 0)),
-            'groups'  => count($rows),
+            'groups' => count($rows),
             'largest' => $largest && $largest['total'] > 0
                 ? ['label' => $largest['label'], 'value' => $largest['total']]
                 : null,
@@ -490,8 +623,8 @@ class ReportController extends Controller
     {
         return match (DB::connection()->getDriverName()) {
             'sqlite' => "avg(julianday($end) - julianday($start))",
-            'pgsql'  => "avg(extract(epoch from ($end - $start)) / 86400)",
-            default  => "avg(timestampdiff(second, $start, $end)) / 86400",
+            'pgsql' => "avg(extract(epoch from ($end - $start)) / 86400)",
+            default => "avg(timestampdiff(second, $start, $end)) / 86400",
         };
     }
 
@@ -499,7 +632,7 @@ class ReportController extends Controller
      * A grouped result set as an array keyed by group, nulls folded into the
      * sentinel so an unassigned bucket survives the trip into PHP.
      *
-     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @param  Collection<int, object>  $rows
      * @return array<string, mixed>
      */
     private function keyBy($rows, callable $value): array
@@ -520,7 +653,7 @@ class ReportController extends Controller
 
     /**
      * @param  array<string, string>  $universe  key => label, in display order
-     * @param  list<string>           $present   keys the queries actually returned
+     * @param  list<string>  $present  keys the queries actually returned
      * @return list<array{key: string, label: string}>
      */
     private function zeroFill(array $universe, array $present): array
@@ -556,7 +689,7 @@ class ReportController extends Controller
             ->orderBy('last_name')
             ->get(['id', 'first_name', 'last_name', 'deleted_at'])
             ->mapWithKeys(fn (User $u) => [
-                $u->id => trim("$u->first_name $u->last_name") . ($u->trashed() ? ' (removed)' : ''),
+                $u->id => trim("$u->first_name $u->last_name").($u->trashed() ? ' (removed)' : ''),
             ])
             ->all();
     }
@@ -587,7 +720,7 @@ class ReportController extends Controller
             ->orderBy('name')
             ->get()
             ->mapWithKeys(fn (ChannelPartner $p) => [
-                $p->id => $p->display_label . ($p->trashed() ? ' (removed)' : ''),
+                $p->id => $p->display_label.($p->trashed() ? ' (removed)' : ''),
             ])
             ->all();
     }
@@ -625,9 +758,9 @@ class ReportController extends Controller
     private function rangePayload(array $filters, Carbon $from, Carbon $to): array
     {
         return [
-            'from'  => $from->toDateString(),
-            'to'    => $to->toDateString(),
-            'label' => $from->format('j M') . ' – ' . $to->format('j M'),
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'label' => $from->format('j M').' – '.$to->format('j M'),
             // today in IST. The custom date inputs use this as their max rather
             // than the browser clock, which may be in another timezone entirely.
             'today' => today()->toDateString(),
@@ -645,7 +778,7 @@ class ReportController extends Controller
      * is validated against the same list, so typing ?group=assigned_to falls
      * back to the default rather than rendering that one-row report.
      *
-     * @return array<string, string>  key => label
+     * @return array<string, string> key => label
      */
     private function dimensions(string $report, $user): array
     {
@@ -678,10 +811,10 @@ class ReportController extends Controller
     {
         return [
             'dimensions' => $this->dimensions($report, $user),
-            'statuses'   => collect(config('crm.reports.follow_up_statuses'))
+            'statuses' => collect(config('crm.reports.follow_up_statuses'))
                 ->map(fn ($s) => $s['label'])->all(),
-            'ranges'      => config('crm.date_ranges'),
-            'today'       => today()->toDateString(),
+            'ranges' => config('crm.date_ranges'),
+            'today' => today()->toDateString(),
             'stageColors' => CrmTaxonomy::stageColors(),
         ];
     }
@@ -714,13 +847,13 @@ class ReportController extends Controller
             $request,
             'reports.followups',
             [
-                'group'  => ['sometimes', 'string', Rule::in(array_keys($this->dimensions('followups', $user)))],
+                'group' => ['sometimes', 'string', Rule::in(array_keys($this->dimensions('followups', $user)))],
                 'status' => ['sometimes', 'string', Rule::in(array_keys(config('crm.reports.follow_up_statuses')))],
             ] + $this->dateRangeRules(),
             [
-                'group'  => 'type',
+                'group' => 'type',
                 'status' => self::DEFAULT_STATUS,
-                'range'  => config('crm.reports.default_range'),
+                'range' => config('crm.reports.default_range'),
             ],
             fn (array $state) => $this->sanitiseDates($state),
         );

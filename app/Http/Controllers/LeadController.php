@@ -18,6 +18,7 @@ use App\Services\LeadCreationService;
 use App\Services\LeadFollowUpService;
 use App\Services\LeadListQuery;
 use App\Services\LeadTimeline;
+use App\Services\LossEvents;
 use App\Services\WhatsApp\BulkSender;
 use App\Services\WhatsApp\WhatsAppSender;
 use App\Support\CrmTaxonomy;
@@ -369,6 +370,21 @@ class LeadController extends Controller
                     default => [],
                 },
             );
+
+            /*
+             | A lead that stays lost and has its reason changed is a
+             | correction of the loss it is sitting in, so that loss's own
+             | record follows — otherwise the loss-reason report would keep
+             | the reason the user just said was wrong.
+             */
+            if ($stage === 'lost' && $lead->stage === 'lost' && $lead->wasChanged('reason')) {
+                $lead->todos()
+                    ->where('outcome_stage', 'lost')
+                    ->orderByDesc('completed_at')
+                    ->orderByDesc('id')
+                    ->limit(1)
+                    ->update(['lost_reason' => $lead->reason]);
+            }
         });
 
         // route every stage change through the service so history
@@ -766,6 +782,8 @@ class LeadController extends Controller
             'sources' => CrmTaxonomy::allSources(),
             'activeSources' => CrmTaxonomy::activeSourceKeys(),
             'reasons' => config('crm.lost_reasons'),
+            // the Lost filter's reason dropdown: every reason, then the gap
+            'lossReasons' => app(LossEvents::class)->reasonOptions(),
             'projects' => $projects,
             /*
              | The picker that replaced the free-text broker field.
