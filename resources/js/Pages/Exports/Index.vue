@@ -58,6 +58,22 @@ const f = reactive({
   status: '',
   type: '',
   assigned_to: '',
+  // Lost leads only — see the watch on the stage below
+  date_basis: '',
+  reason: '',
+})
+
+/*
+ | The two Lost-only filters exist while a leads export is filtered to Lost,
+ | and not a moment longer. Picking Lost makes Marked lost the default;
+ | picking anything else hides both and clears them, so a filter nobody can
+ | see never quietly narrows the file. The server drops them too.
+ */
+const lossFilters = computed(() => f.data_type === 'leads' && f.stage === 'lost')
+
+watch(lossFilters, on => {
+  f.date_basis = on ? 'lost' : ''
+  if (!on) f.reason = ''
 })
 
 const format = ref('pdf')
@@ -154,7 +170,7 @@ const filterPayload = () => {
 
   switch (f.data_type) {
     case 'leads':
-      return { ...base, project_id: f.project_id || undefined, stage: f.stage || undefined, source: f.source || undefined, channel_partner_id: f.channel_partner_id || undefined, assigned_to: seeAllLeads.value ? f.assigned_to || undefined : undefined }
+      return { ...base, project_id: f.project_id || undefined, stage: f.stage || undefined, source: f.source || undefined, channel_partner_id: f.channel_partner_id || undefined, assigned_to: seeAllLeads.value ? f.assigned_to || undefined : undefined, date_basis: lossFilters.value ? f.date_basis || undefined : undefined, reason: lossFilters.value ? f.reason || undefined : undefined }
     case 'followups':
       return { ...base, status: f.status || undefined, type: f.type || undefined, project_id: f.project_id || undefined, stage: f.stage || undefined, assigned_to: isAdmin.value ? f.assigned_to || undefined : undefined }
     case 'channel_partners':
@@ -311,6 +327,8 @@ watch(() => [
   f.type,
   f.assigned_to,
   f.search,
+  f.date_basis,
+  f.reason,
 ], scheduleCount)
 
 onMounted(fetchCount)
@@ -364,6 +382,32 @@ onBeforeUnmount(() => {
                 <option v-for="(label, key) in options.stages" :key="key" :value="key">{{ label }}</option>
               </select>
             </label>
+
+            <template v-if="lossFilters">
+              <label class="block">
+                <span class="mb-1 block text-xs font-semibold text-slate-500">Reason for loss</span>
+                <select v-model="f.reason">
+                  <option value="">All reasons</option>
+                  <option v-for="(label, key) in options.lossReasons" :key="key" :value="key">{{ label }}</option>
+                </select>
+              </label>
+
+              <!--
+                Which column From and To read. Shown, never implied: the file
+                says the same thing in its first row.
+              -->
+              <fieldset class="block">
+                <legend class="mb-1 block text-xs font-semibold text-slate-500">Dates apply to</legend>
+                <div class="flex h-[38px] items-center gap-4 text-sm">
+                  <label class="flex items-center gap-1.5">
+                    <input v-model="f.date_basis" type="radio" value="created" /> Created
+                  </label>
+                  <label class="flex items-center gap-1.5">
+                    <input v-model="f.date_basis" type="radio" value="lost" /> Marked lost
+                  </label>
+                </div>
+              </fieldset>
+            </template>
 
             <label v-if="f.data_type === 'leads'" class="block">
               <span class="mb-1 block text-xs font-semibold text-slate-500">Source</span>

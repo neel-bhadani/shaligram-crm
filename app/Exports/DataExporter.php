@@ -7,6 +7,7 @@ use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\LossEvents;
 use App\Support\CrmTaxonomy;
 use App\Support\RecordSearch;
 use Dompdf\Dompdf;
@@ -40,6 +41,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class DataExporter
 {
+    public function __construct(private LossEvents $losses) {}
+
     /** The formats the page offers, key => label. */
     public const FORMATS = [
         'pdf' => 'PDF',
@@ -105,7 +108,7 @@ class DataExporter
     public function ownedFilters(string $type): array
     {
         return match ($type) {
-            'leads' => ['from', 'to', 'project_id', 'stage', 'source', 'channel_partner_id', 'assigned_to'],
+            'leads' => ['from', 'to', 'project_id', 'stage', 'source', 'channel_partner_id', 'assigned_to', 'date_basis', 'reason'],
             'followups' => ['from', 'to', 'status', 'type', 'project_id', 'stage', 'assigned_to'],
             'channel_partners' => ['search', 'type', 'status'],
             default => throw new \InvalidArgumentException("Unknown export type [$type]."),
@@ -130,6 +133,8 @@ class DataExporter
             'formats' => self::FORMATS,
             'projects' => $this->visibleProjects($user),
             'stages' => CrmTaxonomy::allStages(),
+            // the Lost-only reason dropdown, the no-reason bucket last
+            'lossReasons' => $this->losses->reasonOptions(),
             'sources' => CrmTaxonomy::allSources(),
             'todoStatuses' => ['pending' => 'Pending', 'completed' => 'Completed'],
             'todoTypes' => config('crm.todo_types'),
@@ -187,10 +192,18 @@ class DataExporter
      * a phone number written as a number arrives as 9.822E+09. Traffic goes:
      * column key -> model value, so these keys and mapRow() agree by construction.
      *
+     * A leads export filtered to Lost carries a Loss Reason column on the end,
+     * in every format — see cellValue() for which reason it is.
+     *
+     * @param  array<string, mixed>  $f  normalised filter values
      * @return list<array{key: string, label: string, text?: true}>
      */
-    public function columns(string $type): array
+    public function columns(string $type, array $f = []): array
     {
+        if ($type === 'leads' && ($f['stage'] ?? null) === 'lost') {
+            return [...$this->columns($type), ['key' => 'loss_reason', 'label' => 'Loss Reason']];
+        }
+
         return match ($type) {
             'leads' => [
                 ['key' => 'id',                'label' => 'Lead ID'],
@@ -238,20 +251,25 @@ class DataExporter
         };
     }
 
-    /** @return list<string> */
-    public function columnKeys(string $type): array
+    /**
+     * @param  array<string, mixed>  $f
+     * @return list<string>
+     */
+    public function columnKeys(string $type, array $f = []): array
     {
-        return array_column($this->columns($type), 'key');
+        return array_column($this->columns($type, $f), 'key');
     }
 
     /**
      * A row as the flat list of values the writers need, in column order.
+     *
+     * @param  array<string, mixed>  $f
      */
-    public function mapRow(string $type, $model): array
+    public function mapRow(string $type, $model, array $f = []): array
     {
         $values = [];
 
-        foreach ($this->columns($type) as $column) {
+        foreach ($this->columns($type, $f) as $column) {
             $values[] = $this->cellValue($type, $column['key'], $model);
         }
 
@@ -270,6 +288,8 @@ class DataExporter
      */
     public function query(User $user, string $type, array $f): Builder
     {
+        $f = $this->normalised($type, $f);
+
         return match ($type) {
             'leads' => $this->leadsQuery($user, $f),
             'followups' => $this->followUpsQuery($user, $f),
@@ -286,7 +306,7 @@ class DataExporter
             ->select([
                 'id', 'first_name', 'middle_name', 'last_name', 'mobile_number',
                 'email', 'project_id', 'stage', 'source', 'assigned_to', 'assigned_role',
-                'broker_name', 'channel_partner_id', 'created_at', 'updated_at',
+                'broker_name', 'channel_partner_id', 'created_at', 'updated_at', 'reason',
             ])
             ->with([
                 'project:id,name',
@@ -297,10 +317,26 @@ class DataExporter
 
         $window = $this->window($f);
 
+        /*
+         | "Dates apply to: Marked lost" — the leads marked lost in the window,
+         | through the same LossEvents query the loss-reason report counts, so
+         | the two give the same number for the same window. The loss stands in
+         | for both the stage and the date clause: a lead lost in the window
+         | and reopened since was still lost then.
+         */
+        if ($this->losses->byLossDate($f, $window[0] ?? null)) {
+            $query = $this->losses->narrowLeads($query, $window[0], $window[1], $f['reason'] ?? null)
+                ->addSelect('loss.lost_reason as loss_reason');
+        } else {
+            $query
+                ->when($window, fn ($q) => $q->whereBetween('created_at', $window))
+                ->when($f['stage'] ?? null, fn ($q, $v) => $q->where('stage', $v))
+                // the lead's current reason, alongside its current stage
+                ->tap(fn ($q) => $this->losses->whereReason($q, 'reason', $f['reason'] ?? null));
+        }
+
         return $query
-            ->when($window, fn ($q) => $q->whereBetween('created_at', $window))
             ->when($f['project_id'] ?? null, fn ($q, $v) => $q->where('project_id', $v))
-            ->when($f['stage'] ?? null, fn ($q, $v) => $q->where('stage', $v))
             ->when($f['source'] ?? null, fn ($q, $v) => $q->where('source', $v))
             ->when($f['channel_partner_id'] ?? null, fn ($q, $v) => $q->where('channel_partner_id', $v))
             ->when($f['assigned_to'] ?? null, fn ($q, $v) => $q->where('assigned_to', $v));
@@ -391,7 +427,8 @@ class DataExporter
      */
     public function response(User $user, string $type, string $format, array $f, int $page = 1): Response
     {
-        $columns = $this->columns($type);
+        $f = $this->normalised($type, $f);
+        $columns = $this->columns($type, $f);
         $query = $this->query($user, $type, $f);
 
         /*
@@ -408,8 +445,8 @@ class DataExporter
 
         return match ($format) {
             'pdf' => $this->pdfResponse($type, $columns, $query, $f, $count, $filename, $page),
-            'excel' => $this->excelResponse($type, $columns, $query, $filename),
-            'csv' => $this->csvResponse($type, $columns, $query, $filename),
+            'excel' => $this->excelResponse($type, $columns, $query, $f, $filename),
+            'csv' => $this->csvResponse($type, $columns, $query, $f, $filename),
         };
     }
 
@@ -422,11 +459,12 @@ class DataExporter
      */
     public function describeFilters(string $type, array $f): array
     {
+        $f = $this->normalised($type, $f);
         $out = [];
 
         if ($window = $this->window($f)) {
             $verb = match ($type) {
-                'leads' => 'Created',
+                'leads' => $this->losses->byLossDate($f, $window[0]) ? 'Marked lost' : 'Created',
                 'followups' => 'Scheduled',
                 'channel_partners' => 'Added',
             };
@@ -443,6 +481,10 @@ class DataExporter
 
         if (! empty($f['stage'])) {
             $out[] = ['label' => 'Stage', 'value' => CrmTaxonomy::stageLabel($f['stage'])];
+        }
+
+        if ($type === 'leads' && ($f['stage'] ?? null) === 'lost') {
+            $out[] = ['label' => 'Reason for loss', 'value' => isset($f['reason']) ? $this->losses->reasonLabel($f['reason']) : 'All reasons'];
         }
 
         if (! empty($f['source'])) {
@@ -559,7 +601,7 @@ class DataExporter
             $rows = (clone $query)->orderBy('id')->skip($offset)->take($limit)->get();
 
             foreach ($rows as $model) {
-                fwrite($out, $this->pdfRowHtml($this->mapRow($type, $model)));
+                fwrite($out, $this->pdfRowHtml($this->mapRow($type, $model, $f)));
             }
 
             fwrite($out, view('exports.pdf_foot', [
@@ -650,22 +692,30 @@ class DataExporter
      * price of a real .xlsx rather than a renamed CSV.
      *
      * @param  array<int, array{key: string, label: string, text?: true}>  $columns
+     * @param  array<string, mixed>  $f
      */
-    private function excelResponse(string $type, array $columns, Builder $query, string $filename): Response
+    private function excelResponse(string $type, array $columns, Builder $query, array $f, string $filename): Response
     {
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
+        $row = 1;
+
+        if ($summary = $this->summaryLine($type, $f)) {
+            $sheet->getCell('A1')->setValueExplicit($summary, DataType::TYPE_STRING);
+            $row = 2;
+        }
+
         $textKeys = collect($columns)->where('text', true)->pluck('key')->all();
-        $sheet->fromArray(collect($columns)->pluck('label')->all(), null, 'A1');
-        $sheet->getStyle('A1:'.Coordinate::stringFromColumnIndex(count($columns)).'1')->getFont()->setBold(true);
+        $sheet->fromArray(collect($columns)->pluck('label')->all(), null, 'A'.$row);
+        $sheet->getStyle('A'.$row.':'.Coordinate::stringFromColumnIndex(count($columns)).$row)->getFont()->setBold(true);
 
-        $row = 2;
-        $order = $this->columnKeys($type);
+        $row++;
+        $order = $this->columnKeys($type, $f);
 
-        $query->orderBy('id')->chunkById(self::CHUNK, function ($models) use ($sheet, $type, $textKeys, $order, &$row): void {
+        $query->orderBy('id')->chunkById(self::CHUNK, function ($models) use ($sheet, $type, $textKeys, $order, $f, &$row): void {
             foreach ($models as $model) {
-                foreach ($this->mapRow($type, $model) as $i => $value) {
+                foreach ($this->mapRow($type, $model, $f) as $i => $value) {
                     $address = Coordinate::stringFromColumnIndex($i + 1).$row;
                     $cell = $sheet->getCell($address);
 
@@ -702,23 +752,30 @@ class DataExporter
      * quotes and line breaks exactly as a parser expects.
      *
      * @param  array<int, array{key: string, label: string, text?: true}>  $columns
+     * @param  array<string, mixed>  $f
      */
-    private function csvResponse(string $type, array $columns, Builder $query, string $filename): StreamedResponse
+    private function csvResponse(string $type, array $columns, Builder $query, array $f, string $filename): StreamedResponse
     {
         $textKeys = collect($columns)->where('text', true)->pluck('key')->all();
         $headers = collect($columns)->pluck('label')->all();
+        $summary = $this->summaryLine($type, $f);
 
-        return new StreamedResponse(function () use ($query, $type, $headers, $textKeys): void {
+        return new StreamedResponse(function () use ($query, $type, $headers, $textKeys, $f, $summary): void {
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF");
+
+            if ($summary) {
+                fputcsv($out, [$summary]);
+            }
+
             fputcsv($out, $headers);
 
             $queried = clone $query;
-            $indexBy = array_flip($this->columnKeys($type));
+            $indexBy = array_flip($this->columnKeys($type, $f));
 
-            $queried->chunkById(self::CHUNK, function ($models) use ($out, $type, $textKeys, $indexBy): void {
+            $queried->chunkById(self::CHUNK, function ($models) use ($out, $type, $textKeys, $indexBy, $f): void {
                 foreach ($models as $model) {
-                    $row = $this->mapRow($type, $model);
+                    $row = $this->mapRow($type, $model, $f);
 
                     foreach ($textKeys as $key) {
                         $value = $row[$indexBy[$key]] ?? '';
@@ -742,6 +799,49 @@ class DataExporter
     /* ====================================================================
      | Helpers
      ==================================================================== */
+
+    /**
+     * The filters a type's export actually runs on. For leads, the two loss
+     * filters only survive while the stage is Lost — LossEvents::normalise(),
+     * the same rule the Leads page applies — so a filter the page has hidden
+     * can never narrow a file.
+     *
+     * @param  array<string, mixed>  $f
+     * @return array<string, mixed>
+     */
+    private function normalised(string $type, array $f): array
+    {
+        return $type === 'leads' ? $this->losses->normalise($f) : $f;
+    }
+
+    /**
+     * The first row of a Lost leads spreadsheet or CSV: the filters it was
+     * made with, in one cell, the way the PDF prints them in its header.
+     *
+     * Lost is where the dates can mean two things — created, or marked lost
+     * — so a file saved today and opened in six months has to say which
+     * question it answered. Every other export starts with its header row,
+     * exactly as before.
+     *
+     * @param  array<string, mixed>  $f  normalised
+     */
+    private function summaryLine(string $type, array $f): ?string
+    {
+        if ($type !== 'leads' || ($f['stage'] ?? null) !== 'lost') {
+            return null;
+        }
+
+        $parts = array_map(
+            fn (array $d) => $d['label'].': '.$d['value'],
+            $this->describeFilters($type, $f),
+        );
+
+        if (! $this->window($f)) {
+            $parts[] = 'Dates: all time';
+        }
+
+        return $this->types()[$type].' export · '.implode(' · ', $parts);
+    }
 
     /** @param  array<string, mixed>  $f  @return array{0: Carbon, 1: Carbon}|null */
     private function window(array $f): ?array
@@ -817,6 +917,15 @@ class DataExporter
             'completed_at' => $date($model->completed_at),
             'remarks' => (string) ($model->remarks ?? ''),
             'outcome_stage' => $model->outcome_stage ? CrmTaxonomy::stageLabel($model->outcome_stage) : '',
+            /*
+             | The reason on the loss the window found when the dates apply to
+             | the loss; otherwise the lead's current reason. A gap is written
+             | out, never left blank, so it reads as a gap in the data rather
+             | than a broken export.
+             */
+            'loss_reason' => $this->losses->reasonLabel(
+                array_key_exists('loss_reason', $model->getAttributes()) ? $model->loss_reason : $model->reason
+            ),
             'name' => (string) $model->name,
             'contact_person' => (string) ($model->contact_person ?? ''),
             'phone' => (string) ($model->phone ?? ''),

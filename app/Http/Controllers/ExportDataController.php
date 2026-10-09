@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\DataExporter;
 use App\Exports\ExportException;
+use App\Services\LossEvents;
 use App\Support\CrmTaxonomy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -32,7 +33,7 @@ use Inertia\Inertia;
  */
 class ExportDataController extends Controller
 {
-    public function __construct(private DataExporter $exporter) {}
+    public function __construct(private DataExporter $exporter, private LossEvents $losses) {}
 
     public function index(Request $request)
     {
@@ -123,6 +124,8 @@ class ExportDataController extends Controller
             'status' => ['nullable', 'string', 'in:pending,completed,active,inactive'],
             'type' => ['nullable', 'string', Rule::in(array_merge(array_keys(config('crm.todo_types')), array_keys(config('crm.channel_partner_types'))))],
             'search' => ['nullable', 'string', 'max:100'],
+            // Lost only; DataExporter drops both for any other stage
+            ...$this->losses->rules('nullable'),
         ];
 
         $validator = Validator::make($request->all(), $rules);

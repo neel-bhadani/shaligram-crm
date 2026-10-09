@@ -128,6 +128,7 @@ Route::middleware(['auth'])->group(function () {
      | part that would be meaningless to them, is dropped by the controller.
      */
     Route::get('/reports/leads', [ReportController::class, 'leads'])->name('reports.leads');
+    Route::get('/reports/loss-reasons', [ReportController::class, 'lossReasons'])->name('reports.loss-reasons');
     Route::get('/reports/followups', [ReportController::class, 'followUps'])->name('reports.followups');
 
     /* ---------------- export data ---------------- */
