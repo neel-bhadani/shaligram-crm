@@ -70,6 +70,53 @@ class TelecallerLeadEditTest extends TestCase
         $this->assertSame('connected', $lead->fresh()->stage);
     }
 
+    /**
+     * A lead that arrived with no number and a one-word name — legacy rows,
+     * Facebook forms — must not be stuck: the telecaller cannot type the
+     * missing fields in, so the form may not demand them.
+     */
+    public function test_a_telecaller_can_move_a_lead_with_no_mobile_or_last_name_through_the_stages(): void
+    {
+        $lead = $this->openLead();
+        $lead->update(['mobile_number' => null, 'last_name' => '']);
+
+        $this->actingAs($this->telecaller)
+            ->put("/leads/{$lead->id}", $this->editPayload($lead, [
+                'mobile_number' => '',
+                'last_name' => '',
+                'stage' => 'connected',
+                'follow_up_type' => 'call',
+                'follow_up_at' => now()->addDay()->format('Y-m-d H:i'),
+            ]))
+            ->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame('connected', $lead->fresh()->stage);
+
+        $this->actingAs($this->telecaller)
+            ->put("/leads/{$lead->id}", $this->editPayload($lead->fresh(), [
+                'mobile_number' => '',
+                'last_name' => '',
+                'stage' => 'lost',
+                'reason' => 'budget',
+            ]))
+            ->assertRedirect()->assertSessionHasNoErrors();
+
+        $lead->refresh();
+        $this->assertSame('lost', $lead->stage);
+        $this->assertNull($lead->mobile_number);
+        $this->assertSame('', $lead->last_name);
+    }
+
+    /** Only a lead already missing them is let off: a lead with a number still needs one. */
+    public function test_mobile_and_last_name_stay_required_on_a_lead_that_has_them(): void
+    {
+        $lead = $this->openLead();
+
+        $this->actingAs($this->admin)
+            ->put("/leads/{$lead->id}", $this->editPayload($lead, ['mobile_number' => '', 'last_name' => '']))
+            ->assertSessionHasErrors(['mobile_number', 'last_name']);
+    }
+
     /* ---------------- the boundary: everything else is refused, not silently dropped ---------------- */
 
     /** Each locked field, one at a time — a crafted request cannot pick one the others miss. */

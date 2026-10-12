@@ -502,6 +502,9 @@ class LeadController extends Controller
             $data['channel_partner_id'] = null;
         }
 
+        // optional when the lead already had none, and the column takes '' not NULL
+        $data['last_name'] = (string) ($data['last_name'] ?? '');
+
         return $data;
     }
 

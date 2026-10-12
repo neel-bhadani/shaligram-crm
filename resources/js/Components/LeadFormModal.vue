@@ -385,13 +385,13 @@ const submit = () => {
       <FormField label="Middle name" :error="form.errors.middle_name" :hint="lockedHint">
         <input v-model="form.middle_name" type="text" :disabled="coreFieldsLocked" />
       </FormField>
-      <FormField label="Last name" required :error="form.errors.last_name" :hint="lockedHint">
+      <FormField label="Last name" :required="!lead || Boolean(lead.last_name)" :error="form.errors.last_name" :hint="lockedHint">
         <input v-model="form.last_name" type="text" :disabled="coreFieldsLocked" />
       </FormField>
     </div>
 
     <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      <FormField label="Mobile number" required :error="form.errors.mobile_number" :hint="lockedHint">
+      <FormField label="Mobile number" :required="!lead || Boolean(lead.mobile_number)" :error="form.errors.mobile_number" :hint="lockedHint">
         <input v-model="form.mobile_number" type="text" maxlength="10" inputmode="numeric"
                :disabled="coreFieldsLocked" />
         <div v-if="duplicate" class="warn-box mt-2" role="status">
