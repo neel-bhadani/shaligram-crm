@@ -30,6 +30,7 @@ class IncomingLeadService
     public function __construct(
         private LeadFollowUpService $followUps,
         private LeadAssignmentService $assignment,
+        private AlertService $alerts,
     ) {}
 
     /** Where every imported lead starts: nobody has spoken to them yet. */
@@ -48,7 +49,14 @@ class IncomingLeadService
      * caller that has routed the lead by its form — LeadFormRouter — passes
      * the form's instead.
      *
-     * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string}  $attributes
+     * A lead with no phone number is still created — the client paid for the
+     * click, and a discarded enquiry is a customer nobody ever hears about. It
+     * skips the repeat check, gets an Email follow-up instead of a Call, and
+     * its owner is alerted. With no email either there is nothing anybody can
+     * do, so it gets no follow-up at all; it exists so the volume of such
+     * leads per source and form can be seen.
+     *
+     * @param  array{first_name: string, last_name: string, mobile_number: ?string, email: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
     public function import(
@@ -86,14 +94,23 @@ class IncomingLeadService
          | second. The external_id check runs inside it as well, so a
          | redelivery that waited on the lock is still called a duplicate.
          */
-        return Cache::lock("incoming-lead:{$projectId}:{$attributes['mobile_number']}", 30)
+        // with no number there is no repeat to race on, only a redelivery
+        $lockKey = $attributes['mobile_number'] ?? "external:{$externalId}";
+
+        $outcome = Cache::lock("incoming-lead:{$projectId}:{$lockKey}", 30)
             ->block(10, fn () => $this->importOnce($externalId, $attributes + ['source_form_id' => $formId], $projectId, $holder, $source));
+
+        if ($outcome['result'] === 'created' && $outcome['lead']->mobile_number === null && filled($outcome['lead']->email)) {
+            $this->alertNoPhone($outcome['lead'], $source);
+        }
+
+        return $outcome;
     }
 
     /**
      * The repeat check and the insert, run while import() holds the lock.
      *
-     * @param  array{first_name: string, last_name: string, mobile_number: string, email: ?string, source_form_id: ?string}  $attributes
+     * @param  array{first_name: string, last_name: string, mobile_number: ?string, email: ?string, source_form_id: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
     private function importOnce(string $externalId, array $attributes, int $projectId, User $holder, string $source): array
@@ -116,7 +133,9 @@ class IncomingLeadService
             ];
         }
 
-        $repeat = Lead::withTrashed()
+        // where('mobile_number', null) is IS NULL, which would match every
+        // other phoneless lead on the project — no number is no repeat
+        $repeat = $attributes['mobile_number'] === null ? null : Lead::withTrashed()
             ->where('mobile_number', $attributes['mobile_number'])
             ->where('project_id', $projectId)
             ->first();
@@ -176,12 +195,18 @@ class IncomingLeadService
                  | correct urgency for a lead that has this second raised its
                  | hand on an advert.
                  */
-                $this->followUps->onLeadCreated(
-                    $lead,
-                    now(),
-                    'call',
-                    'Lead arrived from '.config("integrations.providers.$source.name", $source).'. Call as soon as possible.',
-                );
+                $from = 'Lead arrived from '.config("integrations.providers.$source.name", $source);
+
+                match (true) {
+                    $lead->mobile_number !== null => $this->followUps->onLeadCreated(
+                        $lead, now(), 'call', "{$from}. Call as soon as possible.",
+                    ),
+                    filled($lead->email) => $this->followUps->onLeadCreated(
+                        $lead, now(), 'email', "{$from} with no phone number. Email {$lead->email} today and ask for one.",
+                    ),
+                    // no way to reach them: recorded as created, nothing to schedule
+                    default => $this->followUps->onLeadCreated($lead),
+                };
 
                 return $lead;
             });
@@ -203,5 +228,28 @@ class IncomingLeadService
         }
 
         return ['result' => 'created', 'lead' => $lead, 'message' => "Lead #{$lead->id} created."];
+    }
+
+    /**
+     * Tell the owner, and only the owner: these are rare, and an alert sent to
+     * everyone is ignored by everyone. If nobody acts, the overdue and
+     * stuck-lead alerts catch it like any other lead.
+     */
+    private function alertNoPhone(Lead $lead, string $source): void
+    {
+        if (! $lead->owner) {
+            return;
+        }
+
+        $this->alerts->raise(
+            recipient: $lead->owner,
+            type: 'lead_missing_phone',
+            title: "{$lead->full_name} — no phone number, email {$lead->email}",
+            body: 'This lead arrived from '.config("integrations.providers.$source.name", $source)
+                .' without a phone number. Email them today and ask for one.',
+            lead: $lead,
+            severity: 'warning',
+            actionUrl: route('leads.index', ['search' => $lead->email]),
+        );
     }
 }

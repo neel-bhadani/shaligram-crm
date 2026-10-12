@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 
 /**
  * Meta's `field_data` turned into the columns a lead has.
@@ -23,9 +22,7 @@ class MetaLeadNormaliser
 {
     /**
      * @param  list<array{name?: string, values?: list<string>}>  $fieldData
-     * @return array{first_name: string, last_name: string, mobile_number: string, email: ?string, unrecognised: list<string>}
-     *
-     * @throws RuntimeException when there is no usable phone number
+     * @return array{first_name: string, last_name: string, mobile_number: ?string, email: ?string, unrecognised: list<string>}
      */
     public function normalise(array $fieldData, string $leadgenId): array
     {
@@ -44,13 +41,9 @@ class MetaLeadNormaliser
             ]);
         }
 
+        // null when missing or unusable: the lead is still created, and
+        // IncomingLeadService decides what follows up on it
         $phone = $this->phone($values['phone'] ?? null);
-
-        if ($phone === null) {
-            // the one field with no sensible default: a lead nobody can ring is
-            // not a lead, and the mobile/project unique index needs ten digits
-            throw new RuntimeException('The lead form returned no usable phone number.');
-        }
 
         [$first, $last] = $this->names($values);
 

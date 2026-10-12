@@ -2,6 +2,7 @@
 import { reactive, computed, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import MissingContactBadge from '@/Components/MissingContactBadge.vue'
 import StageBadge from '@/Components/StageBadge.vue'
 import LeadFormModal from '@/Components/LeadFormModal.vue'
 import LeadViewModal from '@/Components/LeadViewModal.vue'
@@ -367,7 +368,7 @@ const ageClass = d => d === null ? 'text-slate-400'
               <div class="font-semibold">{{ l.full_name }}</div>
               <div class="text-xs text-slate-400">{{ l.email }}</div>
             </td>
-            <td class="px-4 py-3">{{ l.mobile_number }}</td>
+            <td class="px-4 py-3">{{ l.mobile_number }}<MissingContactBadge :lead="l" /></td>
             <td class="px-4 py-3"><StageBadge :stage="l.stage" /></td>
             <td class="px-4 py-3">{{ l.project?.name }}</td>
             <td class="px-4 py-3">
@@ -403,6 +404,7 @@ const ageClass = d => d === null ? 'text-slate-400'
             <div class="min-w-0 flex-1">
               <div class="truncate font-semibold">{{ l.full_name }}</div>
               <div class="text-xs text-slate-400">{{ l.mobile_number }}</div>
+              <MissingContactBadge :lead="l" class="mt-1" />
             </div>
             <StageBadge :stage="l.stage" />
           </div>

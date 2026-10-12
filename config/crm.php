@@ -159,6 +159,8 @@ return [
         'whatsapp' => 'WhatsApp',
         'meeting' => 'Meeting',
         'site_visit' => 'Site visit',
+        // for a lead that arrived with an email but no phone number
+        'email' => 'Email',
     ],
 
     /*

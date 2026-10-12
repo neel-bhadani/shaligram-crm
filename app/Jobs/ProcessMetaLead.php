@@ -84,6 +84,12 @@ class ProcessMetaLead implements ShouldQueue
             $fieldData = $this->fieldData
                 ?? $graph->fieldData($this->leadgenId, $integration->setting('page_access_token'));
 
+            // a phoneless lead is now created, so a test lead — placeholder
+            // answers, no digits — has to be stopped here to stay uncreated
+            if ($normaliser->isMetaTestLead($fieldData)) {
+                throw new \RuntimeException("A lead from Meta's Lead Ads Testing Tool; not imported.");
+            }
+
             $normalised = $normaliser->normalise($fieldData, $this->leadgenId);
 
             // the form decides the project; an unmapped one falls back to the

@@ -253,14 +253,14 @@ class AlertService
     /**
      * Where an alert takes you when you click it.
      *
-     * The Leads page filtered to this lead's mobile number. There is no
-     * per-lead page in this application — a lead opens in a modal on the list
-     * — and the list's search box already matches on `mobile_number`, so this
-     * is a link that works today rather than a route that would have to be
-     * invented for it.
+     * The Leads page filtered to this lead's mobile number — or its email, or
+     * its name, when it has no number. There is no per-lead page in this
+     * application — a lead opens in a modal on the list — and the list's
+     * search box already matches on all three, so this is a link that works
+     * today rather than a route that would have to be invented for it.
      */
     private function leadUrl(Lead $lead): string
     {
-        return route('leads.index', ['search' => $lead->mobile_number]);
+        return route('leads.index', ['search' => $lead->mobile_number ?? $lead->email ?? $lead->full_name]);
     }
 }

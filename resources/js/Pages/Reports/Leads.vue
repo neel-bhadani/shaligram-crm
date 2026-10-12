@@ -97,6 +97,8 @@ const columns = computed(() => [
   { key: 'visits', label: 'Site visits', type: 'number', note: 'Visited in the period, counted once per lead' },
   { key: 'booked', label: 'Bookings', type: 'number', note: 'Booked in the period, counted once per lead' },
   { key: 'lost', label: 'Lost', type: 'number', note: 'Closed without booking in the period' },
+  { key: 'no_phone', label: 'No phone', type: 'number', note: 'Created in the period with no phone number' },
+  { key: 'no_contact', label: 'No contact', type: 'number', note: 'Created in the period with neither a phone number nor an email' },
   {
     key: 'conversion', label: 'Conversion %', type: 'percent',
     note: 'Bookings in the period ÷ leads created in the period. A dash means no leads to divide by.',
