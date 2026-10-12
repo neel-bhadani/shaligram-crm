@@ -64,6 +64,8 @@ return [
         'duplicate'      => ['label' => 'Duplicate',    'tone' => 'muted'],
         'repeat_enquiry' => ['label' => 'Repeat enquiry', 'tone' => 'warn'],
         'failed'         => ['label' => 'Failed',       'tone' => 'bad'],
+        // a lead from Meta's Lead Ads Testing Tool that could not be imported
+        'test'           => ['label' => 'Meta test',    'tone' => 'muted'],
     ],
 
     /*

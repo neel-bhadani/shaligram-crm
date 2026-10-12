@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Webhooks\MetaWebhookController;
 use App\Jobs\ProcessMetaLead;
+use App\Models\Alert;
 use App\Models\Integration;
 use App\Models\IntegrationEvent;
 use App\Models\Lead;
@@ -11,6 +12,7 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\IncomingLeadService;
+use App\Services\MetaGraphException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -509,21 +511,78 @@ class MetaWebhookTest extends TestCase
 
     /* ---------------- the failures an admin has to see ---------------- */
 
-    public function test_a_lead_with_no_usable_phone_number_is_logged_as_failed(): void
+    /**
+     * An enquiry with an email but no phone is a customer, not a failure. It
+     * is created, given an Email follow-up rather than a Call nobody could
+     * make, and its owner — only its owner — is alerted.
+     */
+    public function test_a_lead_with_an_email_and_no_phone_is_created_with_an_email_follow_up(): void
     {
+        $admin = $this->user('admin', 'Ann');
+
         $this->fakeGraph([
             ['name' => 'full_name', 'values' => ['Neel Bhadani']],
             ['name' => 'email',     'values' => ['neel@example.test']],
         ]);
 
-        $this->deliverThenProcess('lead-1');
+        $this->deliver($this->payload('lead-1'))->assertOk();
 
-        $this->assertSame(0, Lead::count());
+        $lead = Lead::sole();
+        $this->assertNull($lead->mobile_number);
+        $this->assertSame('neel@example.test', $lead->email);
+        $this->assertSame($this->project->id, $lead->project_id);
+        $this->assertSame('556677', $lead->source_form_id);
 
-        $event = IntegrationEvent::firstOrFail();
-        $this->assertSame('failed', $event->result);
-        $this->assertSame('lead-1', $event->external_id);
-        $this->assertStringContainsString('phone number', $event->message);
+        $todo = $lead->pendingTodo;
+        $this->assertSame('email', $todo->type);
+        $this->assertTrue($todo->scheduled_at->isToday());
+        $this->assertSame(0, Lead::open()->doesntHave('pendingTodo')->count());
+
+        $alert = Alert::where('type', 'lead_missing_phone')->sole();
+        $this->assertSame($this->owner->id, $alert->user_id);
+        $this->assertSame('lead_missing_phone', $alert->type);
+        $this->assertStringContainsString('neel@example.test', $alert->title);
+        $this->assertStringContainsString('search=neel%40example.test', $alert->action_url);
+        $this->assertSame(0, Alert::where('user_id', $admin->id)->where('type', 'lead_missing_phone')->count());
+
+        $event = IntegrationEvent::sole();
+        $this->assertSame('created', $event->result);
+        $this->assertStringContainsString('no phone number', $event->message);
+    }
+
+    /**
+     * Neither phone nor email: created so the volume can be seen, but with no
+     * follow-up and no alert, because there is nothing anybody can do.
+     */
+    public function test_a_lead_with_no_contact_details_is_created_with_no_follow_up(): void
+    {
+        $this->fakeGraph([
+            ['name' => 'full_name', 'values' => ['Neel Bhadani']],
+        ]);
+
+        $this->deliver($this->payload('lead-1'))->assertOk();
+
+        $lead = Lead::sole();
+        $this->assertTrue($lead->hasNoContactDetails());
+        $this->assertSame(0, Todo::count());
+        $this->assertSame(0, Alert::count());
+        $this->assertStringContainsString('no phone number or email', IntegrationEvent::sole()->message);
+    }
+
+    /** No number is no repeat: two phoneless enquiries are two leads. */
+    public function test_two_leads_with_no_phone_on_one_project_are_not_a_repeat_enquiry(): void
+    {
+        Http::fake([
+            'graph.facebook.com/*/lead-1*' => Http::response(['field_data' => [['name' => 'email', 'values' => ['a@example.test']]]]),
+            'graph.facebook.com/*/lead-2*' => Http::response(['field_data' => [['name' => 'email', 'values' => ['b@example.test']]]]),
+            'graph.facebook.com/*' => Http::response(['name' => 'Spring offer']),
+        ]);
+
+        $this->deliver($this->payload('lead-1'))->assertOk();
+        $this->deliver($this->payload('lead-2'))->assertOk();
+
+        $this->assertSame(2, Lead::count());
+        $this->assertSame(['created', 'created'], IntegrationEvent::pluck('result')->all());
     }
 
     public function test_an_expired_page_token_is_logged_with_metas_own_message(): void
@@ -539,6 +598,102 @@ class MetaWebhookTest extends TestCase
         $event = IntegrationEvent::firstOrFail();
         $this->assertSame('failed', $event->result);
         $this->assertStringContainsString('Session has expired', $event->message);
+    }
+
+    /**
+     * Meta's Lead Ads Testing Tool fills every answer with placeholder text.
+     * Not imported and not retried, as before — but labelled as a test.
+     */
+    public function test_a_lead_from_metas_testing_tool_is_logged_as_a_test(): void
+    {
+        $this->fakeGraph([
+            ['name' => 'full_name',    'values' => ['<test lead: dummy data for full_name>']],
+            ['name' => 'phone_number', 'values' => ['<test lead: dummy data for phone_number>']],
+        ]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        app()->call([$job, 'handle']);
+
+        $job->assertFailed();
+        $this->assertSame(0, Lead::count());
+
+        $event = IntegrationEvent::sole();
+        $this->assertSame('test', $event->result);
+        $this->assertStringContainsString('Testing Tool', $event->message);
+    }
+
+    /**
+     * Meta's test leads can be fetched once and are then deleted, so a lead
+     * that "does not exist" never will. One call, one row, and the job is
+     * failed rather than handed back to the queue for another go.
+     */
+    public function test_a_lead_meta_has_deleted_is_logged_once_and_not_retried(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => [
+            'message' => "Unsupported get request. Object with ID 'lead-1' does not exist.",
+            'code' => 100,
+            'error_subcode' => 33,
+        ]], 400)]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        app()->call([$job, 'handle']);
+
+        $job->assertFailed();
+        Http::assertSentCount(1);
+
+        $event = IntegrationEvent::sole();
+        $this->assertSame('failed', $event->result);
+        $this->assertStringContainsString('does not exist', $event->message);
+    }
+
+    /**
+     * A timeout, a 5xx or a rate limit can come right on its own, so those are
+     * retried in place and then rethrown for the queue to try again later.
+     */
+    #[DataProvider('transientGraphFailures')]
+    public function test_a_transient_graph_failure_is_retried(int $status, array $error): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => $error], $status)]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        try {
+            app()->call([$job, 'handle']);
+            $this->fail('A transient failure should be rethrown for the queue to retry.');
+        } catch (MetaGraphException $e) {
+            $this->assertTrue($e->isRetryable());
+        }
+
+        $job->assertNotFailed();
+        Http::assertSentCount(2);
+        $this->assertSame('failed', IntegrationEvent::sole()->result);
+    }
+
+    public static function transientGraphFailures(): array
+    {
+        return [
+            'server error' => [500, ['message' => 'An unexpected error has occurred.', 'code' => 2]],
+            'http 429' => [429, ['message' => 'Too many requests.']],
+            'page rate limit on a 400' => [400, ['message' => 'Application request limit reached', 'code' => 4]],
+        ];
+    }
+
+    public function test_a_graph_timeout_is_retried(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::failedConnection()]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        $this->expectException(MetaGraphException::class);
+
+        try {
+            app()->call([$job, 'handle']);
+        } finally {
+            $job->assertNotFailed();
+            $this->assertSame('failed', IntegrationEvent::sole()->result);
+        }
     }
 
     /**

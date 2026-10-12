@@ -4,6 +4,7 @@ import axios from 'axios'
 import { Head } from '@inertiajs/vue3'
 import Modal from './Modal.vue'
 import StageBadge from './StageBadge.vue'
+import MissingContactBadge from './MissingContactBadge.vue'
 import LeadActivityTimeline from './LeadActivityTimeline.vue'
 import LeadWhatsAppPanel from './LeadWhatsAppPanel.vue'
 import SectionBoundary from './SectionBoundary.vue'
@@ -81,7 +82,7 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
     <div v-else-if="lead">
       <dl class="grid gap-4 sm:grid-cols-2">
         <div><dt class="text-[11px] font-semibold text-slate-400">Mobile</dt>
-             <dd class="text-sm">{{ lead.mobile_number }}</dd></div>
+             <dd class="text-sm">{{ lead.mobile_number }}<MissingContactBadge :lead="lead" /></dd></div>
         <div><dt class="text-[11px] font-semibold text-slate-400">Email</dt>
              <dd class="break-all text-sm">{{ lead.email || '—' }}</dd></div>
         <div><dt class="text-[11px] font-semibold text-slate-400">Project</dt>

@@ -88,10 +88,10 @@ class TodoTypeChipsTest extends TestCase
         $this->pending('site_visit', now()->addDays(2));
         $this->done('meeting', now()->subDay(), now());
 
-        $this->assertSame([2, 0, 0, 0], $this->values(['tab' => 'today']));
-        $this->assertSame([0, 0, 0, 1], $this->values(['tab' => 'upcoming']));
-        $this->assertSame([0, 0, 1, 0], $this->values(['tab' => 'completed']));
-        $this->assertSame([0, 0, 0, 0], $this->values(['tab' => 'overdue']));
+        $this->assertSame([2, 0, 0, 0, 0], $this->values(['tab' => 'today']));
+        $this->assertSame([0, 0, 0, 1, 0], $this->values(['tab' => 'upcoming']));
+        $this->assertSame([0, 0, 1, 0, 0], $this->values(['tab' => 'completed']));
+        $this->assertSame([0, 0, 0, 0, 0], $this->values(['tab' => 'overdue']));
     }
 
     /**
@@ -135,7 +135,7 @@ class TodoTypeChipsTest extends TestCase
         $found = $this->chips(['tab' => 'today', 'search' => 'Zarina']);
 
         $this->assertSame(1, $found['total']);
-        $this->assertSame([0, 0, 0, 1], $this->values(['tab' => 'today', 'search' => 'Zarina']));
+        $this->assertSame([0, 0, 0, 1, 0], $this->values(['tab' => 'today', 'search' => 'Zarina']));
     }
 
     /* ---------------- who is counted ---------------- */
@@ -152,7 +152,7 @@ class TodoTypeChipsTest extends TestCase
         $mine = $this->chips(['tab' => 'today'], $this->telecaller);
 
         $this->assertSame(2, $mine['total']);
-        $this->assertSame([0, 0, 0, 2], $this->values(['tab' => 'today'], $this->telecaller),
+        $this->assertSame([0, 0, 0, 2, 0], $this->values(['tab' => 'today'], $this->telecaller),
             "another owner's tasks must not be counted");
     }
 
@@ -168,7 +168,7 @@ class TodoTypeChipsTest extends TestCase
         $lead->delete();
 
         $this->assertSame(1, $this->chips(['tab' => 'today'])['total']);
-        $this->assertSame([0, 0, 0, 1], $this->values(['tab' => 'today']));
+        $this->assertSame([0, 0, 0, 1, 0], $this->values(['tab' => 'today']));
     }
 
     /* ---------------- which date the date filter means ---------------- */
@@ -195,8 +195,8 @@ class TodoTypeChipsTest extends TestCase
             'a March window must be what was completed in March, not what was planned then');
 
         // and the chips follow the same column
-        $this->assertSame([1, 0, 0, 0], $this->values(['tab' => 'completed', 'range' => 'today']));
-        $this->assertSame([0, 0, 0, 1], $this->values(['tab' => 'completed', 'from' => '2026-03-01', 'to' => '2026-03-31']));
+        $this->assertSame([1, 0, 0, 0, 0], $this->values(['tab' => 'completed', 'range' => 'today']));
+        $this->assertSame([0, 0, 0, 1, 0], $this->values(['tab' => 'completed', 'from' => '2026-03-01', 'to' => '2026-03-31']));
     }
 
     /**
@@ -302,7 +302,7 @@ class TodoTypeChipsTest extends TestCase
         return $this->props($query, $as)['types'];
     }
 
-    /** The four chip values in config order: call, whatsapp, meeting, site_visit. */
+    /** The chip values in config order: call, whatsapp, meeting, site_visit, email. */
     private function values(array $query = [], ?User $as = null): array
     {
         return array_column($this->chips($query, $as)['bars'], 'value');

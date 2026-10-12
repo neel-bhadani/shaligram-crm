@@ -34,6 +34,12 @@ class IntegrationLogger
 
         $message = "Lead #{$lead->id} created.";
 
+        if ($lead->mobile_number === null) {
+            $message .= blank($lead->email)
+                ? ' It has no phone number or email, so no follow-up was scheduled.'
+                : ' It has no phone number, so it was given an Email follow-up instead of a call.';
+        }
+
         if (($form['routed'] ?? null) === false) {
             $message .= ($form['form_id'] ?? null) === null
                 ? ' It came with no lead form, so it was filed under the fallback project.'
@@ -71,6 +77,16 @@ class IntegrationLogger
     public function failed(string $provider, ?string $externalId, string $message): IntegrationEvent
     {
         return $this->write($provider, 'failed', $externalId, $message);
+    }
+
+    /**
+     * A lead from Meta's Lead Ads Testing Tool that failed to import. The
+     * same outcome as failed() — nothing created, nothing retried — labelled
+     * so a routine test does not read as a production failure.
+     */
+    public function test(string $provider, ?string $externalId, string $message): IntegrationEvent
+    {
+        return $this->write($provider, 'test', $externalId, $message);
     }
 
     /**

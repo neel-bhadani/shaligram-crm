@@ -7,6 +7,7 @@ use App\Services\IncomingLeadService;
 use App\Services\IntegrationLogger;
 use App\Services\LeadFormRouter;
 use App\Services\MetaGraphClient;
+use App\Services\MetaGraphException;
 use App\Services\MetaLeadNormaliser;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -34,9 +35,10 @@ class ProcessMetaLead implements ShouldQueue
     use Queueable;
 
     /**
-     * Meta redelivers on any non-2xx, so the job's own retries are kept small:
-     * a Graph outage is better answered by Meta's redelivery an hour later than
-     * by this job sitting in the queue.
+     * Only a transient Graph failure is retried — see handle(). Meta redelivers
+     * on any non-2xx, so the job's own retries are kept small: a Graph outage
+     * is better answered by Meta's redelivery an hour later than by this job
+     * sitting in the queue.
      */
     public $tries = 3;
 
@@ -63,6 +65,7 @@ class ProcessMetaLead implements ShouldQueue
         LeadFormRouter $router,
     ): void {
         $integration = Integration::forProvider($this->provider);
+        $fieldData = null;
 
         try {
             if (! $integration->isReady()) {
@@ -80,6 +83,12 @@ class ProcessMetaLead implements ShouldQueue
              */
             $fieldData = $this->fieldData
                 ?? $graph->fieldData($this->leadgenId, $integration->setting('page_access_token'));
+
+            // a phoneless lead is now created, so a test lead — placeholder
+            // answers, no digits — has to be stopped here to stay uncreated
+            if ($normaliser->isMetaTestLead($fieldData)) {
+                throw new \RuntimeException("A lead from Meta's Lead Ads Testing Tool; not imported.");
+            }
 
             $normalised = $normaliser->normalise($fieldData, $this->leadgenId);
 
@@ -114,17 +123,30 @@ class ProcessMetaLead implements ShouldQueue
             }
         } catch (Throwable $e) {
             /*
-             | Logged as a readable failure and then rethrown.
+             | Logged as a readable failure, then retried only if retrying can
+             | help.
              |
              | The row is what the admin reads on the Integrations page — an
              | expired token has to be visible there, not only in a log file
-             | nobody opens. The rethrow is what lets the queue retry it and,
-             | after $tries, put it in failed_jobs where it can be replayed once
-             | the token is fixed.
+             | nobody opens. A transient Graph failure (timeout, 5xx, rate
+             | limit) is rethrown so the queue tries again. Anything else — a
+             | lead Meta has deleted, a form with no phone, a refused token —
+             | gives the same answer every time, so it is failed now: one row,
+             | not one per attempt, and still parked in failed_jobs where it
+             | can be replayed once the cause is fixed.
+             |
+             | A lead from Meta's testing tool is logged as `test` instead —
+             | the label only; what happens next is exactly the same.
              */
-            $log->failed($this->provider, $this->leadgenId, $e->getMessage());
+            $fieldData !== null && $normaliser->isMetaTestLead($fieldData)
+                ? $log->test($this->provider, $this->leadgenId, $e->getMessage())
+                : $log->failed($this->provider, $this->leadgenId, $e->getMessage());
 
-            throw $e;
+            if ($e instanceof MetaGraphException && $e->isRetryable()) {
+                throw $e;
+            }
+
+            $this->fail($e);
         }
     }
 }

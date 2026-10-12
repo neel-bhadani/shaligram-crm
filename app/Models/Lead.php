@@ -178,6 +178,16 @@ class Lead extends Model
         return $query;
     }
 
+    /**
+     * Neither a phone number nor an email: nobody can contact this person, so
+     * an imported one is given no follow-up — the one exception to every open
+     * lead having a pending to-do.
+     */
+    public function hasNoContactDetails(): bool
+    {
+        return $this->mobile_number === null && blank($this->email);
+    }
+
     public function scopeOpen($query)
     {
         /*

@@ -68,6 +68,24 @@ class ReportsTest extends TestCase
         );
     }
 
+    /** Paid-for clicks that produced nothing callable, counted per source. */
+    public function test_leads_with_no_phone_and_no_contact_details_are_counted_per_group(): void
+    {
+        $this->lead($this->alice, now()->subDays(2), ['source' => 'facebook']);
+        $this->lead($this->alice, now()->subDays(2), ['source' => 'facebook', 'mobile_number' => null, 'email' => 'a@example.test']);
+        $this->lead($this->alice, now()->subDays(2), ['source' => 'facebook', 'mobile_number' => null, 'email' => null]);
+        $this->lead($this->alice, now()->subDays(90), ['source' => 'facebook', 'mobile_number' => null]);
+
+        $props = $this->page('/reports/leads', ['group' => 'source', 'range' => '30'], $this->admin);
+        $facebook = collect($props['rows'])->keyBy('key')['facebook'];
+
+        $this->assertSame(3, $facebook['total']);
+        $this->assertSame(2, $facebook['no_phone'], 'the lead before the range is not counted');
+        $this->assertSame(1, $facebook['no_contact']);
+        $this->assertSame(2, $props['totals']['no_phone']);
+        $this->assertSame(1, $props['totals']['no_contact']);
+    }
+
     public function test_history_counts_a_lead_once_however_many_rows_it_has(): void
     {
         $lead = $this->lead($this->alice, now()->subDays(2), ['source' => 'facebook']);

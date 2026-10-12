@@ -68,14 +68,20 @@ class LeadRequest extends FormRequest
         return [
             'first_name' => ['required', 'string', 'max:100'],
             'middle_name' => ['nullable', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
+            /*
+             | Required, except when editing a lead that already lacks it — a
+             | one-word name from Facebook, a legacy row with no number. Making
+             | the user invent one first would leave that lead stuck: nobody
+             | could move its stage, and a telecaller cannot type one at all.
+             */
+            'last_name' => [$this->alreadyMissing('last_name') ? 'nullable' : 'required', 'string', 'max:100'],
 
             /*
              | Not unique. The same number may be on several leads, even in the
              | same project — the form warns about it (see
              | LeadController::checkDuplicate()) and the save goes through.
              */
-            'mobile_number' => ['required', 'digits:10'],
+            'mobile_number' => [$this->alreadyMissing('mobile_number') ? 'nullable' : 'required', 'digits:10'],
 
             'email' => ['nullable', 'email', 'max:150'],
             'project_id' => ['required', 'exists:projects,id'],
@@ -195,6 +201,14 @@ class LeadRequest extends FormRequest
             'channel_partner_id.required' => 'Choose the channel partner this lead came through.',
             'reason.required_if' => 'Select why this lead was lost.',
         ] + $this->followUpMessages();
+    }
+
+    /** True on an update of a lead whose $field is already empty. */
+    private function alreadyMissing(string $field): bool
+    {
+        $lead = $this->route('lead');
+
+        return $lead !== null && blank($lead->{$field});
     }
 
     /**

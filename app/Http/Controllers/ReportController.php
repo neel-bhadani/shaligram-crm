@@ -130,6 +130,22 @@ class ReportController extends Controller
         );
 
         /*
+         | The same intake, counting the leads that arrived unreachable: no
+         | phone, and no phone or email either. Paid-for clicks that produced
+         | nothing callable — per source and project, so the form or channel
+         | sending them can be found.
+         */
+        $gaps = $this->keyBy(
+            $scope()
+                ->whereBetween('created_at', [$from, $to])
+                ->whereNull('mobile_number')
+                ->selectRaw("$column as g, count(*) as no_phone, sum(case when email is null or email = '' then 1 else 0 end) as no_contact")
+                ->groupBy($column)
+                ->get(),
+            fn ($row) => ['no_phone' => (int) $row->no_phone, 'no_contact' => (int) $row->no_contact],
+        );
+
+        /*
          | HISTORY — todos.outcome_stage, over the same leads.
          |
          | joinSub against the scope rather than a join against `leads` with the
@@ -170,7 +186,7 @@ class ReportController extends Controller
         $groups = $this->leadGroups($dimension, array_merge(array_keys($totals), array_keys($byStage)));
         $sumTotal = array_sum($totals);
 
-        return collect($groups)->map(function (array $group) use ($totals, $byStage, $sumTotal) {
+        return collect($groups)->map(function (array $group) use ($totals, $byStage, $gaps, $sumTotal) {
             $key = $group['key'];
             $total = $totals[$key] ?? 0;
             $booked = $byStage[$key]['booking_done'] ?? 0;
@@ -182,6 +198,8 @@ class ReportController extends Controller
                 'visits' => $byStage[$key]['site_visit_done'] ?? 0,
                 'booked' => $booked,
                 'lost' => $byStage[$key]['lost'] ?? 0,
+                'no_phone' => $gaps[$key]['no_phone'] ?? 0,
+                'no_contact' => $gaps[$key]['no_contact'] ?? 0,
                 /*
                  | Bookings in the range over leads created in the range, which
                  | is what the brief asked for and what makes "conversion by
@@ -232,6 +250,8 @@ class ReportController extends Controller
             'visits' => array_sum(array_column($rows, 'visits')),
             'booked' => array_sum(array_column($rows, 'booked')),
             'lost' => array_sum(array_column($rows, 'lost')),
+            'no_phone' => array_sum(array_column($rows, 'no_phone')),
+            'no_contact' => array_sum(array_column($rows, 'no_contact')),
             // a dash when there is nothing to divide by. Never 0%.
             'conversion' => $total > 0 ? round($booked / $total * 100, 1) : null,
         ];

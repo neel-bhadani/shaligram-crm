@@ -33,7 +33,7 @@ class CheckConsistency extends Command
 
                 return $q->visibleTo($user);
             })
-            ->get(['id', 'first_name', 'last_name', 'stage', 'stage_changed_at']);
+            ->get(['id', 'first_name', 'last_name', 'mobile_number', 'email', 'stage', 'stage_changed_at']);
 
         $ids = $leads->pluck('id');
 
@@ -171,6 +171,9 @@ class CheckConsistency extends Command
 
         $rows = $leads
             ->reject(fn($l) => in_array($l->stage, $terminal))
+            // the one exception: a lead with no phone and no email is given no
+            // to-do on arrival, because there is nothing anybody could do
+            ->reject(fn($l) => $l->hasNoContactDetails() && ! isset($pending[$l->id]))
             ->map(fn($l) => [$l->id, $l->full_name, $l->stage, (int) ($pending[$l->id] ?? 0)])
             ->filter(fn($r) => $r[3] !== 1)
             ->values();
@@ -179,7 +182,7 @@ class CheckConsistency extends Command
             'Open leads without exactly one pending to-do',
             ['lead', 'name', 'stage', 'pending'],
             $rows,
-            'Lead::open()->doesntHave("pendingTodo") must return 0.'
+            'Lead::open()->doesntHave("pendingTodo") must return 0, except leads with no phone and no email.'
         );
     }
 
