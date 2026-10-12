@@ -229,8 +229,8 @@ class IntegrationController extends Controller
             ]);
         } catch (Throwable $e) {
             /*
-             | The job rethrows what it failed on, because a queued delivery has
-             | to be retried and then land in failed_jobs. Here there is no queue
+             | The job rethrows a transient failure, because a queued delivery
+             | has to be retried and then land in failed_jobs. Here there is no queue
              | and there is a person waiting, so the same failure is a sentence
              | on screen rather than a 500 page — and it has already been written
              | to the activity log by the job, which is where the admin will look
@@ -241,6 +241,12 @@ class IntegrationController extends Controller
         }
 
         $event = IntegrationEvent::forProvider($provider)->latest('id')->first();
+
+        // a failure retrying cannot fix is failed by the job rather than
+        // rethrown, so it arrives here as the row it wrote, not as the catch above
+        if ($event?->result === 'failed') {
+            return back()->with('error', 'The test lead failed: '.$event->message);
+        }
 
         return back()->with(
             $event?->result === 'created' ? 'success' : 'warning',

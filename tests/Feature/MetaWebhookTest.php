@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Services\IncomingLeadService;
+use App\Services\MetaGraphException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -539,6 +540,79 @@ class MetaWebhookTest extends TestCase
         $event = IntegrationEvent::firstOrFail();
         $this->assertSame('failed', $event->result);
         $this->assertStringContainsString('Session has expired', $event->message);
+    }
+
+    /**
+     * Meta's test leads can be fetched once and are then deleted, so a lead
+     * that "does not exist" never will. One call, one row, and the job is
+     * failed rather than handed back to the queue for another go.
+     */
+    public function test_a_lead_meta_has_deleted_is_logged_once_and_not_retried(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => [
+            'message' => "Unsupported get request. Object with ID 'lead-1' does not exist.",
+            'code' => 100,
+            'error_subcode' => 33,
+        ]], 400)]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        app()->call([$job, 'handle']);
+
+        $job->assertFailed();
+        Http::assertSentCount(1);
+
+        $event = IntegrationEvent::sole();
+        $this->assertSame('failed', $event->result);
+        $this->assertStringContainsString('does not exist', $event->message);
+    }
+
+    /**
+     * A timeout, a 5xx or a rate limit can come right on its own, so those are
+     * retried in place and then rethrown for the queue to try again later.
+     */
+    #[DataProvider('transientGraphFailures')]
+    public function test_a_transient_graph_failure_is_retried(int $status, array $error): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::response(['error' => $error], $status)]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        try {
+            app()->call([$job, 'handle']);
+            $this->fail('A transient failure should be rethrown for the queue to retry.');
+        } catch (MetaGraphException $e) {
+            $this->assertTrue($e->isRetryable());
+        }
+
+        $job->assertNotFailed();
+        Http::assertSentCount(2);
+        $this->assertSame('failed', IntegrationEvent::sole()->result);
+    }
+
+    public static function transientGraphFailures(): array
+    {
+        return [
+            'server error' => [500, ['message' => 'An unexpected error has occurred.', 'code' => 2]],
+            'http 429' => [429, ['message' => 'Too many requests.']],
+            'page rate limit on a 400' => [400, ['message' => 'Application request limit reached', 'code' => 4]],
+        ];
+    }
+
+    public function test_a_graph_timeout_is_retried(): void
+    {
+        Http::fake(['graph.facebook.com/*' => Http::failedConnection()]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        $this->expectException(MetaGraphException::class);
+
+        try {
+            app()->call([$job, 'handle']);
+        } finally {
+            $job->assertNotFailed();
+            $this->assertSame('failed', IntegrationEvent::sole()->result);
+        }
     }
 
     /**

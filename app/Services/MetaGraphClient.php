@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 /**
  * The one call this integration makes to Meta.
@@ -29,31 +32,15 @@ class MetaGraphClient
      *
      * @return list<array{name: string, values: list<string>}>
      *
-     * @throws RuntimeException when Meta refuses or answers with no field data
+     * @throws MetaGraphException when Meta refuses or cannot be reached
+     * @throws RuntimeException when Meta answers with no field data
      */
     public function fieldData(string $leadgenId, string $pageAccessToken): array
     {
-        $base = rtrim(config('integrations.meta.graph_base'), '/');
-        $version = config('integrations.meta.graph_version');
-
-        $response = Http::timeout(config('integrations.meta.timeout'))
-            ->retry(2, 200, throw: false)
-            ->get("{$base}/{$version}/{$leadgenId}", [
-                'access_token' => $pageAccessToken,
-                'fields' => 'id,created_time,field_data',
-            ]);
+        $response = $this->get('lead fetch', $leadgenId, $pageAccessToken, ['fields' => 'id,created_time,field_data']);
 
         if ($response->failed()) {
-            /*
-             | Meta's own message, not a generic one. "Error validating access
-             | token: Session has expired" is the difference between an admin
-             | who knows to paste a new token and an admin who files a bug —
-             | and an expired page token is the commonest way this integration
-             | dies months after it was set up.
-             */
-            $error = $response->json('error.message') ?? $response->body();
-
-            throw new RuntimeException("Graph API refused the lead fetch ({$response->status()}): {$error}");
+            throw MetaGraphException::fromResponse('lead fetch', $response);
         }
 
         $fields = $response->json('field_data');
@@ -68,14 +55,14 @@ class MetaGraphClient
     /**
      * A lead form's name as Ads Manager shows it, or null when Meta has none.
      *
-     * @throws RuntimeException when Meta refuses
+     * @throws MetaGraphException when Meta refuses or cannot be reached
      */
     public function formName(string $formId, string $pageAccessToken): ?string
     {
-        $response = $this->get($formId, $pageAccessToken, ['fields' => 'name']);
+        $response = $this->get('form lookup', $formId, $pageAccessToken, ['fields' => 'name']);
 
         if ($response->failed()) {
-            throw new RuntimeException("Graph API refused the form lookup ({$response->status()}): ".$this->errorOf($response));
+            throw MetaGraphException::fromResponse('form lookup', $response);
         }
 
         $name = trim((string) $response->json('name'));
@@ -88,7 +75,7 @@ class MetaGraphClient
      *
      * @return list<array{id: string, name: ?string}>
      *
-     * @throws RuntimeException when Meta refuses
+     * @throws MetaGraphException when Meta refuses or cannot be reached
      */
     public function leadForms(string $pageId, string $pageAccessToken): array
     {
@@ -98,14 +85,14 @@ class MetaGraphClient
         // a page with more than a thousand forms is not one this is built for;
         // the cap stops a paging bug on Meta's side becoming an endless loop
         for ($page = 0; $page < 10; $page++) {
-            $response = $this->get("{$pageId}/leadgen_forms", $pageAccessToken, array_filter([
+            $response = $this->get('form list', "{$pageId}/leadgen_forms", $pageAccessToken, array_filter([
                 'fields' => 'id,name',
                 'limit' => 100,
                 'after' => $after,
             ]));
 
             if ($response->failed()) {
-                throw new RuntimeException("Graph API refused the form list ({$response->status()}): ".$this->errorOf($response));
+                throw MetaGraphException::fromResponse('form list', $response);
             }
 
             foreach ((array) $response->json('data', []) as $form) {
@@ -124,19 +111,25 @@ class MetaGraphClient
         return $forms;
     }
 
-    private function get(string $path, string $pageAccessToken, array $query): Response
+    /**
+     * One GET against Graph, retried in place only when the failure is
+     * transient — a timeout, a 5xx or a rate limit. Anything else comes back
+     * on the first answer for the caller to turn into a MetaGraphException.
+     *
+     * @throws MetaGraphException when Meta cannot be reached at all
+     */
+    private function get(string $what, string $path, string $pageAccessToken, array $query): Response
     {
         $base = rtrim(config('integrations.meta.graph_base'), '/');
         $version = config('integrations.meta.graph_version');
 
-        return Http::timeout(config('integrations.meta.timeout'))
-            ->retry(2, 200, throw: false)
-            ->get("{$base}/{$version}/{$path}", ['access_token' => $pageAccessToken] + $query);
-    }
-
-    /** Meta's own error message — see fieldData() for why it is passed on. */
-    private function errorOf(Response $response): string
-    {
-        return $response->json('error.message') ?? $response->body();
+        try {
+            return Http::timeout(config('integrations.meta.timeout'))
+                ->retry(2, 200, fn (Throwable $e): bool => $e instanceof ConnectionException
+                    || ($e instanceof RequestException && MetaGraphException::isTransient($e->response)), throw: false)
+                ->get("{$base}/{$version}/{$path}", ['access_token' => $pageAccessToken] + $query);
+        } catch (ConnectionException $e) {
+            throw MetaGraphException::unreachable($what, $e->getMessage());
+        }
     }
 }
