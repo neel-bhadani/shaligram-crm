@@ -64,6 +64,28 @@ class MetaLeadNormaliser
     }
 
     /**
+     * Whether Meta's Lead Ads Testing Tool made this lead.
+     *
+     * The tool fills every answer with "<test lead: dummy data for …>". That
+     * wording is Meta's, not a documented flag, so if it changes this simply
+     * stops matching and the lead is labelled the way any other failure is.
+     *
+     * @param  list<array{name?: string, values?: list<string>}>  $fieldData
+     */
+    public function isMetaTestLead(array $fieldData): bool
+    {
+        foreach ($fieldData as $field) {
+            foreach ((array) ($field['values'] ?? []) as $value) {
+                if (str_contains((string) $value, '<test lead:')) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Sort the answers into the buckets this application has columns for,
      * and collect the names of the ones it does not.
      *

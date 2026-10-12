@@ -74,6 +74,16 @@ class IntegrationLogger
     }
 
     /**
+     * A lead from Meta's Lead Ads Testing Tool that failed to import. The
+     * same outcome as failed() — nothing created, nothing retried — labelled
+     * so a routine test does not read as a production failure.
+     */
+    public function test(string $provider, ?string $externalId, string $message): IntegrationEvent
+    {
+        return $this->write($provider, 'test', $externalId, $message);
+    }
+
+    /**
      * @param  array{form_id?: ?string, form_name?: ?string, routed?: ?bool}  $form
      */
     private function write(string $provider, string $result, ?string $externalId, string $message, ?int $leadId = null, array $form = []): IntegrationEvent

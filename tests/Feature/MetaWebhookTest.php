@@ -543,6 +543,30 @@ class MetaWebhookTest extends TestCase
     }
 
     /**
+     * Meta's Lead Ads Testing Tool fills every answer with placeholder text,
+     * so its leads fail on the phone number. Same outcome as any failure —
+     * nothing created, nothing retried — but labelled as a test.
+     */
+    public function test_a_lead_from_metas_testing_tool_is_logged_as_a_test(): void
+    {
+        $this->fakeGraph([
+            ['name' => 'full_name',    'values' => ['<test lead: dummy data for full_name>']],
+            ['name' => 'phone_number', 'values' => ['<test lead: dummy data for phone_number>']],
+        ]);
+
+        $job = (new ProcessMetaLead('facebook', 'lead-1'))->withFakeQueueInteractions();
+
+        app()->call([$job, 'handle']);
+
+        $job->assertFailed();
+        $this->assertSame(0, Lead::count());
+
+        $event = IntegrationEvent::sole();
+        $this->assertSame('test', $event->result);
+        $this->assertStringContainsString('phone number', $event->message);
+    }
+
+    /**
      * Meta's test leads can be fetched once and are then deleted, so a lead
      * that "does not exist" never will. One call, one row, and the job is
      * failed rather than handed back to the queue for another go.

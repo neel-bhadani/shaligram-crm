@@ -65,6 +65,7 @@ class ProcessMetaLead implements ShouldQueue
         LeadFormRouter $router,
     ): void {
         $integration = Integration::forProvider($this->provider);
+        $fieldData = null;
 
         try {
             if (! $integration->isReady()) {
@@ -127,8 +128,13 @@ class ProcessMetaLead implements ShouldQueue
              | gives the same answer every time, so it is failed now: one row,
              | not one per attempt, and still parked in failed_jobs where it
              | can be replayed once the cause is fixed.
+             |
+             | A lead from Meta's testing tool is logged as `test` instead —
+             | the label only; what happens next is exactly the same.
              */
-            $log->failed($this->provider, $this->leadgenId, $e->getMessage());
+            $fieldData !== null && $normaliser->isMetaTestLead($fieldData)
+                ? $log->test($this->provider, $this->leadgenId, $e->getMessage())
+                : $log->failed($this->provider, $this->leadgenId, $e->getMessage());
 
             if ($e instanceof MetaGraphException && $e->isRetryable()) {
                 throw $e;
