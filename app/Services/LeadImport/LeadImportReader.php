@@ -157,7 +157,11 @@ class LeadImportReader
                 } elseif (is_float($value)) {
                     $value = rtrim(rtrim(sprintf('%.10F', $value), '0'), '.');
                 }
-                $cells[$column] = trim(ltrim((string) $value, "\xEF\xBB\xBF"));
+                $value = (string) $value;
+                if (str_starts_with($value, "\xEF\xBB\xBF")) {
+                    $value = substr($value, 3);
+                }
+                $cells[$column] = trim($value);
             }
             $grid[$row] = $cells;
         }
