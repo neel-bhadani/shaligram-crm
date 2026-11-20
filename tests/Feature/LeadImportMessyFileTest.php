@@ -314,4 +314,26 @@ class LeadImportMessyFileTest extends TestCase
         $this->assertSame('9876543211', Lead::where('mobile_number', '9876543211')->firstOrFail()->mobile_number);
         $this->assertSame('9876543212', Lead::where('mobile_number', '9876543212')->firstOrFail()->mobile_number);
     }
+
+    public function test_names_starting_with_0xef_bytes_survive_and_only_a_real_bom_is_stripped(): void
+    {
+        $this->actors();
+        $names = ['ＭＡＨＡＤＥＶ', "\u{F8FF} 😈Shivesh Patel😈 \u{F8FF}", 'Pooja Mandal 🥰🥰', "\u{FEFF}Ravi Kumar"];
+        $upload = $this->uploadSheet('xlsx', function (Spreadsheet $book) use ($names): Spreadsheet {
+            $sheet = $book->getActiveSheet()->setTitle('Sheet1');
+            $sheet->fromArray([['Name', 'Mobile', 'Project']], null, 'A1');
+            foreach ($names as $index => $name) {
+                $sheet->fromArray([[$name, '987654321'.$index, 'Alpha']], null, 'A'.($index + 2));
+            }
+
+            return $book;
+        });
+
+        $preview = $this->parsed($upload);
+
+        $this->assertSame(
+            ['ＭＡＨＡＤＥＶ', "\u{F8FF} 😈Shivesh Patel😈 \u{F8FF}", 'Pooja Mandal 🥰🥰', 'Ravi Kumar'],
+            array_map(fn (array $row): string => $row['raw']['Name'], $preview['previewRows']),
+        );
+    }
 }
