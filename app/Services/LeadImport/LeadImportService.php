@@ -7,6 +7,7 @@ use App\Models\LeadImportRecord;
 use App\Models\User;
 use App\Services\AlertService;
 use App\Services\Automation\RuleEngine;
+use App\Services\LeadAssignmentService;
 use App\Services\LeadCreationService;
 use App\Services\LeadFollowUpService;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -19,7 +20,7 @@ class LeadImportService
     /** The history remark written on every lead an import resets to Fresh. */
     public const RESET_REMARK = 'Stage reset to Fresh by bulk import.';
 
-    public function __construct(private LeadCreationService $creation, private LeadFollowUpService $followUps, private RuleEngine $rules, private AlertService $alerts) {}
+    public function __construct(private LeadCreationService $creation, private LeadFollowUpService $followUps, private LeadAssignmentService $assignment, private RuleEngine $rules, private AlertService $alerts) {}
 
     /**
      * Each chunk commits atomically; row savepoints isolate recoverable failures.
@@ -92,10 +93,16 @@ class LeadImportService
     }
 
     /**
-     * Move every live lead on this row's mobile and project that is not yet
-     * Fresh back to Fresh, through the same stage-change path as the lead form:
-     * history row, activity timeline, and the row's planned follow-up replacing
-     * whatever was pending. The owner is left as it is.
+     * Move every live lead on this row's mobile and project that is neither
+     * Fresh nor booked back to Fresh, through the same stage-change path as the
+     * lead form: history row, activity timeline, and the row's planned
+     * follow-up replacing whatever was pending.
+     *
+     * Fresh is telecaller work, so a lead held by a salesperson (or anyone
+     * else who is not a telecaller or admin) is then given to the row's
+     * telecaller — or, when the row's assignee is not an active telecaller,
+     * the next one from the telecaller desk — and its pending follow-up moves
+     * with it. A lead already with a telecaller or admin keeps its owner.
      *
      * The row is recorded like a created one (outcome `reset`), so importing
      * the same file again finds it already imported and changes nothing.
@@ -112,15 +119,23 @@ class LeadImportService
         }
         $leads = Lead::where('mobile_number', $row['attributes']['mobile_number'])
             ->where('project_id', $row['attributes']['project_id'])
-            ->where('stage', '!=', 'fresh')
+            ->whereNotIn('stage', LeadImportPlanner::NEVER_RESET)
             ->orderBy('id')
             ->get();
         if ($leads->isEmpty()) {
-            return $row + ['result' => 'skipped', 'reason' => 'Lead already exists and is already at Fresh.'];
+            return $row + ['result' => 'skipped', 'reason' => 'Lead already exists and is already at Fresh or booked.'];
         }
         $when = $row['follow_up_at'] ? Carbon::parse($row['follow_up_at'])->setTimezone(config('app.timezone')) : null;
         foreach ($leads as $lead) {
             $this->followUps->changeStage($lead, 'fresh', [], $when, $row['follow_up_type'], null, self::RESET_REMARK);
+            $lead->refresh();
+            $holder = $lead->assigned_to ? User::find($lead->assigned_to) : null;
+            if (! in_array($holder?->role, ['telecaller', 'admin'], true)) {
+                $telecaller = $this->telecallerFor($row, $lead);
+                if ($telecaller) {
+                    $this->followUps->assign($lead, $telecaller);
+                }
+            }
         }
         $followUps = $when ? $leads->count() : 0;
         LeadImportRecord::create([
@@ -133,5 +148,17 @@ class LeadImportService
             'result' => 'updated', 'lead_id' => $leads->first()->id, 'lead_ids' => $leads->modelKeys(),
             'followUps' => $followUps,
         ];
+    }
+
+    /** The row's assignee when it is an active telecaller, else the next one from the telecaller desk; null when the desk is empty. */
+    private function telecallerFor(array $row, Lead $lead): ?User
+    {
+        $assignee = $row['assigned_to'] ? User::find($row['assigned_to']) : null;
+        if ($assignee && $assignee->is_active && $assignee->role === 'telecaller') {
+            return $assignee;
+        }
+        $owner = $this->assignment->ownerFor('fresh', null, $lead->project_id);
+
+        return $owner?->role === 'telecaller' ? $owner : null;
     }
 }

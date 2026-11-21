@@ -99,7 +99,7 @@ class LeadImportExistingLeadTest extends TestCase
         return $result;
     }
 
-    public function test_an_existing_lead_is_reset_to_fresh_with_the_planned_follow_up_instead_of_being_skipped(): void
+    public function test_a_salesperson_held_lead_is_reset_to_fresh_and_handed_to_the_rows_telecaller_with_one_follow_up(): void
     {
         $a = $this->actors();
         $lead = $this->existingLead($a['project'], $a['sales'], 'site_visit_scheduled');
@@ -122,15 +122,90 @@ class LeadImportExistingLeadTest extends TestCase
         $lead->refresh();
         $this->assertSame('fresh', $lead->stage);
         $this->assertSame('Existing', $lead->first_name, 'only the stage changes');
-        $this->assertSame($a['sales']->id, $lead->assigned_to, 'the owner is kept');
+        $this->assertSame($final['previewRows'][0]['assigned_to'], $a['caller']->id, 'the row was planned for the telecaller');
+        $this->assertSame($a['caller']->id, $lead->assigned_to, 'Fresh work goes to the telecaller');
+        $this->assertSame('telecaller', $lead->assigned_role);
         $pending = $lead->todos()->where('status', 'pending')->get();
         $this->assertCount(1, $pending, 'the planned follow-up replaces the old pending one');
+        $this->assertSame($a['caller']->id, $pending->first()->assigned_to, 'the follow-up moved with the lead');
         $this->assertSame('2026-09-23 14:30', $pending->first()->scheduled_at->setTimezone('Asia/Kolkata')->format('Y-m-d H:i'));
         $this->assertSame(1, $lead->todos()->where('status', 'cancelled')->count());
         $this->assertTrue($lead->todos()->where('status', 'completed')->where('outcome_stage', 'fresh')->where('remarks', LeadImportService::RESET_REMARK)->exists(), 'the reset is in the stage history');
     }
 
-    public function test_a_terminal_existing_lead_is_reopened_at_fresh_with_a_follow_up(): void
+    public function test_a_lead_held_by_a_telecaller_or_admin_keeps_its_owner_when_reset(): void
+    {
+        $a = $this->actors();
+        $otherCaller = User::factory()->create(['role' => 'telecaller', 'is_active' => true]);
+        $withCaller = $this->existingLead($a['project'], $otherCaller, 'connected');
+        $withAdmin = Lead::create(['first_name' => 'Admin', 'last_name' => '', 'mobile_number' => '9876500002', 'project_id' => $a['project']->id, 'source' => 'facebook', 'stage' => 'not_connected', 'assigned_to' => $a['admin']->id, 'assigned_role' => 'admin']);
+        Todo::create(['lead_id' => $withAdmin->id, 'assigned_to' => $a['admin']->id, 'scheduled_at' => now()->addDay(), 'type' => 'call', 'status' => 'pending']);
+        $upload = $this->upload([$this->row(), $this->row(['Mobile' => '9876500002'])]);
+        $this->parsed($upload);
+
+        $this->assertSame(2, $this->finish($upload, $this->finalPreview($upload))['updated']);
+
+        foreach ([[$withCaller, $otherCaller], [$withAdmin, $a['admin']]] as [$lead, $owner]) {
+            $lead->refresh();
+            $this->assertSame('fresh', $lead->stage);
+            $this->assertSame($owner->id, $lead->assigned_to);
+            $this->assertSame([$owner->id], $lead->todos()->where('status', 'pending')->pluck('assigned_to')->all());
+        }
+    }
+
+    public function test_a_booked_existing_lead_is_skipped_and_left_untouched(): void
+    {
+        $a = $this->actors();
+        $lead = $this->existingLead($a['project'], $a['sales'], 'booking_done', withPendingTodo: false);
+        $upload = $this->upload([$this->row()]);
+
+        $preview = $this->parsed($upload);
+        $this->assertSame('skip_duplicate_db', $preview['rows'][0]['outcome']);
+        $this->assertSame('Mobile 9876543210 is a booked lead in project Alpha. Not moved to Fresh.', $preview['rows'][0]['errors'][0]);
+
+        $result = $this->finish($upload, $this->finalPreview($upload));
+        $this->assertSame([0, 1], [$result['updated'], $result['skipped']]);
+        $lead->refresh();
+        $this->assertSame('booking_done', $lead->stage);
+        $this->assertSame($a['sales']->id, $lead->assigned_to);
+        $this->assertSame(0, $lead->todos()->count());
+    }
+
+    public function test_a_lead_booked_between_the_preview_and_the_import_is_not_reset(): void
+    {
+        $a = $this->actors();
+        $lead = $this->existingLead($a['project'], $a['sales'], 'in_discussion');
+        $upload = $this->upload([$this->row()]);
+        $this->parsed($upload);
+        $final = $this->finalPreview($upload);
+        $this->assertSame(1, $final['summary']['toUpdate']);
+        $lead->update(['stage' => 'booking_done']);
+
+        $result = $this->finish($upload, $final);
+
+        $this->assertSame([0, 1], [$result['updated'], $result['skipped']]);
+        $this->assertSame('booking_done', $lead->refresh()->stage);
+        $this->assertSame(0, $lead->todos()->where('outcome_stage', 'fresh')->count());
+    }
+
+    public function test_the_importer_itself_never_resets_a_booked_lead_from_a_stale_plan(): void
+    {
+        $a = $this->actors();
+        $lead = $this->existingLead($a['project'], $a['sales'], 'in_discussion');
+        $upload = $this->upload([$this->row()]);
+        $this->parsed($upload);
+        $this->finalPreview($upload);
+        $row = app(LeadImportStore::class)->read($a['admin'], $upload['token'])['plan'][0];
+        $this->assertSame('update', $row['outcome']);
+        $lead->update(['stage' => 'booking_done']);
+
+        $results = app(LeadImportService::class)->import([$row], $a['admin'], 'stale-plan', now()->format('Y-m-d H:i:s'));
+
+        $this->assertSame('skipped', $results[0]['result']);
+        $this->assertSame('booking_done', $lead->refresh()->stage);
+    }
+
+    public function test_a_lost_existing_lead_is_reopened_at_fresh_with_a_follow_up(): void
     {
         $a = $this->actors();
         $lead = $this->existingLead($a['project'], $a['sales'], 'lost', withPendingTodo: false);
@@ -142,6 +217,7 @@ class LeadImportExistingLeadTest extends TestCase
         $this->assertSame(1, $result['updated']);
         $this->assertSame('fresh', $lead->refresh()->stage);
         $this->assertSame(1, $lead->todos()->where('status', 'pending')->count(), 'a reopened lead is never left without a pending follow-up');
+        $this->assertSame($a['caller']->id, $lead->assigned_to, 'a salesperson-held lead goes to the telecaller');
     }
 
     public function test_an_already_fresh_or_deleted_existing_lead_is_still_skipped_and_left_untouched(): void

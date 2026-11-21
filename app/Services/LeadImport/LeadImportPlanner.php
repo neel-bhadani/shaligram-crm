@@ -28,6 +28,9 @@ class LeadImportPlanner
      */
     public const NAME_SPLITS = ['first_middle_last', 'first_last'];
 
+    /** Existing-lead stages a re-import never moves back to Fresh: already there, or booked. */
+    public const NEVER_RESET = ['fresh', 'booking_done'];
+
     /** The only fields per-row edits may replace. Everything else is derived or import-session state. */
     private const OVERRIDE_FIELDS = ['first_name', 'middle_name', 'last_name', 'mobile_number', 'email', 'project', 'source', 'stage', 'created_at'];
 
@@ -272,10 +275,10 @@ class LeadImportPlanner
      * nothing, whatever happened to its leads since.
      *
      * Otherwise a row whose mobile is already a live lead on its project is not skipped:
-     * it plans an `update` that resets every live match not yet at Fresh back to
-     * Fresh. It is still skipped when every live match is already Fresh
-     * (nothing to change) or the only match is a deleted lead (restore it
-     * instead). A row with its own validation problems stays an `error` so it
+     * it plans an `update` that resets every live match not yet at Fresh and
+     * not booked back to Fresh. It is still skipped when every live match is
+     * booked, already Fresh (nothing to change), or the only match is a
+     * deleted lead (restore it instead). A row with its own validation problems stays an `error` so it
      * can be fixed first, and an `update` needs permission to edit every lead
      * it would reset.
      *
@@ -332,10 +335,13 @@ class LeadImportPlanner
             } elseif ($matches !== []) {
                 $draft['codes'][] = 'duplicatesInDatabase';
                 $live = array_values(array_filter($matches, fn (Lead $lead): bool => ! $lead->trashed()));
-                $toReset = array_values(array_filter($live, fn (Lead $lead): bool => $lead->stage !== 'fresh'));
+                $toReset = array_values(array_filter($live, fn (Lead $lead): bool => ! in_array($lead->stage, self::NEVER_RESET, true)));
                 $locked = $user ? array_values(array_filter($toReset, fn (Lead $lead): bool => ! $user->can('update', $lead))) : [];
                 if ($live === []) {
                     $draft['errors'][] = "Mobile {$a['mobile_number']} is on a deleted lead in project {$draft['project']}. Restore that lead instead of importing it again.";
+                    $draft['outcome'] = 'skip_duplicate_db';
+                } elseif ($toReset === [] && array_filter($live, fn (Lead $lead): bool => $lead->stage !== 'booking_done') === []) {
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} is a booked lead in project {$draft['project']}. Not moved to Fresh.";
                     $draft['outcome'] = 'skip_duplicate_db';
                 } elseif ($toReset === []) {
                     $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']} and is already at Fresh.";
