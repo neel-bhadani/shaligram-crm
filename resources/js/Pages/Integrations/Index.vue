@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FacebookSettingsModal from '@/Components/FacebookSettingsModal.vue'
+import WhatsAppSettingsModal from '@/Components/WhatsAppSettingsModal.vue'
 
 /*
  | Integrations, admin only.
@@ -11,8 +12,8 @@ import FacebookSettingsModal from '@/Components/FacebookSettingsModal.vue'
  | link for everyone else, but hiding a link is presentation and the middleware
  | is the answer. Nothing on this page is a permission check.
  |
- | One card per platform, and only Facebook is built. The other three are drawn
- | from the same config and the same component, disabled, so adding one later is
+ | One card per platform; Facebook and WhatsApp (11za) are built. The others are
+ | drawn from the same config and the same component, disabled, so adding one later is
  | a `built` flag and a settings modal rather than a new page — and so that the
  | client can see on day one that the shape of the thing is planned rather than
  | forgotten.
@@ -31,6 +32,7 @@ const configuring = ref(null)
 const testing = ref(null)
 
 const facebookCard = computed(() => props.cards.find(c => c.provider === 'facebook'))
+const whatsAppCard = computed(() => props.cards.find(c => c.provider === 'whatsapp' && c.built))
 
 const configureOpen = computed({
   get: () => configuring.value !== null,
@@ -233,6 +235,14 @@ const unmappedForms = computed(() =>
       v-if="facebookCard"
       :show="configuring === 'facebook'"
       :card="facebookCard"
+      :options="options"
+      @close="configuring = null"
+    />
+
+    <WhatsAppSettingsModal
+      v-if="whatsAppCard"
+      :show="configuring === 'whatsapp'"
+      :card="whatsAppCard"
       :options="options"
       @close="configuring = null"
     />

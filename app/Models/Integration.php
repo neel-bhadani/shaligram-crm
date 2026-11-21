@@ -20,13 +20,19 @@ class Integration extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'settings'         => 'encrypted:array',
-        'is_active'        => 'boolean',
+        'settings' => 'encrypted:array',
+        'is_active' => 'boolean',
         'last_received_at' => 'datetime',
     ];
 
     /** The keys that must never be sent to the browser in the clear. */
-    public const SECRET_KEYS = ['page_access_token', 'app_secret'];
+    public const SECRET_KEYS = ['page_access_token', 'app_secret', 'api_key'];
+
+    /** What each family of integration cannot work without. */
+    public const REQUIRED_SETTINGS = [
+        'meta' => ['page_access_token', 'app_secret', 'default_project_id', 'assign_to_user_id'],
+        'whatsapp' => ['api_key', 'default_project_id', 'assign_to_user_id'],
+    ];
 
     public function events()
     {
@@ -85,6 +91,30 @@ class Integration extends Model
     }
 
     /**
+     * The key 11za sends in the `x-api-key` header.
+     *
+     * Generated once and then stable: it is pasted into 11za's webhook
+     * settings, so regenerating it on every save would break a live webhook.
+     */
+    public function ensureApiKey(): string
+    {
+        if (! $this->setting('api_key')) {
+            $this->mergeSettings(['api_key' => Str::random(40)]);
+            $this->save();
+        }
+
+        return $this->setting('api_key');
+    }
+
+    /** Whether the key on a request is ours. hash_equals, so timing leaks nothing. */
+    public function apiKeyMatches(?string $presented): bool
+    {
+        $expected = (string) $this->setting('api_key');
+
+        return $expected !== '' && hash_equals($expected, (string) $presented);
+    }
+
+    /**
      * Configured well enough to accept a lead.
      *
      * The four things the import cannot proceed without: something to
@@ -94,7 +124,15 @@ class Integration extends Model
      */
     public function isConfigured(): bool
     {
-        foreach (['page_access_token', 'app_secret', 'default_project_id', 'assign_to_user_id'] as $key) {
+        $family = config("integrations.providers.{$this->provider}.family");
+        $required = self::REQUIRED_SETTINGS[$family] ?? null;
+
+        // a provider with no known family can never be ready
+        if ($required === null) {
+            return false;
+        }
+
+        foreach ($required as $key) {
             if (blank($this->setting($key))) {
                 return false;
             }
@@ -124,6 +162,6 @@ class Integration extends Model
             return null;
         }
 
-        return str_repeat('•', 8) . substr($value, -4);
+        return str_repeat('•', 8).substr($value, -4);
     }
 }
