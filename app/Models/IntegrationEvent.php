@@ -30,6 +30,23 @@ class IntegrationEvent extends Model
         return $query->latest('id')->limit($limit);
     }
 
+    /**
+     * Events whose `form_id` names this 11za tag. A WhatsApp event stores
+     * every routing tag of its lead, comma-joined, so a tag is matched as a
+     * whole item of that list rather than by equality.
+     */
+    public function scopeTaggedWith($query, string $tag)
+    {
+        // an explicit escape character: SQLite has no default one
+        $like = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $tag);
+
+        return $query->where(fn ($q) => $q
+            ->where('form_id', $tag)
+            ->orWhereRaw("form_id like ? escape '!'", ["{$like},%"])
+            ->orWhereRaw("form_id like ? escape '!'", ["%,{$like}"])
+            ->orWhereRaw("form_id like ? escape '!'", ["%,{$like},%"]));
+    }
+
     public function scopeForProvider($query, string $provider)
     {
         return $query->where('provider', $provider);

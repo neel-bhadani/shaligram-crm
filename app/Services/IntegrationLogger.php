@@ -24,7 +24,10 @@ class IntegrationLogger
      * went and why, and the activity log flags the row, so a form with no
      * project is visible on every lead it sends rather than only in an alert.
      *
-     * @param  array{form_id?: ?string, form_name?: ?string, routed?: ?bool}  $form
+     * `note` replaces that Facebook wording with the caller's own — the 11za
+     * job explains routing by tag rather than by form.
+     *
+     * @param  array{form_id?: ?string, form_name?: ?string, routed?: ?bool, note?: ?string}  $form
      */
     public function created(string $provider, string $externalId, Lead $lead, array $form = []): IntegrationEvent
     {
@@ -40,7 +43,9 @@ class IntegrationLogger
                 : ' It has no phone number, so it was given an Email follow-up instead of a call.';
         }
 
-        if (($form['routed'] ?? null) === false) {
+        if (filled($form['note'] ?? null)) {
+            $message .= ' '.$form['note'];
+        } elseif (($form['routed'] ?? null) === false) {
             $message .= ($form['form_id'] ?? null) === null
                 ? ' It came with no lead form, so it was filed under the fallback project.'
                 : " Form \"{$form['form_name']}\" has no active project, so it was filed under the fallback project.";
@@ -78,9 +83,23 @@ class IntegrationLogger
      * A platform told us about a change to a lead we already have, and nothing
      * was changed. Linked to that lead so the row in Recent activity is too.
      */
-    public function updateReceived(string $provider, string $externalId, Lead $lead, string $message): IntegrationEvent
+    /**
+     * @param  array{form_id?: ?string, form_name?: ?string}  $form
+     */
+    public function updateReceived(string $provider, string $externalId, Lead $lead, string $message, array $form = []): IntegrationEvent
     {
-        return $this->write($provider, 'update_received', $externalId, $message, $lead->id);
+        return $this->write($provider, 'update_received', $externalId, $message, $lead->id, $form);
+    }
+
+    /**
+     * A lead that arrived unrouted, moved to the project its platform has
+     * since tagged it for. Linked to the lead, like updateReceived().
+     *
+     * @param  array{form_id?: ?string, form_name?: ?string}  $form
+     */
+    public function movedToProject(string $provider, string $externalId, Lead $lead, string $message, array $form = []): IntegrationEvent
+    {
+        return $this->write($provider, 'moved_to_project', $externalId, $message, $lead->id, $form);
     }
 
     public function failed(string $provider, ?string $externalId, string $message): IntegrationEvent

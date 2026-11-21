@@ -103,8 +103,10 @@ class IntegrationController extends Controller
     }
 
     /**
-     * The 11za card: where its leads go and the switch. Merged into the same
-     * `whatsapp` row the outbound sending settings live on, so those are kept.
+     * The 11za card: where its leads go, the switch and the project-by-tag
+     * table. Merged into the same `whatsapp` row the outbound sending settings
+     * live on, so those are kept; the tags are `lead_form_routes` rows and
+     * never touch that row at all.
      */
     private function updateWhatsApp(IntegrationSettingsRequest $request, Integration $integration)
     {
@@ -118,6 +120,9 @@ class IntegrationController extends Controller
 
         // stable across saves — it is pasted into 11za
         $integration->ensureApiKey();
+
+        // the same table and the same upsert as Facebook's lead forms
+        $this->saveForms($integration->provider, (array) $request->validated('tags', []), (array) $request->validated('removed_tags', []));
 
         return back()->with('success', 'WhatsApp settings saved.');
     }
@@ -406,6 +411,7 @@ class IntegrationController extends Controller
                 'assign_to_user_id' => $integration?->setting('assign_to_user_id'),
             ],
             'forms' => null,
+            'tags' => $this->tags($provider),
             'webhook' => [
                 'url' => route('webhooks.whatsapp.customers'),
                 // generated on the first save, like the Meta verify token
@@ -446,6 +452,39 @@ class IntegrationController extends Controller
                 'project_id' => $r->project_id,
                 'assign_to_user_id' => $r->assign_to_user_id,
                 'unrouted_leads' => (int) ($unrouted[$r->form_id] ?? 0),
+            ])
+            ->all();
+    }
+
+    /**
+     * The 11za tag table, unmapped tags first like the lead forms, each with
+     * how many leads carried it and how many of those went to the default
+     * project since the row was created.
+     *
+     * Counted per row rather than in one join: a WhatsApp event lists all of
+     * its lead's tags in `form_id`, and the list is short.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function tags(string $provider): array
+    {
+        return LeadFormRoute::forProvider($provider)
+            ->orderByRaw('project_id is not null')
+            ->orderBy('form_name')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (LeadFormRoute $r) => [
+                'form_id' => $r->form_id,
+                'form_name' => $r->form_name,
+                'project_id' => $r->project_id,
+                'assign_to_user_id' => $r->assign_to_user_id,
+                'leads' => LeadFormRoute::leadCountForTag($r->form_id),
+                'unrouted_leads' => IntegrationEvent::forProvider($provider)
+                    ->taggedWith($r->form_id)
+                    ->where('result', 'created')
+                    ->where('routed', false)
+                    ->where('created_at', '>=', $r->created_at)
+                    ->count(),
             ])
             ->all();
     }

@@ -68,6 +68,8 @@ return [
         'test' => ['label' => 'Meta test',    'tone' => 'muted'],
         // an 11za update for a lead we already have; logged, nothing changed
         'update_received' => ['label' => 'Update received', 'tone' => 'muted'],
+        // an 11za update tagged an unrouted lead for a project; it was moved there
+        'moved_to_project' => ['label' => 'Moved to project', 'tone' => 'good'],
     ],
 
     /*
