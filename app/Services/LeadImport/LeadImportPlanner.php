@@ -20,6 +20,14 @@ use RuntimeException;
  */
 class LeadImportPlanner
 {
+    /**
+     * How a mapped full-name column becomes name fields.
+     *
+     * first_middle_last: split by word count (the original behaviour).
+     * first_last: the first word is the first name, everything after it the last name.
+     */
+    public const NAME_SPLITS = ['first_middle_last', 'first_last'];
+
     /** The only fields per-row edits may replace. Everything else is derived or import-session state. */
     private const OVERRIDE_FIELDS = ['first_name', 'middle_name', 'last_name', 'mobile_number', 'email', 'project', 'source', 'stage', 'created_at'];
 
@@ -39,9 +47,10 @@ class LeadImportPlanner
      * @param  array{project_id?: ?int, source?: ?string, stage?: ?string, assigned_to?: ?int}  $defaults
      * @param  array<int, array<string, string>>  $overrides  per-row edits keyed by source row number
      * @param  array<string, bool>  $excluded  "sheet|row" keys the user chose not to import
+     * @param  string  $nameSplit  how a mapped full-name column is split: one of self::NAME_SPLITS
      * @return list<ImportRow>
      */
-    public function plan(array $rows, array $mapping, array $defaults, User $user, string $sheet, bool $final = false, string $dateOrder = 'auto', array $overrides = [], array $excluded = []): array
+    public function plan(array $rows, array $mapping, array $defaults, User $user, string $sheet, bool $final = false, string $dateOrder = 'auto', array $overrides = [], array $excluded = [], string $nameSplit = 'first_middle_last'): array
     {
         $projects = Project::active()->get(['id', 'name'])->keyBy('id');
         $allowed = array_column($this->projects($user), 'id');
@@ -73,7 +82,7 @@ class LeadImportPlanner
             if ($attributes['first_name'] === null && isset($mapping['full_name'])) {
                 $full = $cell('full_name');
                 if ($full !== null) {
-                    [$first, $middle, $last] = $this->normaliser->splitNameParts($full);
+                    [$first, $middle, $last] = $this->splitFullName($full, $nameSplit);
                     $attributes['first_name'] = $first;
                     $attributes['middle_name'] = $middle;
                     $attributes['last_name'] = $last;
@@ -240,24 +249,52 @@ class LeadImportPlanner
             $drafts[] = $draft;
         }
 
-        return $this->duplicates($drafts);
+        return $this->duplicates($drafts, $user);
+    }
+
+    /** @return array{0: string, 1: string, 2: string} first, middle and last name */
+    private function splitFullName(string $full, string $nameSplit): array
+    {
+        if ($nameSplit !== 'first_last') {
+            return $this->normaliser->splitNameParts($full);
+        }
+        $parts = preg_split('/\s+/', trim($full), 2) ?: [];
+
+        return [$parts[0] ?? '', '', $parts[1] ?? ''];
     }
 
     /**
-     * The existing unique mobile/project rule, batched across the complete file.
+     * Duplicate resolution against the database and within the file, batched
+     * across the complete file.
+     *
+     * A source row this import already recorded (same import_key) is always
+     * `skip_imported`, checked first: re-importing the same file changes
+     * nothing, whatever happened to its leads since.
+     *
+     * Otherwise a row whose mobile is already a live lead on its project is not skipped:
+     * it plans an `update` that resets every live match not yet at Fresh back to
+     * Fresh. It is still skipped when every live match is already Fresh
+     * (nothing to change) or the only match is a deleted lead (restore it
+     * instead). A row with its own validation problems stays an `error` so it
+     * can be fixed first, and an `update` needs permission to edit every lead
+     * it would reset.
+     *
+     * Within the file the first occurrence of a mobile/project pair wins,
+     * whether it creates or updates; later ones are in-file duplicates.
      *
      * A user-excluded row keeps whatever independent database/imported status it
      * already had for display, but it never reserves an in-file duplicate key:
      * excluding the first occurrence promotes the next one, and restoring it
      * demotes it again. Exclusions themselves always win the outcome column.
      */
-    public function duplicates(array $drafts): array
+    public function duplicates(array $drafts, ?User $user = null): array
     {
         $mobiles = array_values(array_unique(array_filter(array_column(array_column($drafts, 'attributes'), 'mobile_number'))));
+        /** @var array<string, list<Lead>> $existing */
         $existing = [];
         foreach (array_chunk($mobiles, 500) as $chunk) {
-            foreach (Lead::withTrashed()->whereIn('mobile_number', $chunk)->get(['mobile_number', 'project_id']) as $lead) {
-                $existing[$lead->mobile_number.'|'.$lead->project_id] = true;
+            foreach (Lead::withTrashed()->whereIn('mobile_number', $chunk)->orderBy('id')->get(['id', 'mobile_number', 'project_id', 'stage', 'assigned_to', 'deleted_at']) as $lead) {
+                $existing[$lead->mobile_number.'|'.$lead->project_id][] = $lead;
             }
         }
         $imported = [];
@@ -266,31 +303,58 @@ class LeadImportPlanner
                 $imported[$key] = true;
             }
         }
+        $stages = CrmTaxonomy::allStages();
         $seen = [];
         $exact = [];
         foreach ($drafts as &$draft) {
             $a = $draft['attributes'];
             $key = $a['mobile_number'].'|'.$a['project_id'];
+            $matches = $a['project_id'] ? ($existing[$key] ?? []) : [];
             if ($draft['excluded']) {
-                if ($a['project_id'] && isset($existing[$key])) {
-                    $draft['codes'][] = 'duplicatesInDatabase';
-                    $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']}.";
-                } elseif (isset($imported[$draft['import_key']])) {
+                if (isset($imported[$draft['import_key']])) {
                     $draft['codes'][] = 'alreadyImported';
                     $draft['errors'][] = 'This source row was already imported.';
+                } elseif ($matches !== []) {
+                    $draft['codes'][] = 'duplicatesInDatabase';
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']}.";
                 }
                 $draft['outcome'] = 'excluded';
 
                 continue;
             }
-            if ($a['project_id'] && isset($existing[$key])) {
-                $draft['codes'][] = 'duplicatesInDatabase';
-                $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']}.";
-                $draft['outcome'] = 'skip_duplicate_db';
-            } elseif (isset($imported[$draft['import_key']])) {
+            if (isset($imported[$draft['import_key']])) {
                 $draft['codes'][] = 'alreadyImported';
+                if ($matches !== []) {
+                    $draft['codes'][] = 'duplicatesInDatabase';
+                }
                 $draft['errors'][] = 'This source row was already imported.';
                 $draft['outcome'] = 'skip_imported';
+            } elseif ($matches !== []) {
+                $draft['codes'][] = 'duplicatesInDatabase';
+                $live = array_values(array_filter($matches, fn (Lead $lead): bool => ! $lead->trashed()));
+                $toReset = array_values(array_filter($live, fn (Lead $lead): bool => $lead->stage !== 'fresh'));
+                $locked = $user ? array_values(array_filter($toReset, fn (Lead $lead): bool => ! $user->can('update', $lead))) : [];
+                if ($live === []) {
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} is on a deleted lead in project {$draft['project']}. Restore that lead instead of importing it again.";
+                    $draft['outcome'] = 'skip_duplicate_db';
+                } elseif ($toReset === []) {
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']} and is already at Fresh.";
+                    $draft['outcome'] = 'skip_duplicate_db';
+                } elseif ($draft['outcome'] !== 'create') {
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']}. Fix the problems above to reset it to Fresh.";
+                } elseif (isset($seen[$key])) {
+                    $draft['codes'][] = 'duplicatesInFile';
+                    $draft['errors'][] = "Duplicate of row {$seen[$key]} in this uploaded file.";
+                    $draft['outcome'] = 'skip_duplicate_file';
+                } elseif ($locked !== []) {
+                    $draft['codes'][] = 'unauthorizedLead';
+                    $draft['errors'][] = "Mobile {$a['mobile_number']} already exists in project {$draft['project']} as lead #{$locked[0]->id}, which you are not allowed to edit.";
+                    $draft['outcome'] = 'error';
+                } else {
+                    $draft['outcome'] = 'update';
+                    $draft['existing_leads'] = array_map(fn (Lead $lead): array => ['id' => $lead->id, 'stage' => $lead->stage, 'stage_label' => $stages[$lead->stage] ?? $lead->stage], $toReset);
+                    $seen[$key] = $draft['row'];
+                }
             } elseif ($draft['outcome'] === 'create') {
                 $exactKey = sha1(json_encode($draft['raw']));
                 $earlier = $a['project_id'] ? ($seen[$key] ?? null) : ($exact[$exactKey] ?? null);
@@ -407,7 +471,8 @@ class LeadImportPlanner
     }
 
     /**
-     * Resolves the exact follow-up date, time and datetime for every create-row.
+     * Resolves the exact follow-up date, time and datetime for every row that
+     * needs one: open creates and Fresh resets.
      *
      * time_mode = uploaded: a row's own file time wins, otherwise fallback_time.
      * time_mode = manual: every row gets the same fixed time (the legacy behaviour).
@@ -422,7 +487,7 @@ class LeadImportPlanner
         $start = Carbon::parse($settings['mode'] === 'today' ? now('Asia/Kolkata')->toDateString() : $settings['start_date'], 'Asia/Kolkata')->startOfDay();
         $end = $settings['mode'] === 'spread' ? Carbon::parse($settings['end_date'], 'Asia/Kolkata')->startOfDay() : $start->copy();
         $days = (int) $start->diffInDays($end) + 1;
-        $filers = array_values(array_filter($rows, fn (array $r): bool => $r['outcome'] === 'create' && ! CrmTaxonomy::isTerminal($r['attributes']['stage'])));
+        $filers = array_values(array_filter($rows, fn (array $r): bool => $this->needsFollowUp($r)));
         $auto = $mode === 'auto' ? $this->scheduleAuto($filers, $start, $days) : null;
         $withOwnDate = count(array_filter($filers, fn (array $r): bool => ! empty($r['file_follow_up_date'])));
         $count = count($filers) - $withOwnDate;
@@ -437,7 +502,7 @@ class LeadImportPlanner
         $index = 0;
         $autoIndex = 0;
         foreach ($rows as &$row) {
-            if ($row['outcome'] !== 'create' || CrmTaxonomy::isTerminal($row['attributes']['stage'])) {
+            if (! $this->needsFollowUp($row)) {
                 $row['follow_up_at'] = null;
                 $row['follow_up_date'] = null;
                 $row['follow_up_time'] = null;
@@ -465,6 +530,17 @@ class LeadImportPlanner
         unset($row);
 
         return $rows;
+    }
+
+    /**
+     * A created lead at an open stage, or an existing lead being reset to
+     * Fresh — which is open whatever the row's own stage says — gets a
+     * follow-up; nothing else does.
+     */
+    private function needsFollowUp(array $row): bool
+    {
+        return $row['outcome'] === 'update'
+            || ($row['outcome'] === 'create' && ! CrmTaxonomy::isTerminal($row['attributes']['stage']));
     }
 
     /**
