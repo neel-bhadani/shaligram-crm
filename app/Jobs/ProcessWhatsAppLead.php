@@ -265,33 +265,72 @@ class ProcessWhatsAppLead implements ShouldQueue
     }
 
     /**
-     * The contact's routing values: every tag, and the label, normalised.
+     * The contact's routing values: every tag, plus the label when the admin
+     * has mapped it.
      *
-     * 11za sends `tags` as a list or as one comma-separated string; both are
-     * split on commas, so a normalised tag never holds one — the activity log
-     * stores a lead's tags comma-joined. The first spelling of a tag wins.
+     * 11za sends `tags` as a list or as one comma-separated string, and a
+     * list item may be an object; its name, tag, label or title is used (the
+     * first one present), and an item with none of them is ignored. Every
+     * value is split on commas, so a normalised tag never holds one — the
+     * activity log stores a lead's tags comma-joined. The first spelling of a
+     * tag wins.
+     *
+     * The label (`masterstatus`) is a status such as "New", not a project, so
+     * it never creates a row or an alert: it counts only when it matches a
+     * row the admin added and mapped to an active project.
      *
      * @return array<string, string> normalised tag => the tag as received
      */
     private function tags(): array
     {
         $raw = $this->data['tags'] ?? [];
-        $values = is_array($raw) ? $raw : [$raw];
-        $values[] = $this->data['masterstatus'] ?? null;
-
         $tags = [];
 
-        foreach ($values as $value) {
-            if (! is_scalar($value)) {
-                continue;
+        foreach (is_array($raw) ? $raw : [$raw] as $item) {
+            $tags += $this->split($this->tagText($item));
+        }
+
+        foreach ($this->split($this->tagText($this->data['masterstatus'] ?? null)) as $key => $label) {
+            $mapped = LeadFormRoute::forProvider(self::PROVIDER)
+                ->where('form_id', $key)
+                ->whereIn('project_id', Project::active()->select('id'))
+                ->exists();
+
+            if ($mapped) {
+                $tags[$key] ??= $label;
             }
+        }
 
-            foreach (explode(',', (string) $value) as $tag) {
-                $key = LeadFormRoute::normaliseTag($tag);
+        return $tags;
+    }
 
-                if ($key !== '') {
-                    $tags[$key] ??= trim((string) preg_replace('/\s+/u', ' ', $tag));
+    /** A tag's text: a scalar as it is, an object by its first naming key. */
+    private function tagText(mixed $item): ?string
+    {
+        if (is_array($item)) {
+            foreach (['name', 'tag', 'label', 'title'] as $field) {
+                if (isset($item[$field])) {
+                    $item = $item[$field];
+                    break;
                 }
+            }
+        }
+
+        return is_scalar($item) ? (string) $item : null;
+    }
+
+    /**
+     * @return array<string, string> normalised tag => the tag as received
+     */
+    private function split(?string $value): array
+    {
+        $tags = [];
+
+        foreach (explode(',', (string) $value) as $tag) {
+            $key = LeadFormRoute::normaliseTag($tag);
+
+            if ($key !== '') {
+                $tags[$key] ??= trim((string) preg_replace('/\s+/u', ' ', $tag));
             }
         }
 

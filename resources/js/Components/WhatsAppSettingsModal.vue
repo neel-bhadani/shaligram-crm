@@ -169,8 +169,8 @@ const submit = () => {
           </h5>
 
           <p class="info-box">
-            Leads whose 11za tag matches go to that project. In 11za, tick Tags (and Label) under
-            Fields to send. Leads with no matching tag go to the default project above.
+            Leads whose 11za tag matches go to that project. A label is used only if you've added it
+            here yourself.
           </p>
 
           <div v-for="(t, i) in form.tags" :key="t.form_id"

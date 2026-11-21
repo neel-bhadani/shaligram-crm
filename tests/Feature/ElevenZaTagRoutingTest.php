@@ -150,6 +150,37 @@ class ElevenZaTagRoutingTest extends TestCase
         $this->assertSame($this->tower->id, Lead::sole()->project_id);
     }
 
+    public function test_an_unknown_label_creates_no_row_and_no_alert(): void
+    {
+        $this->deliver(['tags' => [], 'masterstatus' => 'Interested']);
+
+        $this->assertSame($this->default->id, Lead::sole()->project_id);
+        $this->assertSame(0, LeadFormRoute::count());
+        $this->assertSame(0, Alert::count());
+        $this->assertNull(IntegrationEvent::sole()->form_id);
+    }
+
+    public function test_a_label_the_admin_mapped_routes_to_its_project(): void
+    {
+        $this->map('vanam', $this->park);
+
+        $this->deliver(['tags' => [], 'masterstatus' => 'Vanam']);
+
+        $this->assertSame($this->park->id, Lead::sole()->project_id);
+        $this->assertTrue(IntegrationEvent::sole()->routed);
+    }
+
+    public function test_a_tag_given_as_an_object_routes_like_the_string(): void
+    {
+        $this->map('vanam', $this->park);
+
+        $this->deliver(['tags' => [['name' => 'Vanam'], ['colour' => 'red']], 'masterstatus' => null]);
+
+        $this->assertSame($this->park->id, Lead::sole()->project_id);
+        // the object with no naming key is ignored, not turned into a row
+        $this->assertSame(1, LeadFormRoute::count());
+    }
+
     public function test_tags_for_two_different_projects_go_to_the_default_project_with_the_conflict_logged(): void
     {
         $this->map('tower b', $this->tower);
