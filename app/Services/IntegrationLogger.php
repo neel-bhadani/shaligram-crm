@@ -74,6 +74,15 @@ class IntegrationLogger
         return $this->write($provider, 'repeat_enquiry', $externalId, $message, form: $form);
     }
 
+    /**
+     * A platform told us about a change to a lead we already have, and nothing
+     * was changed. Linked to that lead so the row in Recent activity is too.
+     */
+    public function updateReceived(string $provider, string $externalId, Lead $lead, string $message): IntegrationEvent
+    {
+        return $this->write($provider, 'update_received', $externalId, $message, $lead->id);
+    }
+
     public function failed(string $provider, ?string $externalId, string $message): IntegrationEvent
     {
         return $this->write($provider, 'failed', $externalId, $message);

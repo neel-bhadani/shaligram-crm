@@ -21,31 +21,31 @@ return [
     'providers' => [
 
         'facebook' => [
-            'name'        => 'Facebook Lead Ads',
+            'name' => 'Facebook Lead Ads',
             'description' => 'Leads from Facebook lead forms arrive here the moment somebody submits one.',
-            'family'      => 'meta',
-            'built'       => true,
+            'family' => 'meta',
+            'built' => true,
         ],
 
         'instagram' => [
-            'name'        => 'Instagram Lead Ads',
+            'name' => 'Instagram Lead Ads',
             'description' => 'Same Meta system as Facebook — a configuration change once Facebook is approved, not a separate build.',
-            'family'      => 'meta',
-            'built'       => false,
+            'family' => 'meta',
+            'built' => false,
         ],
 
         'whatsapp' => [
-            'name'        => 'WhatsApp Business',
-            'description' => 'Enquiries from a WhatsApp Business catalogue or click-to-chat ad.',
-            'family'      => 'whatsapp',
-            'built'       => false,
+            'name' => 'WhatsApp (11za)',
+            'description' => 'Leads from the 11za WhatsApp chatbot arrive here as soon as 11za sends the contact.',
+            'family' => 'whatsapp',
+            'built' => true,
         ],
 
         'website' => [
-            'name'        => 'Website form',
+            'name' => 'Website form',
             'description' => 'The enquiry form on the project website, posting straight into the CRM.',
-            'family'      => 'website',
-            'built'       => false,
+            'family' => 'website',
+            'built' => false,
         ],
     ],
 
@@ -60,12 +60,14 @@ return [
      | project from a different ad, which is worth a call and worth seeing.
      */
     'results' => [
-        'created'        => ['label' => 'Lead created', 'tone' => 'good'],
-        'duplicate'      => ['label' => 'Duplicate',    'tone' => 'muted'],
+        'created' => ['label' => 'Lead created', 'tone' => 'good'],
+        'duplicate' => ['label' => 'Duplicate',    'tone' => 'muted'],
         'repeat_enquiry' => ['label' => 'Repeat enquiry', 'tone' => 'warn'],
-        'failed'         => ['label' => 'Failed',       'tone' => 'bad'],
+        'failed' => ['label' => 'Failed',       'tone' => 'bad'],
         // a lead from Meta's Lead Ads Testing Tool that could not be imported
-        'test'           => ['label' => 'Meta test',    'tone' => 'muted'],
+        'test' => ['label' => 'Meta test',    'tone' => 'muted'],
+        // an 11za update for a lead we already have; logged, nothing changed
+        'update_received' => ['label' => 'Update received', 'tone' => 'muted'],
     ],
 
     /*
@@ -80,7 +82,7 @@ return [
          | would move under a working integration without a deploy.
          */
         'graph_version' => env('META_GRAPH_VERSION', 'v21.0'),
-        'graph_base'    => env('META_GRAPH_BASE', 'https://graph.facebook.com'),
+        'graph_base' => env('META_GRAPH_BASE', 'https://graph.facebook.com'),
 
         // Meta gives up on a delivery it considers slow, then retries it. The
         // webhook answers 200 and queues, so this only bounds the Graph call
@@ -99,11 +101,11 @@ return [
          | wrong trade.
          */
         'field_aliases' => [
-            'full_name'   => ['full_name', 'name', 'your_name'],
-            'first_name'  => ['first_name', 'given_name'],
-            'last_name'   => ['last_name', 'family_name', 'surname'],
-            'phone'       => ['phone_number', 'phone', 'mobile_number', 'mobile'],
-            'email'       => ['email', 'email_address'],
+            'full_name' => ['full_name', 'name', 'your_name'],
+            'first_name' => ['first_name', 'given_name'],
+            'last_name' => ['last_name', 'family_name', 'surname'],
+            'phone' => ['phone_number', 'phone', 'mobile_number', 'mobile'],
+            'email' => ['email', 'email_address'],
         ],
     ],
 

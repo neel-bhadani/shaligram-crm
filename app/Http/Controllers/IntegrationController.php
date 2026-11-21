@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\IntegrationSettingsRequest;
 use App\Jobs\ProcessMetaLead;
+use App\Jobs\ProcessWhatsAppLead;
 use App\Models\Integration;
 use App\Models\IntegrationEvent;
 use App\Models\LeadFormRoute;
@@ -76,6 +77,10 @@ class IntegrationController extends Controller
 
         $integration = Integration::forProvider($provider);
 
+        if ($request->family() === 'whatsapp') {
+            return $this->updateWhatsApp($request, $integration);
+        }
+
         $integration->mergeSettings(
             // the tokens, only if the admin actually typed new ones
             $request->changedSecrets() + [
@@ -98,6 +103,26 @@ class IntegrationController extends Controller
     }
 
     /**
+     * The 11za card: where its leads go and the switch. Merged into the same
+     * `whatsapp` row the outbound sending settings live on, so those are kept.
+     */
+    private function updateWhatsApp(IntegrationSettingsRequest $request, Integration $integration)
+    {
+        $integration->mergeSettings([
+            'default_project_id' => (int) $request->input('default_project_id'),
+            'assign_to_user_id' => (int) $request->input('assign_to_user_id'),
+        ]);
+
+        $integration->is_active = $request->boolean('is_active');
+        $integration->save();
+
+        // stable across saves — it is pasted into 11za
+        $integration->ensureApiKey();
+
+        return back()->with('success', 'WhatsApp settings saved.');
+    }
+
+    /**
      * Fill the lead-form table from the page's own list of forms.
      *
      * Adds the forms it has not seen, with no project, and refreshes the
@@ -106,7 +131,8 @@ class IntegrationController extends Controller
      */
     public function syncForms(string $provider, MetaGraphClient $graph)
     {
-        abort_unless(config("integrations.providers.$provider.built"), 404);
+        // only Meta has lead forms to load
+        abort_unless(config("integrations.providers.$provider.built") && config("integrations.providers.$provider.family") === 'meta', 404);
 
         $integration = Integration::forProvider($provider);
         $pageId = (string) $integration->setting('page_id');
@@ -212,6 +238,10 @@ class IntegrationController extends Controller
             return back()->with('error', 'Configure and switch on the integration before sending a test lead.');
         }
 
+        if (config("integrations.providers.$provider.family") === 'whatsapp') {
+            return $this->testWhatsApp();
+        }
+
         // "test_" is what makes these findable and deletable later; the random
         // half is what stops a second test being skipped as a duplicate of the
         // first, which is exactly what the idempotency check is supposed to do
@@ -240,6 +270,32 @@ class IntegrationController extends Controller
             return back()->with('error', 'The test lead failed: '.$e->getMessage());
         }
 
+        return $this->testOutcome($provider);
+    }
+
+    /**
+     * The 11za test: the payload a Customer Webhook insert carries, through
+     * the same job the webhook queues. The updatedAt is now, so a second test
+     * is a new event rather than a duplicate of the first.
+     */
+    private function testWhatsApp()
+    {
+        try {
+            ProcessWhatsAppLead::dispatchSync('insert', [
+                'name' => 'Test Lead',
+                'mobileNo' => '91'.$this->testPhone(),
+                'updatedAt' => now()->toIso8601ZuluString('millisecond'),
+            ]);
+        } catch (Throwable $e) {
+            return back()->with('error', 'The test lead failed: '.$e->getMessage());
+        }
+
+        return $this->testOutcome(ProcessWhatsAppLead::PROVIDER);
+    }
+
+    /** What the test job wrote to the activity log, as a flash message. */
+    private function testOutcome(string $provider)
+    {
         $event = IntegrationEvent::forProvider($provider)->latest('id')->first();
 
         // a failure retrying cannot fix is failed by the job rather than
@@ -281,8 +337,13 @@ class IntegrationController extends Controller
     {
         $built = (bool) $meta['built'];
 
+        if ($built && $meta['family'] === 'whatsapp') {
+            return $this->whatsAppCard($provider, $meta, $integration);
+        }
+
         return [
             'provider' => $provider,
+            'family' => $meta['family'],
             'name' => $meta['name'],
             'description' => $meta['description'],
             'built' => $built,
@@ -317,6 +378,39 @@ class IntegrationController extends Controller
                 'url' => route('webhooks.meta.handle', ['provider' => $provider]),
                 'verify_token' => $integration?->exists ? $integration->ensureVerifyToken() : null,
             ] : null,
+        ];
+    }
+
+    /**
+     * The 11za card. The same shape as a Meta card minus the page, tokens and
+     * forms. The webhook URL and the API key are shown in full because the
+     * admin pastes both into 11za; the outbound auth token stored on the same
+     * row is never named here, so it never reaches the browser.
+     *
+     * @param  array<string, mixed>  $meta
+     */
+    private function whatsAppCard(string $provider, array $meta, ?Integration $integration): array
+    {
+        return [
+            'provider' => $provider,
+            'family' => $meta['family'],
+            'name' => $meta['name'],
+            'description' => $meta['description'],
+            'built' => true,
+            'connected' => (bool) $integration?->isReady(),
+            'configured' => (bool) $integration?->isConfigured(),
+            'is_active' => (bool) $integration?->is_active,
+            'last_received_at' => $integration?->last_received_at?->toIso8601String(),
+            'settings' => [
+                'default_project_id' => $integration?->setting('default_project_id'),
+                'assign_to_user_id' => $integration?->setting('assign_to_user_id'),
+            ],
+            'forms' => null,
+            'webhook' => [
+                'url' => route('webhooks.whatsapp.customers'),
+                // generated on the first save, like the Meta verify token
+                'api_key' => $integration?->exists ? $integration->ensureApiKey() : null,
+            ],
         ];
     }
 

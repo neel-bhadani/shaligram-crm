@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Webhooks\ElevenZaWebhookController;
 use App\Http\Controllers\Webhooks\MetaWebhookController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,7 +31,7 @@ use Illuminate\Support\Facades\Route;
 */
 
 $built = collect(config('integrations.providers'))
-    ->filter(fn (array $meta) => $meta['built'])
+    ->filter(fn (array $meta) => $meta['built'] && $meta['family'] === 'meta')
     ->keys()
     ->all();
 
@@ -44,3 +45,12 @@ Route::middleware('throttle:webhooks')
         // a lead notification: verify, queue, 200
         Route::post('leads', [MetaWebhookController::class, 'handle'])->name('webhooks.meta.handle');
     });
+
+/*
+ | 11za's Customer Webhook for WhatsApp chatbot contacts. Authenticated by the
+ | `x-api-key` header rather than a signature; the controller 404s until the
+ | provider is marked built in config/integrations.php.
+ */
+Route::post('webhooks/whatsapp/customers', [ElevenZaWebhookController::class, 'handle'])
+    ->middleware('throttle:webhooks')
+    ->name('webhooks.whatsapp.customers');

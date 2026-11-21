@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\IntegrationController;
+use App\Http\Requests\IntegrationSettingsRequest;
 use App\Models\Integration;
 use App\Models\IntegrationEvent;
 use App\Models\Lead;
@@ -36,18 +38,21 @@ use Tests\TestCase;
  *                 same job the webhook queues, so if it did not hold here it
  *                 would not hold in production either.
  *
- * @see \App\Http\Controllers\IntegrationController
- * @see \App\Http\Requests\IntegrationSettingsRequest
+ * @see IntegrationController
+ * @see IntegrationSettingsRequest
  */
 class IntegrationsPageTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const TOKEN  = 'EAAG-page-access-token-1234';
+    private const TOKEN = 'EAAG-page-access-token-1234';
+
     private const SECRET = 'app-secret-abcd';
 
     private User $admin;
+
     private User $owner;
+
     private Project $project;
 
     protected function setUp(): void
@@ -56,8 +61,8 @@ class IntegrationsPageTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-09-07 11:30', 'Asia/Kolkata'));
 
-        $this->admin   = $this->user('admin', 'Ann');
-        $this->owner   = $this->user('telecaller', 'Tia');
+        $this->admin = $this->user('admin', 'Ann');
+        $this->owner = $this->user('telecaller', 'Tia');
         $this->project = Project::create(['name' => 'Alpha']);
     }
 
@@ -99,7 +104,7 @@ class IntegrationsPageTest extends TestCase
 
     /* ---------------- the cards ---------------- */
 
-    public function test_the_page_shows_one_card_per_platform_with_only_facebook_built(): void
+    public function test_the_page_shows_one_card_per_platform_with_facebook_and_whatsapp_built(): void
     {
         $this->actingAs($this->admin)
             ->get('/integrations')
@@ -113,7 +118,9 @@ class IntegrationsPageTest extends TestCase
                 ->where('cards.1.provider', 'instagram')
                 ->where('cards.1.built', false)
                 ->where('cards.2.provider', 'whatsapp')
-                ->where('cards.2.built', false)
+                ->where('cards.2.name', 'WhatsApp (11za)')
+                ->where('cards.2.built', true)
+                ->where('cards.2.connected', false)
                 ->where('cards.3.provider', 'website')
                 ->where('cards.3.built', false)
             );
@@ -132,7 +139,7 @@ class IntegrationsPageTest extends TestCase
 
         // and no route to configure it through, either
         $this->actingAs($this->admin)->put('/integrations/instagram', [])->assertNotFound();
-        $this->actingAs($this->admin)->post('/integrations/whatsapp/test')->assertNotFound();
+        $this->actingAs($this->admin)->post('/integrations/website/test')->assertNotFound();
     }
 
     public function test_a_configured_but_switched_off_integration_does_not_read_as_connected(): void
@@ -259,8 +266,8 @@ class IntegrationsPageTest extends TestCase
         $this->actingAs($this->admin)
             ->put('/integrations/facebook', $this->settings([
                 'page_access_token' => '',
-                'app_secret'        => '',
-                'page_id'           => 'changed-page-id',
+                'app_secret' => '',
+                'page_id' => 'changed-page-id',
             ]))
             ->assertSessionHasNoErrors();
 
@@ -290,7 +297,7 @@ class IntegrationsPageTest extends TestCase
         $this->actingAs($this->admin)
             ->put('/integrations/facebook', $this->settings([
                 'page_access_token' => '',
-                'app_secret'        => '',
+                'app_secret' => '',
             ]))
             ->assertSessionHasErrors('is_active');
 
@@ -303,8 +310,8 @@ class IntegrationsPageTest extends TestCase
         $this->actingAs($this->admin)
             ->put('/integrations/facebook', $this->settings([
                 'page_access_token' => '',
-                'app_secret'        => '',
-                'is_active'         => false,
+                'app_secret' => '',
+                'is_active' => false,
             ]))
             ->assertSessionHasNoErrors();
 
@@ -314,7 +321,7 @@ class IntegrationsPageTest extends TestCase
     public function test_the_project_and_the_owner_must_be_real_and_active(): void
     {
         $inactiveProject = Project::create(['name' => 'Old', 'is_active' => false]);
-        $inactiveUser    = $this->user('salesperson', 'Off');
+        $inactiveUser = $this->user('salesperson', 'Off');
         $inactiveUser->update(['is_active' => false]);
 
         $this->actingAs($this->admin)
@@ -434,10 +441,10 @@ class IntegrationsPageTest extends TestCase
     {
         foreach (range(1, 60) as $i) {
             IntegrationEvent::create([
-                'provider'    => 'facebook',
-                'result'      => 'created',
+                'provider' => 'facebook',
+                'result' => 'created',
                 'external_id' => "lead-$i",
-                'message'     => "Lead #$i created.",
+                'message' => "Lead #$i created.",
             ]);
         }
 
@@ -465,7 +472,121 @@ class IntegrationsPageTest extends TestCase
             );
     }
 
+    /* ---------------- WhatsApp (11za) ---------------- */
+
+    public function test_the_admin_saves_the_whatsapp_settings_and_gets_a_stable_api_key(): void
+    {
+        $this->saveWhatsApp()
+            ->assertRedirect()
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('success', 'WhatsApp settings saved.');
+
+        $integration = Integration::forProvider('whatsapp');
+        $key = $integration->setting('api_key');
+
+        $this->assertTrue($integration->is_active);
+        $this->assertSame($this->project->id, $integration->setting('default_project_id'));
+        $this->assertSame($this->owner->id, $integration->setting('assign_to_user_id'));
+        $this->assertSame(40, strlen($key));
+
+        // pasted into 11za, so a second save must not change it
+        $this->saveWhatsApp(['is_active' => false]);
+        $this->assertSame($key, Integration::forProvider('whatsapp')->setting('api_key'));
+    }
+
+    /** The outbound sending settings live on the same `whatsapp` row. */
+    public function test_saving_the_whatsapp_card_keeps_the_outbound_sending_settings(): void
+    {
+        $integration = Integration::forProvider('whatsapp');
+        $integration->mergeSettings(['auth_token' => 'outbound-auth-token-9876', 'origin_website' => 'https://example.test', 'api_enabled' => true]);
+        $integration->save();
+
+        $this->saveWhatsApp()->assertSessionHasNoErrors();
+
+        $integration->refresh();
+        $this->assertSame('outbound-auth-token-9876', $integration->setting('auth_token'));
+        $this->assertSame('https://example.test', $integration->setting('origin_website'));
+        $this->assertTrue($integration->setting('api_enabled'));
+    }
+
+    public function test_the_api_key_cannot_be_set_through_a_settings_form(): void
+    {
+        $this->saveWhatsApp(['api_key' => 'chosen-by-the-browser']);
+        $this->connect();
+        $this->actingAs($this->admin)->put('/integrations/facebook', $this->settings(['api_key' => 'chosen-by-the-browser']));
+
+        $this->assertNotSame('chosen-by-the-browser', Integration::forProvider('whatsapp')->setting('api_key'));
+        $this->assertNull(Integration::forProvider('facebook')->setting('api_key'));
+    }
+
+    public function test_the_whatsapp_project_and_owner_must_be_real_and_active(): void
+    {
+        $this->saveWhatsApp(['default_project_id' => 999999, 'assign_to_user_id' => $this->admin->id])
+            ->assertSessionHasErrors(['default_project_id', 'assign_to_user_id']);
+
+        $this->assertFalse(Integration::forProvider('whatsapp')->exists);
+    }
+
+    public function test_the_whatsapp_card_shows_the_webhook_url_and_api_key_and_no_other_secret(): void
+    {
+        $integration = Integration::forProvider('whatsapp');
+        $integration->mergeSettings(['auth_token' => 'outbound-auth-token-9876']);
+        $integration->save();
+        $this->saveWhatsApp();
+
+        $key = Integration::forProvider('whatsapp')->setting('api_key');
+
+        $response = $this->actingAs($this->admin)->get('/integrations')->assertOk();
+
+        $this->assertStringNotContainsString('outbound-auth-token-9876', $response->getContent());
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->where('cards.2.webhook.url', url('/webhooks/whatsapp/customers'))
+            ->where('cards.2.webhook.api_key', $key)
+            ->where('cards.2.connected', true)
+            ->where('cards.2.forms', null)
+            ->missing('cards.2.settings.api_key')
+            ->missing('cards.2.settings.auth_token')
+            ->missing('cards.2.settings.page_access_token_hint')
+        );
+    }
+
+    public function test_the_whatsapp_test_lead_button_creates_a_lead_with_a_pending_follow_up(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)
+            ->post('/integrations/whatsapp/test')
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $lead = Lead::firstOrFail();
+
+        $this->assertSame('Test', $lead->first_name);
+        $this->assertSame('Lead', $lead->last_name);
+        $this->assertSame('whatsapp', $lead->source);
+        $this->assertStringStartsWith('99999', $lead->mobile_number);
+        $this->assertStringStartsWith('11za:'.$lead->mobile_number.':', $lead->external_id);
+        $this->assertNotNull($lead->pendingTodo);
+    }
+
+    public function test_whatsapp_has_no_lead_forms_to_load(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)->post('/integrations/whatsapp/forms/sync')->assertNotFound();
+    }
+
     /* ---------------- fixtures ---------------- */
+
+    private function saveWhatsApp(array $overrides = [])
+    {
+        return $this->actingAs($this->admin)->put('/integrations/whatsapp', array_merge([
+            'default_project_id' => $this->project->id,
+            'assign_to_user_id' => $this->owner->id,
+            'is_active' => true,
+        ], $overrides));
+    }
 
     /** A configured Facebook integration, written the way the form writes one. */
     private function connect(bool $active = true): void
@@ -483,25 +604,25 @@ class IntegrationsPageTest extends TestCase
     private function settings(array $overrides = []): array
     {
         return array_merge([
-            'page_access_token'  => self::TOKEN,
-            'app_secret'         => self::SECRET,
-            'page_id'            => '102938475600',
+            'page_access_token' => self::TOKEN,
+            'app_secret' => self::SECRET,
+            'page_id' => '102938475600',
             'default_project_id' => $this->project->id,
-            'assign_to_user_id'  => $this->owner->id,
-            'is_active'          => true,
+            'assign_to_user_id' => $this->owner->id,
+            'is_active' => true,
         ], $overrides);
     }
 
     private function user(string $role, string $first): User
     {
         return User::create([
-            'first_name'    => $first,
-            'last_name'     => 'User',
-            'email'         => fake()->unique()->safeEmail(),
+            'first_name' => $first,
+            'last_name' => 'User',
+            'email' => fake()->unique()->safeEmail(),
             'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
-            'role'          => $role,
-            'is_active'     => true,
-            'password'      => 'password',
+            'role' => $role,
+            'is_active' => true,
+            'password' => 'password',
         ]);
     }
 }
