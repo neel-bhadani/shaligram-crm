@@ -2,11 +2,14 @@
 
 namespace App\Services\LeadImport;
 
+use App\Models\Lead;
 use App\Models\LeadImportRecord;
 use App\Models\User;
 use App\Services\AlertService;
 use App\Services\Automation\RuleEngine;
+use App\Services\LeadAssignmentService;
 use App\Services\LeadCreationService;
+use App\Services\LeadFollowUpService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -14,9 +17,17 @@ use Throwable;
 
 class LeadImportService
 {
-    public function __construct(private LeadCreationService $creation, private RuleEngine $rules, private AlertService $alerts) {}
+    /** The history remark written on every lead an import resets to Fresh. */
+    public const RESET_REMARK = 'Stage reset to Fresh by bulk import.';
 
-    /** Each chunk commits atomically; row savepoints isolate recoverable failures. */
+    public function __construct(private LeadCreationService $creation, private LeadFollowUpService $followUps, private LeadAssignmentService $assignment, private RuleEngine $rules, private AlertService $alerts) {}
+
+    /**
+     * Each chunk commits atomically; row savepoints isolate recoverable failures.
+     *
+     * `create` rows become new leads; `update` rows reset the existing leads
+     * on that mobile and project back to Fresh.
+     */
     public function import(array $rows, User $creator, string $batch, string $importTime): array
     {
         return $this->rules->withoutRules(fn (): array => $this->alerts->withoutAlerts(fn (): array => DB::transaction(function () use ($rows, $creator, $batch, $importTime): array {
@@ -26,6 +37,15 @@ class LeadImportService
             foreach ($rows as $row) {
                 if ($row['outcome'] === 'excluded') {
                     $results[] = $row + ['result' => 'excluded', 'reason' => 'Excluded by user.'];
+
+                    continue;
+                } elseif ($row['outcome'] === 'update') {
+                    try {
+                        $results[] = DB::transaction(fn (): array => $this->resetToFresh($row, $batch, $records->get($row['import_key'])));
+                    } catch (Throwable $e) {
+                        report($e);
+                        $results[] = $row + ['result' => 'failed', 'reason' => 'Existing lead could not be reset to Fresh. Its stage and follow-up were left unchanged.'];
+                    }
 
                     continue;
                 } elseif ($row['outcome'] !== 'create') {
@@ -70,5 +90,75 @@ class LeadImportService
 
             return $results;
         })));
+    }
+
+    /**
+     * Move every live lead on this row's mobile and project that is neither
+     * Fresh nor booked back to Fresh, through the same stage-change path as the
+     * lead form: history row, activity timeline, and the row's planned
+     * follow-up replacing whatever was pending.
+     *
+     * Fresh is telecaller work, so a lead held by a salesperson (or anyone
+     * else who is not a telecaller or admin) is then given to the row's
+     * telecaller — or, when the row's assignee is not an active telecaller,
+     * the next one from the telecaller desk — and its pending follow-up moves
+     * with it. A lead already with a telecaller or admin keeps its owner.
+     *
+     * The row is recorded like a created one (outcome `reset`), so importing
+     * the same file again finds it already imported and changes nothing.
+     *
+     * @return array<string, mixed>
+     */
+    private function resetToFresh(array $row, string $batch, ?LeadImportRecord $record): array
+    {
+        if ($record && $record->import_batch === $batch) {
+            return $row + ['result' => 'updated', 'lead_id' => $record->lead_id, 'followUps' => $record->imported_todo_count];
+        }
+        if ($record) {
+            return $row + ['result' => 'skipped', 'reason' => 'Already imported.'];
+        }
+        $leads = Lead::where('mobile_number', $row['attributes']['mobile_number'])
+            ->where('project_id', $row['attributes']['project_id'])
+            ->whereNotIn('stage', LeadImportPlanner::NEVER_RESET)
+            ->orderBy('id')
+            ->get();
+        if ($leads->isEmpty()) {
+            return $row + ['result' => 'skipped', 'reason' => 'Lead already exists and is already at Fresh or booked.'];
+        }
+        $when = $row['follow_up_at'] ? Carbon::parse($row['follow_up_at'])->setTimezone(config('app.timezone')) : null;
+        foreach ($leads as $lead) {
+            $this->followUps->changeStage($lead, 'fresh', [], $when, $row['follow_up_type'], null, self::RESET_REMARK);
+            $lead->refresh();
+            $holder = $lead->assigned_to ? User::find($lead->assigned_to) : null;
+            if (! in_array($holder?->role, ['telecaller', 'admin'], true)) {
+                $telecaller = $this->telecallerFor($row, $lead);
+                if ($telecaller) {
+                    $this->followUps->assign($lead, $telecaller);
+                }
+            }
+        }
+        $followUps = $when ? $leads->count() : 0;
+        LeadImportRecord::create([
+            'source_file' => $row['import_key'], 'source_row' => $row['row'], 'lead_id' => $leads->first()->id,
+            'outcome' => 'reset', 'awaiting_follow_up' => false, 'imported_todo_count' => $followUps,
+            'filled' => [], 'flags' => [], 'legacy' => $row['raw'], 'import_batch' => $batch,
+        ]);
+
+        return $row + [
+            'result' => 'updated', 'lead_id' => $leads->first()->id, 'lead_ids' => $leads->modelKeys(),
+            'followUps' => $followUps,
+        ];
+    }
+
+    /** The row's assignee when it is an active telecaller, else the next one from the telecaller desk; null when the desk is empty. */
+    private function telecallerFor(array $row, Lead $lead): ?User
+    {
+        $assignee = $row['assigned_to'] ? User::find($row['assigned_to']) : null;
+        if ($assignee && $assignee->is_active && $assignee->role === 'telecaller') {
+            return $assignee;
+        }
+        $owner = $this->assignment->ownerFor('fresh', null, $lead->project_id);
+
+        return $owner?->role === 'telecaller' ? $owner : null;
     }
 }

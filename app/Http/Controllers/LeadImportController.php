@@ -102,10 +102,11 @@ class LeadImportController extends Controller
         $request->validate([
             'token' => 'required|string', 'mapping' => 'required|array:'.implode(',', self::MAPPABLE_FIELDS),
             'mapping.*' => 'nullable|string', 'date_order' => ['nullable', Rule::in(['auto', 'dmy', 'mdy'])],
+            'name_split' => ['nullable', Rule::in(LeadImportPlanner::NAME_SPLITS)],
             'overrides' => 'nullable|array', 'overrides.*' => 'array', 'overrides.*.*' => 'nullable|string|max:255',
             'reset_rows' => 'sometimes|array', 'reset_rows.*' => 'integer|min:1',
             'page' => 'nullable|integer|min:1', 'per_page' => 'nullable|integer|min:1|max:100',
-            'filter' => ['nullable', Rule::in(['all', 'clean', 'problems', 'edited', 'duplicates', 'excluded'])],
+            'filter' => ['nullable', Rule::in(['all', 'clean', 'existing', 'problems', 'edited', 'duplicates', 'excluded'])],
         ]);
 
         return $this->store->locked($request->user(), $request->token, function (array $state) use ($request): JsonResponse {
@@ -140,8 +141,9 @@ class LeadImportController extends Controller
             }
             $state['mapping'] = $mapping;
             $state['date_order'] = $request->input('date_order', 'auto');
+            $state['name_split'] = $request->input('name_split') ?? 'first_middle_last';
             $state['overrides'] = $overrides;
-            $rows = $this->planner->plan($parsed['rows'], $mapping, [], $request->user(), $state['sheet'], dateOrder: $state['date_order'], overrides: $overrides, excluded: $state['excluded_rows'] ?? []);
+            $rows = $this->planner->plan($parsed['rows'], $mapping, [], $request->user(), $state['sheet'], dateOrder: $state['date_order'], overrides: $overrides, excluded: $state['excluded_rows'] ?? [], nameSplit: $state['name_split']);
             $state['phase'] = 'parsed';
             unset($state['plan'], $state['plan_id']);
             $this->store->write($request->user(), $request->token, $state);
@@ -157,12 +159,13 @@ class LeadImportController extends Controller
             'token' => 'required|string', 'accepted_preview' => 'accepted', 'defaults' => 'required|array',
             'mapping' => 'required|array:'.implode(',', self::MAPPABLE_FIELDS), 'mapping.*' => 'nullable|string',
             'date_order' => ['nullable', Rule::in(['auto', 'dmy', 'mdy'])],
+            'name_split' => ['nullable', Rule::in(LeadImportPlanner::NAME_SPLITS)],
         ]);
 
         return $this->store->locked($request->user(), $request->token, function (array $state) use ($request): JsonResponse {
             abort_unless(in_array($state['phase'], ['parsed', 'final']), 409, 'Review parsed data first.');
             $mapping = $state['mapping'];
-            if (array_filter($request->mapping) != $mapping || $request->input('date_order', 'auto') !== $state['date_order']) {
+            if (array_filter($request->mapping) != $mapping || $request->input('date_order', 'auto') !== $state['date_order'] || ($request->input('name_split') ?? 'first_middle_last') !== ($state['name_split'] ?? 'first_middle_last')) {
                 $state['phase'] = 'stale';
                 unset($state['plan'], $state['plan_id']);
                 $this->store->write($request->user(), $request->token, $state);
@@ -197,7 +200,7 @@ class LeadImportController extends Controller
                 throw ValidationException::withMessages(['defaults.end_date' => 'Choose a range of at most 367 days.']);
             }
             $parsed = $this->readSheet($state, $state['sheet']);
-            $rows = $this->planner->plan($parsed['rows'], $mapping, $settings, $request->user(), $state['sheet'], true, $state['date_order'], $state['overrides'] ?? [], $state['excluded_rows'] ?? []);
+            $rows = $this->planner->plan($parsed['rows'], $mapping, $settings, $request->user(), $state['sheet'], true, $state['date_order'], $state['overrides'] ?? [], $state['excluded_rows'] ?? [], $state['name_split'] ?? 'first_middle_last');
             $state['plan'] = $this->planner->schedule($rows, $settings);
             $state['settings'] = $settings;
             $state['plan_id'] = (string) Str::uuid();
@@ -232,7 +235,7 @@ class LeadImportController extends Controller
     private function setExcluded(Request $request, bool $exclude): JsonResponse
     {
         $this->authorizeImport($request);
-        $request->validate(['token' => 'required|string', 'row' => 'required|integer|min:1', 'page' => 'nullable|integer|min:1', 'per_page' => 'nullable|integer|min:1|max:100', 'filter' => ['nullable', Rule::in(['all', 'clean', 'problems', 'edited', 'duplicates', 'excluded'])]]);
+        $request->validate(['token' => 'required|string', 'row' => 'required|integer|min:1', 'page' => 'nullable|integer|min:1', 'per_page' => 'nullable|integer|min:1|max:100', 'filter' => ['nullable', Rule::in(['all', 'clean', 'existing', 'problems', 'edited', 'duplicates', 'excluded'])]]);
 
         return $this->store->locked($request->user(), $request->token, function (array $state) use ($request, $exclude): JsonResponse {
             abort_if(in_array($state['phase'], ['importing', 'complete']), 409);
@@ -251,7 +254,7 @@ class LeadImportController extends Controller
             // A stored final plan is stale once the batch membership changed.
             $state['phase'] = 'parsed';
             unset($state['plan'], $state['plan_id'], $state['settings'], $state['offset'], $state['results']);
-            $rows = $this->planner->plan($parsed['rows'], $state['mapping'], [], $request->user(), $state['sheet'], dateOrder: $state['date_order'] ?? 'auto', overrides: $state['overrides'] ?? [], excluded: $set);
+            $rows = $this->planner->plan($parsed['rows'], $state['mapping'], [], $request->user(), $state['sheet'], dateOrder: $state['date_order'] ?? 'auto', overrides: $state['overrides'] ?? [], excluded: $set, nameSplit: $state['name_split'] ?? 'first_middle_last');
             $this->store->write($request->user(), $request->token, $state);
 
             return response()->json(['overrides' => $state['overrides'] ?? []] + $this->present($rows, false, $this->pagingParams($request)));
@@ -290,20 +293,23 @@ class LeadImportController extends Controller
             unset($row);
             $raw = [];
             foreach ($slice as $row) {
-                if ($row['outcome'] === 'create') {
+                if (in_array($row['outcome'], ['create', 'update'], true)) {
                     $raw[$row['row']] = $row['raw'];
                 }
             }
-            $rechecked = collect($this->planner->plan($raw, $state['mapping'], $state['settings'], $request->user(), $state['sheet'], true, $state['date_order'], $state['overrides'] ?? [], $excludedSet))->keyBy('row');
+            $rechecked = collect($this->planner->plan($raw, $state['mapping'], $state['settings'], $request->user(), $state['sheet'], true, $state['date_order'], $state['overrides'] ?? [], $excludedSet, $state['name_split'] ?? 'first_middle_last'))->keyBy('row');
             $batchRecords = LeadImportRecord::whereIn('source_file', array_column($slice, 'import_key'))->where('import_batch', $state['plan_id'])->pluck('source_file')->flip();
             $owners = User::active()->with('projects:id')->whereIn('id', array_filter(array_column($slice, 'assigned_to')))->get()->keyBy('id');
             foreach ($slice as &$row) {
                 $fresh = $rechecked->get($row['row']);
-                if ($fresh && $fresh['outcome'] === 'create' && $fresh['attributes'] !== $row['attributes']) {
+                if ($fresh && in_array($fresh['outcome'], ['create', 'update'], true) && $fresh['attributes'] !== $row['attributes']) {
                     $row['outcome'] = 'error';
                     $row['errors'] = ['Project, source, stage or normalized values changed since preview. Regenerate the final preview.'];
                 }
-                if ($fresh && $fresh['outcome'] !== 'create') {
+                // The database moved since the preview (a matching lead was
+                // created, deleted, or already reset): the live answer wins,
+                // except for this batch's own already-committed creates.
+                if ($fresh && $fresh['outcome'] !== $row['outcome'] && $row['outcome'] !== 'error') {
                     $sameBatch = $batchRecords->has($row['import_key']);
                     if (! $sameBatch) {
                         $row['outcome'] = $fresh['outcome'];
@@ -357,7 +363,7 @@ class LeadImportController extends Controller
             $stream = fopen('php://output', 'w');
             fputcsv($stream, ['row_number', 'first_name', 'mobile_number', 'project', 'source', 'stage', 'result', 'reason'], escape: '');
             foreach ($state['results'] as $row) {
-                if ($row['result'] === 'created' || $row['result'] === 'excluded') {
+                if (in_array($row['result'], ['created', 'updated', 'excluded'], true)) {
                     continue;
                 }
                 $a = $row['attributes'];
@@ -375,7 +381,7 @@ class LeadImportController extends Controller
 
         return [
             'total' => count($state['plan']), 'processed' => $state['offset'], 'nextOffset' => $state['offset'],
-            'created' => $results->where('result', 'created')->count(), 'skipped' => $results->where('result', 'skipped')->count(),
+            'created' => $results->where('result', 'created')->count(), 'updated' => $results->where('result', 'updated')->count(), 'skipped' => $results->where('result', 'skipped')->count(),
             'excluded' => $results->where('result', 'excluded')->count(), 'failed' => $results->where('result', 'failed')->count(), 'followUps' => $results->sum('followUps'),
             'done' => $state['phase'] === 'complete', 'duration' => $state['duration'] ?? null,
             'beforeOpenWithoutPending' => $state['before_open_without_pending'] ?? null,
@@ -489,25 +495,29 @@ class LeadImportController extends Controller
     {
         $collection = collect($rows);
         $creates = $collection->where('outcome', 'create');
+        $updates = $collection->where('outcome', 'update');
         $excluded = $collection->where('outcome', 'excluded');
+        $actionable = $collection->whereIn('outcome', ['create', 'update']);
         // Exclusions are an intentional batch decision, not a validation
         // problem: they get their own bucket so problems + excluded + creates
-        // always adds back up to the source row total.
+        // always adds back up to the source row total. Existing leads being
+        // reset to Fresh are their own bucket too.
         $summary = [
-            'total' => count($rows), 'clean' => $creates->count(), 'problems' => count($rows) - $creates->count() - $excluded->count(),
-            'excluded' => $excluded->count(), 'toCreate' => $creates->count(), 'errors' => $collection->where('outcome', 'error')->count(),
+            'total' => count($rows), 'clean' => $creates->count(), 'problems' => count($rows) - $actionable->count() - $excluded->count(),
+            'excluded' => $excluded->count(), 'toCreate' => $creates->count(), 'toUpdate' => $updates->count(), 'errors' => $collection->where('outcome', 'error')->count(),
         ];
-        foreach (['duplicatesInFile', 'duplicatesInDatabase', 'invalidMobile', 'unknownStage', 'unknownSource', 'unknownProject', 'missingRequired', 'unauthorizedProject', 'alreadyImported', 'invalidAssignee', 'invalidDate', 'invalidFollowUpDate', 'invalidTime'] as $code) {
+        foreach (['duplicatesInFile', 'duplicatesInDatabase', 'invalidMobile', 'unknownStage', 'unknownSource', 'unknownProject', 'missingRequired', 'unauthorizedProject', 'unauthorizedLead', 'alreadyImported', 'invalidAssignee', 'invalidDate', 'invalidFollowUpDate', 'invalidTime'] as $code) {
             $summary[$code] = $collection->filter(fn (array $r): bool => in_array($code, $r['codes'], true))->count();
         }
         $summary['missingFollowUpTimes'] = $collection->filter(fn (array $r): bool => $r['outcome'] === 'create' && array_key_exists('file_follow_up_time', $r) && $r['file_follow_up_time'] === null)->count();
-        $summary['followUpsToCreate'] = $final ? $creates->filter(fn (array $r): bool => $r['follow_up_at'] !== null)->count() : 0;
+        $summary['followUpsToCreate'] = $final ? $actionable->filter(fn (array $r): bool => $r['follow_up_at'] !== null)->count() : 0;
 
         $filtered = match ($page['filter']) {
             'clean' => $creates,
-            'problems' => $collection->reject(fn (array $r): bool => in_array($r['outcome'], ['create', 'excluded'], true)),
+            'existing' => $updates,
+            'problems' => $collection->reject(fn (array $r): bool => in_array($r['outcome'], ['create', 'update', 'excluded'], true)),
             'edited' => $collection->filter(fn (array $r): bool => ($r['edited'] ?? false) === true),
-            'duplicates' => $collection->filter(fn (array $r): bool => in_array($r['outcome'], ['skip_duplicate_file', 'skip_duplicate_db', 'skip_imported'], true)),
+            'duplicates' => $collection->filter(fn (array $r): bool => in_array($r['outcome'], ['update', 'skip_duplicate_file', 'skip_duplicate_db', 'skip_imported'], true)),
             'excluded' => $excluded,
             default => $collection,
         };
@@ -517,10 +527,10 @@ class LeadImportController extends Controller
 
         return [
             'summary' => $summary,
-            'previewRows' => ($final ? $creates->take(20) : $collection->take(30))->values(),
-            'problemRows' => $collection->reject(fn (array $r): bool => in_array($r['outcome'], ['create', 'excluded'], true))->values(),
+            'previewRows' => ($final ? $actionable->take(20) : $collection->take(30))->values(),
+            'problemRows' => $collection->reject(fn (array $r): bool => in_array($r['outcome'], ['create', 'update', 'excluded'], true))->values(),
             'excludedRows' => $excluded->values(),
-            'dateDistribution' => $final ? $creates->filter(fn (array $r): bool => $r['follow_up_at'] !== null)->countBy(fn (array $r): string => substr($r['follow_up_at'], 0, 10)) : [],
+            'dateDistribution' => $final ? $actionable->filter(fn (array $r): bool => $r['follow_up_at'] !== null)->countBy(fn (array $r): string => substr($r['follow_up_at'], 0, 10)) : [],
             'rows' => $filtered->forPage($currentPage, $perPage)->values()->all(),
             'pagination' => ['current_page' => $currentPage, 'last_page' => $lastPage, 'per_page' => $perPage, 'total' => $filtered->count()],
             'filter' => $page['filter'],

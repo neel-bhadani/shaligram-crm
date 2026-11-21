@@ -11,8 +11,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Every source row gets exactly one of these, whether it became a lead
  * (`created`) or was folded into another lead with the same mobile and
  * project (`absorbed`). `legacy` holds the row in full, `flags` what was wrong
- * with it, `filled` what had to be supplied. Written only by `import:legacy`,
- * which inserts through the query builder, so nothing here fires on insert.
+ * with it, `filled` what had to be supplied. Written by `import:legacy`,
+ * which inserts through the query builder, so nothing here fires on insert,
+ * and by the bulk import wizard, which also records `reset` for a row that
+ * moved existing leads back to Fresh.
  */
 class LeadImportRecord extends Model
 {
