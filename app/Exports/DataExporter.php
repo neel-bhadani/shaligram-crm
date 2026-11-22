@@ -219,6 +219,8 @@ class DataExporter
                 ['key' => 'channel_partner',   'label' => 'Channel Partner'],
                 ['key' => 'created_at',        'label' => 'Created At'],
                 ['key' => 'updated_at',        'label' => 'Updated At'],
+                ['key' => 'residence_types',   'label' => 'Type of residence'],
+                ['key' => 'preferred_floors',  'label' => 'Preferred floor'],
             ],
             'followups' => [
                 ['key' => 'id',                'label' => 'Follow-up ID'],
@@ -307,6 +309,7 @@ class DataExporter
                 'id', 'first_name', 'middle_name', 'last_name', 'mobile_number',
                 'email', 'project_id', 'stage', 'source', 'assigned_to', 'assigned_role',
                 'broker_name', 'channel_partner_id', 'created_at', 'updated_at', 'reason',
+                'residence_types', 'preferred_floors',
             ])
             ->with([
                 'project:id,name',
@@ -908,6 +911,8 @@ class DataExporter
             'channel_partner' => (string) ($lead->channelPartner?->display_label ?? $lead->broker_name ?? ''),
             'created_at' => $date($model->created_at),
             'updated_at' => $date($model->updated_at),
+            'residence_types' => (string) $model->residence_type_labels,
+            'preferred_floors' => (string) $model->preferred_floor_labels,
             'lead_name' => (string) ($model->lead?->full_name ?? ''),
             'type' => (string) (config('crm.todo_types')[$model->type] ?? $model->type),
             'scheduled_at' => $date($model->scheduled_at),

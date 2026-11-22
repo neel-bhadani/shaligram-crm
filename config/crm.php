@@ -154,6 +154,40 @@ return [
         'upcoming_project' => 'Upcoming project',
     ],
 
+    /*
+     | What a customer is looking for — the two tick-box groups in the lead
+     | form's Requirements section. Leads store the keys, in this order, so a
+     | label may be reworded freely; a removed key stays readable on the leads
+     | that carry it but can no longer be chosen. See App\Support\LeadRequirements.
+     */
+    'residence_types' => [
+        '2_bhk' => '2 BHK',
+        '2_5_bhk' => '2.5 BHK',
+        '3_bhk' => '3 BHK',
+        '3_5_bhk' => '3.5 BHK',
+        '4_bhk' => '4 BHK',
+        '4_5_bhk' => '4.5 BHK',
+        '5_bhk' => '5 BHK',
+        '5_5_bhk' => '5.5 BHK',
+    ],
+
+    'floors' => [
+        '1' => '1st Floor',
+        '2' => '2nd Floor',
+        '3' => '3rd Floor',
+        '4' => '4th Floor',
+        '5' => '5th Floor',
+        '6' => '6th Floor',
+        '7' => '7th Floor',
+        '8' => '8th Floor',
+        '9' => '9th Floor',
+        '10' => '10th Floor',
+        '11' => '11th Floor',
+        '12' => '12th Floor',
+        '13' => '13th Floor',
+        '14' => '14th Floor',
+    ],
+
     'todo_types' => [
         'call' => 'Call',
         'whatsapp' => 'WhatsApp',

@@ -153,6 +153,18 @@ class LeadRequest extends FormRequest
             ],
 
             'requirement' => ['nullable', 'string', 'max:100'],
+
+            /*
+             | Optional, and open to a telecaller: finding out what the
+             | customer wants is their job. Left out of an update they are not
+             | in validated(), so the saved selection stands; an empty array
+             | clears it.
+             */
+            'residence_types' => ['nullable', 'array'],
+            'residence_types.*' => ['distinct', Rule::in(array_keys(config('crm.residence_types')))],
+            'preferred_floors' => ['nullable', 'array'],
+            'preferred_floors.*' => ['distinct', Rule::in(array_keys(config('crm.floors')))],
+
             'booked_unit' => ['nullable', 'required_if:stage,booking_done', 'string', 'max:50'],
         ] + $this->followUpRules();
     }
@@ -200,6 +212,10 @@ class LeadRequest extends FormRequest
             'mobile_number.digits' => 'Enter a 10 digit mobile number.',
             'channel_partner_id.required' => 'Choose the channel partner this lead came through.',
             'reason.required_if' => 'Select why this lead was lost.',
+            'residence_types.*.in' => 'Choose a type of residence from the list.',
+            'residence_types.*.distinct' => 'The same type of residence is selected twice.',
+            'preferred_floors.*.in' => 'Choose a preferred floor from the list.',
+            'preferred_floors.*.distinct' => 'The same floor is selected twice.',
         ] + $this->followUpMessages();
     }
 

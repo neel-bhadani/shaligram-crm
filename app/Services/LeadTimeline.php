@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
 use App\Support\CrmTaxonomy;
+use App\Support\LeadRequirements;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -63,6 +64,8 @@ class LeadTimeline
         'source' => 'Source',
         'channel_partner_id' => 'Channel partner',
         'requirement' => 'Requirement',
+        'residence_types' => 'Type of residence',
+        'preferred_floors' => 'Preferred floors',
         'reason' => 'Reason for loss',
         'booked_unit' => 'Booked unit',
         'assigned_to' => 'Assigned to',
@@ -428,6 +431,7 @@ class LeadTimeline
             'assigned_to' => $this->userName($raw),
             'source' => CrmTaxonomy::sourceLabel($raw),
             'reason' => config("crm.lost_reasons.$raw", $raw),
+            'residence_types', 'preferred_floors' => LeadRequirements::labels($field, json_decode($raw, true)),
             'whatsapp_opt_out' => $raw === 'opted_out' ? 'Opted out' : 'Messages allowed',
             default => $raw,
         };

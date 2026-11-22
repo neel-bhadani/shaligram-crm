@@ -22,6 +22,7 @@ use App\Services\LossEvents;
 use App\Services\WhatsApp\BulkSender;
 use App\Services\WhatsApp\WhatsAppSender;
 use App\Support\CrmTaxonomy;
+use App\Support\LeadRequirements;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -245,7 +246,7 @@ class LeadController extends Controller
                 'channelPartner.parent:id,name',
                 'pendingTodo',
                 'completedTodos.completer:id,first_name,last_name',
-            ]),
+            ])->append(['residence_type_labels', 'preferred_floor_labels']),
             // beside `lead`, never inside it: `lead` is exactly what it was
             // before the timeline existed, and every key the modal reads from
             // it is where it always was
@@ -785,6 +786,9 @@ class LeadController extends Controller
             'sources' => CrmTaxonomy::allSources(),
             'activeSources' => CrmTaxonomy::activeSourceKeys(),
             'reasons' => config('crm.lost_reasons'),
+            // the Requirements section's two tick-box groups
+            'residenceTypes' => LeadRequirements::options('residence_types'),
+            'floors' => LeadRequirements::options('preferred_floors'),
             // the Lost filter's reason dropdown: every reason, then the gap
             'lossReasons' => app(LossEvents::class)->reasonOptions(),
             'projects' => $projects,

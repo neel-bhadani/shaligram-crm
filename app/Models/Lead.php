@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\CrmTaxonomy;
+use App\Support\LeadRequirements;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -17,6 +18,8 @@ class Lead extends Model
         'last_activity_at' => 'datetime',
         'booking_date' => 'date',
         'whatsapp_opted_out_at' => 'datetime',
+        'residence_types' => 'array',
+        'preferred_floors' => 'array',
     ];
 
     /**
@@ -133,6 +136,45 @@ class Lead extends Model
         $label = $this->channelPartner?->display_label ?? $this->broker_name;
 
         return $label !== null && $label !== '' ? $label : null;
+    }
+
+    /** "2 BHK, 3 BHK", or null. Not appended: only the lead detail and the export print it. */
+    public function getResidenceTypeLabelsAttribute(): ?string
+    {
+        return LeadRequirements::labels('residence_types', $this->residence_types);
+    }
+
+    /** "1st Floor, 2nd Floor", or null. */
+    public function getPreferredFloorLabelsAttribute(): ?string
+    {
+        return LeadRequirements::labels('preferred_floors', $this->preferred_floors);
+    }
+
+    /* ---------------- mutators ---------------- */
+
+    /** @param  array<int, mixed>|null  $selected */
+    public function setResidenceTypesAttribute(?array $selected): void
+    {
+        $this->setRequirement('residence_types', $selected);
+    }
+
+    /** @param  array<int, mixed>|null  $selected */
+    public function setPreferredFloorsAttribute(?array $selected): void
+    {
+        $this->setRequirement('preferred_floors', $selected);
+    }
+
+    /**
+     * Here rather than in the controller, so every writer stores the same
+     * shape and a re-ticked selection in another order is not a change.
+     *
+     * @param  array<int, mixed>|null  $selected
+     */
+    private function setRequirement(string $field, ?array $selected): void
+    {
+        $keys = LeadRequirements::normalise($field, $selected);
+
+        $this->attributes[$field] = $keys === null ? null : json_encode($keys);
     }
 
     public function isTerminal(): bool

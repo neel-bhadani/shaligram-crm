@@ -853,7 +853,9 @@ class ExportDataTest extends TestCase
      */
     private function pdfText(TestResponse $response): string
     {
-        preg_match_all('/stream\r?\n(.*?)\r?\nendstream/s', (string) $response->getContent(), $matches);
+        // dompdf ends a stream with a bare "\n": a "\r" before it is the last
+        // byte of the compressed data, and without it the page will not inflate
+        preg_match_all('/stream\r?\n(.*?)\nendstream/s', (string) $response->getContent(), $matches);
 
         $text = '';
 

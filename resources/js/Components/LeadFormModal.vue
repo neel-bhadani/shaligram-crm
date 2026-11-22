@@ -37,6 +37,7 @@ const blank = {
    | LeadRequest does not validate the key either, so nothing can write it.
    */
   channel_partner_id: '', stage: 'fresh', reason: '', booked_unit: '',
+  residence_types: [], preferred_floors: [],
 }
 
 const blankFollowUp = { follow_up_type: 'call', follow_up_at: '', follow_up_remarks: '' }
@@ -112,6 +113,36 @@ const projectOptions = computed(() => {
  */
 const firstOffered = (options, preferred) =>
   options.some(o => o.key === preferred) ? preferred : (options[0]?.key ?? '')
+
+/* ---------------- requirements ---------------- */
+
+/** The two tick-box groups, and the options each one offers. */
+const requirementOptions = computed(() => ({
+  residence_types: props.options.residenceTypes,
+  preferred_floors: props.options.floors,
+}))
+
+/*
+ | What each group was ticked with when the form opened. A saved key whose
+ | option has since left the config has no checkbox, so it is not among them —
+ | and a group nobody touched is left out of the request altogether, which
+ | leaves the saved value alone. Sending it back would be refused, and sending
+ | it without that key would erase it on an edit that was only about a phone
+ | number.
+ */
+let tickedOnOpen = {}
+
+const savedTicks = field => (props.lead?.[field] ?? [])
+  .filter(key => requirementOptions.value[field].some(o => o.key === key))
+
+const sameTicks = (a, b) => a.length === b.length && a.every(key => b.includes(key))
+
+form.transform(data => Object.fromEntries(Object.entries(data).filter(([field, value]) =>
+  !(props.lead && field in tickedOnOpen && sameTicks(value, tickedOnOpen[field])))))
+
+// a bad option is reported against its position: residence_types.0
+const groupError = field => form.errors[field]
+  ?? Object.entries(form.errors).find(([key]) => key.startsWith(`${field}.`))?.[1]
 
 /* conditional fields */
 const showBroker = computed(() => form.source === 'broker')
@@ -303,6 +334,11 @@ watch(() => props.show, v => {
     form.source = firstOffered(sourceOptions.value, 'walk_in')
     form.stage  = firstOffered(stageOptions.value, 'fresh')
   }
+
+  for (const field of Object.keys(requirementOptions.value)) {
+    tickedOnOpen[field] = savedTicks(field)
+    form[field] = [...tickedOnOpen[field]]
+  }
 })
 
 // clear a hidden field, or a stale value gets saved. The controller nulls
@@ -474,7 +510,39 @@ const submit = () => {
       />
     </FormField>
 
-    <FormField class="mt-4" label="Stage" required :error="form.errors.stage">
+    <!-- what the customer is looking for; optional, and a telecaller's to fill in -->
+    <div class="mt-6 border-t border-slate-200 pt-5">
+      <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Requirements</div>
+
+      <FormField label="Type of residence" :error="groupError('residence_types')">
+        <div role="group" aria-label="Type of residence" class="grid grid-cols-2 gap-x-2 sm:grid-cols-4">
+          <label v-for="o in options.residenceTypes" :key="o.key"
+                 class="flex cursor-pointer items-center gap-1.5 py-2 text-sm text-slate-700 sm:py-1.5">
+            <input v-model="form.residence_types" type="checkbox" :value="o.key"
+                   class="h-4 w-4 flex-none rounded border-slate-300" />
+            {{ o.label }}
+          </label>
+        </div>
+      </FormField>
+
+      <FormField class="mt-4" label="Preferred floor" :error="groupError('preferred_floors')">
+        <div role="group" aria-label="Preferred floor" class="grid grid-cols-3 gap-x-2 sm:grid-cols-4 md:grid-cols-7 md:gap-x-1">
+          <label v-for="o in options.floors" :key="o.key"
+                 class="flex cursor-pointer items-center gap-1.5 whitespace-nowrap py-2 text-xs text-slate-700 sm:py-1.5">
+            <input v-model="form.preferred_floors" type="checkbox" :value="o.key"
+                   class="h-4 w-4 flex-none rounded border-slate-300" />
+            {{ o.label }}
+          </label>
+        </div>
+      </FormField>
+
+      <!-- the free text an import brought in, which nothing here writes -->
+      <p v-if="lead?.requirement" class="mt-3 break-words text-xs text-slate-500">
+        Earlier note: <span class="font-medium text-slate-700">{{ lead.requirement }}</span>
+      </p>
+    </div>
+
+    <FormField class="mt-6 border-t border-slate-200 pt-5" label="Stage" required :error="form.errors.stage">
       <select v-model="form.stage">
         <option v-for="o in stageOptions" :key="o.key" :value="o.key">{{ o.label }}</option>
       </select>

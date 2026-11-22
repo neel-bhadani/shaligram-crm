@@ -102,6 +102,13 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
              <dd class="text-sm">{{ lead.days_in_stage === null ? '—' : lead.days_in_stage + ' days' }}</dd></div>
         <div><dt class="text-[11px] font-semibold text-slate-400">Next follow-up</dt>
              <dd class="text-sm">{{ lead.pending_todo ? fmt(lead.pending_todo.scheduled_at) : 'None — lead is closed' }}</dd></div>
+        <div><dt class="text-[11px] font-semibold text-slate-400">Type of residence</dt>
+             <dd class="text-sm">{{ lead.residence_type_labels ?? '—' }}</dd></div>
+        <div><dt class="text-[11px] font-semibold text-slate-400">Preferred floor</dt>
+             <dd class="text-sm">{{ lead.preferred_floor_labels ?? '—' }}</dd></div>
+        <!-- free text from an import, from before the two fields above existed -->
+        <div v-if="lead.requirement" class="sm:col-span-2"><dt class="text-[11px] font-semibold text-slate-400">Earlier note</dt>
+             <dd class="break-words text-sm">{{ lead.requirement }}</dd></div>
         <div v-if="lead.reason"><dt class="text-[11px] font-semibold text-slate-400">Reason for loss</dt>
              <dd class="text-sm">{{ options.reasons[lead.reason] }}</dd></div>
         <div v-if="lead.booked_unit"><dt class="text-[11px] font-semibold text-slate-400">Booked unit</dt>
