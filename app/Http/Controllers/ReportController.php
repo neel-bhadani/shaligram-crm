@@ -97,11 +97,18 @@ class ReportController extends Controller
          */
         $scope = fn () => Lead::visibleTo($user);
 
-        $rows = $this->leadRows($scope, $dimension, $from, $to);
+        // a lead can be in several rows of these, so they are counted apart
+        $multi = (bool) config("crm.reports.lead_dimensions.$dimension.multi", false);
+        $multiTotals = $multi ? $this->multiLeadTotals($scope, $from, $to) : null;
+
+        $rows = $multi
+            ? $this->multiLeadRows($scope, $dimension, $from, $to, $multiTotals['total'])
+            : $this->leadRows($scope, $dimension, $from, $to);
 
         return Inertia::render('Reports/Leads', [
             'rows' => $rows,
-            'totals' => $this->leadTotals($rows),
+            'totals' => $multiTotals ?? $this->leadTotals($rows),
+            'multi' => $multi,
             'filters' => $this->rangeWord($filters),
             'range' => $this->rangePayload($filters, $from, $to),
             'options' => $this->options($user, 'leads'),
@@ -311,6 +318,100 @@ class ReportController extends Controller
         };
 
         return $this->zeroFill($universe, $present);
+    }
+
+    /**
+     * One row per option of a multi-value dimension, in config order, then the
+     * leads that chose nothing.
+     *
+     * The column is a JSON list, so there is no GROUP BY: each row is the same
+     * counts over the same scope, narrowed to the leads that chose that option.
+     * A lead with two choices is in two rows, which is why `share` divides by
+     * the distinct leads in the range and the shares can pass 100% together.
+     *
+     * Never drillable: the Leads page has no filter for these columns.
+     *
+     * @param  callable(): Builder  $scope
+     * @return list<array<string, mixed>>
+     */
+    private function multiLeadRows(callable $scope, string $dimension, Carbon $from, Carbon $to, int $distinctTotal): array
+    {
+        // from config, never from the request — see leadFilters()
+        ['column' => $column, 'options' => $options] = config("crm.reports.lead_dimensions.$dimension");
+
+        $groups = $this->zeroFill((array) config($options) + [self::NO_GROUP => 'Not specified'], []);
+
+        return array_map(function (array $group) use ($scope, $column, $from, $to, $distinctTotal): array {
+            $chose = $group['key'] === self::NO_GROUP
+                ? fn () => $scope()->where(fn ($q) => $q->whereNull($column)->orWhereJsonLength($column, 0))
+                // the keys are stored as strings, and zeroFill() hands them back as strings
+                : fn () => $scope()->whereJsonContains($column, $group['key']);
+
+            $counts = $this->leadCounts($chose, $from, $to);
+
+            return [
+                'key' => $group['key'],
+                'label' => $group['label'],
+                ...$counts,
+                'share' => $distinctTotal > 0 ? round($counts['total'] / $distinctTotal * 100, 1) : null,
+                'drillable' => false,
+            ];
+        }, $groups);
+    }
+
+    /**
+     * The report-wide figures for a multi-value dimension: distinct leads,
+     * counted over the whole scope. Summing the rows, as leadTotals() does,
+     * would count a lead once for every option it chose.
+     *
+     * @param  callable(): Builder  $scope
+     * @return array<string, int|float|null>
+     */
+    private function multiLeadTotals(callable $scope, Carbon $from, Carbon $to): array
+    {
+        $counts = $this->leadCounts($scope, $from, $to);
+
+        return [...$counts, 'share' => $counts['total'] > 0 ? 100.0 : null];
+    }
+
+    /**
+     * Intake, history and conversion for one set of leads, counted exactly as
+     * leadRows() counts each of its groups.
+     *
+     * @param  callable(): Builder  $scope
+     * @return array{total: int, visits: int, booked: int, lost: int, no_phone: int, no_contact: int, conversion: ?float}
+     */
+    private function leadCounts(callable $scope, Carbon $from, Carbon $to): array
+    {
+        $intake = fn () => $scope()->whereBetween('created_at', [$from, $to]);
+
+        $total = $intake()->count();
+
+        $gaps = $intake()
+            ->whereNull('mobile_number')
+            ->selectRaw("count(*) as no_phone, sum(case when email is null or email = '' then 1 else 0 end) as no_contact")
+            ->first();
+
+        $events = Todo::query()
+            ->joinSub($scope()->select(['leads.id']), 'l', 'l.id', '=', 'todos.lead_id')
+            ->whereIn('todos.outcome_stage', self::EVENT_STAGES)
+            ->whereBetween('todos.completed_at', [$from, $to])
+            ->selectRaw('todos.outcome_stage as os, count(distinct todos.lead_id) as total')
+            ->groupBy('todos.outcome_stage')
+            ->pluck('total', 'os');
+
+        $booked = (int) ($events['booking_done'] ?? 0);
+
+        return [
+            'total' => $total,
+            'visits' => (int) ($events['site_visit_done'] ?? 0),
+            'booked' => $booked,
+            'lost' => (int) ($events['lost'] ?? 0),
+            'no_phone' => (int) $gaps->no_phone,
+            'no_contact' => (int) $gaps->no_contact,
+            // a dash when there is nothing to divide by. Never 0%.
+            'conversion' => $total > 0 ? round($booked / $total * 100, 1) : null,
+        ];
     }
 
     /* ====================================================================

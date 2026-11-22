@@ -183,6 +183,8 @@ const reports = computed(() => [
        */
       { name: 'By channel partner', group: 'channel_partner' },
       ...(wideLeads.value ? [{ name: 'By assigned to', group: 'assigned_to' }] : []),
+      { name: 'By residence type', group: 'residence_type' },
+      { name: 'By floor', group: 'floor' },
     ]).concat([
       // a page of its own rather than a grouping: it counts losses, not leads
       { name: 'By loss reason', href: route('reports.loss-reasons'), routeName: 'reports.loss-reasons' },

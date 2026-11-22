@@ -466,6 +466,13 @@ return [
              */
             'channel_partner' => ['label' => 'Channel partner', 'column' => 'channel_partner_id'],
             'assigned_to' => ['label' => 'Assigned to', 'column' => 'assigned_to', 'admin' => true],
+            /*
+             | `multi`: the column is a JSON list, so one lead can be in several
+             | rows. `options` is the config list its rows come from. Counted by
+             | ReportController::multiLeadRows() rather than with a GROUP BY.
+             */
+            'residence_type' => ['label' => 'Residence type', 'column' => 'residence_types', 'options' => 'crm.residence_types', 'multi' => true],
+            'floor' => ['label' => 'Floor', 'column' => 'preferred_floors', 'options' => 'crm.floors', 'multi' => true],
         ],
 
         'follow_up_dimensions' => [

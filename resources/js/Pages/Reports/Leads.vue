@@ -37,6 +37,8 @@ const props = defineProps({
   filters: Object,
   range: Object,
   options: Object,
+  // the rows overlap: a lead is in every row it chose — see multiLeadRows()
+  multi: { type: Boolean, default: false },
 })
 
 /*
@@ -117,7 +119,7 @@ const columns = computed(() => [
     <div class="mb-5">
       <ChannelPartnerChart v-if="filters.group === 'channel_partner'" :rows="rows" :period="range.label" />
       <ReportChart v-else :rows="rows" :title="`Leads by ${dimension.toLowerCase()}`"
-                   metric="Leads"
+                   metric="Leads" :bar-only="multi"
                    :colors="filters.group === 'stage' ? options.stageColors : null"
                    :note="`Leads created ${range.label}, zero-filled so an empty ${dimension.toLowerCase()} still shows.`" />
     </div>
@@ -127,13 +129,18 @@ const columns = computed(() => [
       link: clicking Broker opens the Leads page filtered to broker leads
       created in this same window.
     -->
-    <ReportTable :rows="rows" :columns="columns" :href="href" sort="total" />
+    <p v-if="multi" class="mb-3 text-xs leading-relaxed text-slate-500">
+      A lead with more than one choice is counted in each row it chose, so rows can add up to more than the total.
+    </p>
+    <!-- no sort key leaves these rows in the order sent, which is config order -->
+    <ReportTable :rows="rows" :columns="columns" :href="href" :sort="multi ? '' : 'total'"
+                 :totals="multi ? totals : null" />
 
     <p class="mt-3 text-xs leading-relaxed text-slate-400">
       Site visits, bookings and lost count what happened between these dates, once per lead,
       from the follow-up history — so a lead that arrived earlier and booked this week is in
       Bookings without being in Leads. Conversion divides the two, and can read above 100% for
-      a group whose bookings came off older leads. Click any row to open the leads behind it.
+      a group whose bookings came off older leads.<template v-if="!multi"> Click any row to open the leads behind it.</template>
     </p>
   </AppLayout>
 </template>
