@@ -30,6 +30,11 @@ const props = defineProps({
    | meaning and is not asked to.
    */
   colors: { type: Object, default: null },
+  /*
+   | Rows that overlap: no doughnut, because its slices and their percentages
+   | are shares of a sum that counts some leads more than once.
+   */
+  barOnly: { type: Boolean, default: false },
 })
 
 const shape = ref('bar')
@@ -168,7 +173,7 @@ const config = computed(() => shape.value === 'bar'
       every card header in the app the same height — so the control is
       positioned against this wrapper instead of being handed in.
     -->
-    <div class="absolute right-4 top-3.5 z-10 flex overflow-hidden rounded-lg border border-slate-200">
+    <div v-if="!barOnly" class="absolute right-4 top-3.5 z-10 flex overflow-hidden rounded-lg border border-slate-200">
       <button
         v-for="s in ['bar', 'doughnut']" :key="s"
         class="px-2.5 py-1 text-xs font-medium capitalize transition"

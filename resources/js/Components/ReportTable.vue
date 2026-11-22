@@ -26,6 +26,11 @@ const props = defineProps({
   // (row) => href, or null for a row with nowhere to go
   href: { type: Function, default: () => null },
   sort: { type: String, default: 'total' },
+  /*
+   | The footer's figures, keyed like a row, for a report whose rows overlap and
+   | cannot be summed. Without it the footer sums the rows, as it always has.
+   */
+  totals: { type: Object, default: null },
 })
 
 const key = ref(props.sort)
@@ -79,6 +84,8 @@ const fmt = (row, column) => {
 const numeric = column => column.type !== 'text'
 
 const totalOf = column => {
+  if (props.totals) return column.key in props.totals ? fmt(props.totals, column) : null
+
   if (column.type !== 'number') return null
 
   return props.rows.reduce((sum, r) => sum + (r[column.key] ?? 0), 0)
