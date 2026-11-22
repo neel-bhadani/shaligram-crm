@@ -154,7 +154,31 @@ class LeadRequest extends FormRequest
 
             'requirement' => ['nullable', 'string', 'max:100'],
             'booked_unit' => ['nullable', 'required_if:stage,booking_done', 'string', 'max:50'],
+
+            'residence_types' => ['nullable', 'array'],
+            'residence_types.*' => ['distinct', Rule::in(array_keys(config('crm.residence_types')))],
+            'preferred_floors' => ['nullable', 'array'],
+            'preferred_floors.*' => ['distinct', Rule::in(array_keys(config('crm.floors')))],
         ] + $this->followUpRules();
+    }
+
+    /**
+     * The two requirement lists as they are stored: string keys, once each, in
+     * config order, and null rather than an empty list. A list that was not
+     * sent stays absent, so an update leaves that column alone.
+     */
+    public function validated($key = null, $default = null)
+    {
+        $data = parent::validated();
+
+        foreach (['residence_types' => 'residence_types', 'preferred_floors' => 'floors'] as $field => $option) {
+            if (array_key_exists($field, $data)) {
+                $keys = array_map('strval', array_keys(config("crm.$option")));
+                $data[$field] = array_values(array_intersect($keys, $data[$field] ?? [])) ?: null;
+            }
+        }
+
+        return data_get($data, $key, $default);
     }
 
     /**

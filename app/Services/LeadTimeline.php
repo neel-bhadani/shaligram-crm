@@ -63,6 +63,8 @@ class LeadTimeline
         'source' => 'Source',
         'channel_partner_id' => 'Channel partner',
         'requirement' => 'Requirement',
+        'residence_types' => 'Type of residence',
+        'preferred_floors' => 'Preferred floor',
         'reason' => 'Reason for loss',
         'booked_unit' => 'Booked unit',
         'assigned_to' => 'Assigned to',
@@ -429,6 +431,8 @@ class LeadTimeline
             'source' => CrmTaxonomy::sourceLabel($raw),
             'reason' => config("crm.lost_reasons.$raw", $raw),
             'whatsapp_opt_out' => $raw === 'opted_out' ? 'Opted out' : 'Messages allowed',
+            'residence_types' => (new Lead)->setRawAttributes([$field => $raw])->residence_type_labels,
+            'preferred_floors' => (new Lead)->setRawAttributes([$field => $raw])->preferred_floor_labels,
             default => $raw,
         };
     }

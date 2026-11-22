@@ -37,6 +37,7 @@ const blank = {
    | LeadRequest does not validate the key either, so nothing can write it.
    */
   channel_partner_id: '', stage: 'fresh', reason: '', booked_unit: '',
+  residence_types: [], preferred_floors: [],
 }
 
 const blankFollowUp = { follow_up_type: 'call', follow_up_at: '', follow_up_remarks: '' }
@@ -473,6 +474,29 @@ const submit = () => {
         @cancel="cancelAddPartner"
       />
     </FormField>
+
+    <!-- what the customer is looking for; optional at every stage -->
+    <div class="mt-6 border-y border-slate-200 py-5">
+      <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Requirements</div>
+
+      <FormField label="Type of residence" :error="form.errors.residence_types">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Type of residence">
+          <label v-for="(label, key) in options.residenceTypes" :key="key" class="flex items-center gap-2 text-sm">
+            <input v-model="form.residence_types" type="checkbox" :value="key" class="h-4 w-4 flex-none" />
+            {{ label }}
+          </label>
+        </div>
+      </FormField>
+
+      <FormField class="mt-4" label="Preferred floor" :error="form.errors.preferred_floors">
+        <div class="grid grid-cols-3 gap-x-1 gap-y-2 sm:grid-cols-7" role="group" aria-label="Preferred floor">
+          <label v-for="(label, key) in options.floors" :key="key" class="flex items-center gap-1.5 text-xs">
+            <input v-model="form.preferred_floors" type="checkbox" :value="key" class="h-4 w-4 flex-none" />
+            {{ label }}
+          </label>
+        </div>
+      </FormField>
+    </div>
 
     <FormField class="mt-4" label="Stage" required :error="form.errors.stage">
       <select v-model="form.stage">

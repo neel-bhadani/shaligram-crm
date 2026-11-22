@@ -17,6 +17,8 @@ class Lead extends Model
         'last_activity_at' => 'datetime',
         'booking_date' => 'date',
         'whatsapp_opted_out_at' => 'datetime',
+        'residence_types' => 'array',
+        'preferred_floors' => 'array',
     ];
 
     /**
@@ -133,6 +135,26 @@ class Lead extends Model
         $label = $this->channelPartner?->display_label ?? $this->broker_name;
 
         return $label !== null && $label !== '' ? $label : null;
+    }
+
+    /** "3 BHK, 3.5 BHK", or null when none is chosen. Not appended: ask for it by name. */
+    public function getResidenceTypeLabelsAttribute(): ?string
+    {
+        return self::optionLabels('residence_types', $this->residence_types);
+    }
+
+    /** "3rd Floor, 4th Floor", or null when none is chosen. Not appended: ask for it by name. */
+    public function getPreferredFloorLabelsAttribute(): ?string
+    {
+        return self::optionLabels('floors', $this->preferred_floors);
+    }
+
+    /** @param  list<string>|null  $keys  keys of config("crm.$option") */
+    private static function optionLabels(string $option, ?array $keys): ?string
+    {
+        $labels = config("crm.$option");
+
+        return implode(', ', array_map(fn ($key) => $labels[$key] ?? $key, $keys ?? [])) ?: null;
     }
 
     public function isTerminal(): bool

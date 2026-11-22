@@ -245,7 +245,7 @@ class LeadController extends Controller
                 'channelPartner.parent:id,name',
                 'pendingTodo',
                 'completedTodos.completer:id,first_name,last_name',
-            ]),
+            ])->append(['residence_type_labels', 'preferred_floor_labels']),
             // beside `lead`, never inside it: `lead` is exactly what it was
             // before the timeline existed, and every key the modal reads from
             // it is where it always was
@@ -785,6 +785,8 @@ class LeadController extends Controller
             'sources' => CrmTaxonomy::allSources(),
             'activeSources' => CrmTaxonomy::activeSourceKeys(),
             'reasons' => config('crm.lost_reasons'),
+            'residenceTypes' => config('crm.residence_types'),
+            'floors' => config('crm.floors'),
             // the Lost filter's reason dropdown: every reason, then the gap
             'lossReasons' => app(LossEvents::class)->reasonOptions(),
             'projects' => $projects,
