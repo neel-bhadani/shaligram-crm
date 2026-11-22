@@ -351,92 +351,105 @@ const requirementsLine = (l, maxTypes = 3, maxFloors = 5) => {
         Clear the filters, or add the first lead for this project.
       </div>
 
-      <!-- desktop table -->
-      <table v-else class="hidden w-full text-sm lg:table">
+      <!--
+        desktop table, only from the width where every column and the actions
+        fit beside the sidebar; overflow-x-auto is the net under that, and the
+        actions column is sticky so it stays reachable if the net is ever used
+      -->
+      <div v-else class="hidden overflow-x-auto min-[1366px]:block">
+      <table class="w-full text-sm">
         <thead>
           <tr class="bg-slate-50 text-left text-xs text-slate-500">
-            <th v-if="canBulk" class="w-8 py-2.5 pl-4">
+            <th v-if="canBulk" class="w-8 py-2.5 pl-3">
               <input type="checkbox" class="h-4 w-4" :checked="allTicked" aria-label="Tick every lead on this page"
                      @change="toggleAll" />
             </th>
-            <th class="px-4 py-2.5 font-semibold">Name</th>
-            <th class="px-4 py-2.5 font-semibold">Mobile</th>
-            <th class="px-4 py-2.5 font-semibold">Stage</th>
-            <th class="px-4 py-2.5 font-semibold">Project</th>
-            <th class="px-4 py-2.5 font-semibold">Source</th>
-            <th v-if="isAdmin" class="px-4 py-2.5 font-semibold">Assigned to</th>
-            <th class="px-4 py-2.5 font-semibold">Created</th>
-            <th class="px-4 py-2.5 font-semibold">Days in stage</th>
-            <th class="px-4 py-2.5"></th>
+            <th class="min-w-36 px-2 py-2.5 font-semibold">Name</th>
+            <th class="px-2 py-2.5 font-semibold">Mobile</th>
+            <th class="px-2 py-2.5 font-semibold">Stage</th>
+            <th class="min-w-24 px-2 py-2.5 font-semibold">Project</th>
+            <th class="min-w-24 px-2 py-2.5 font-semibold">Source</th>
+            <th v-if="isAdmin" class="min-w-35 px-2 py-2.5 font-semibold">Assigned to</th>
+            <th class="px-2 py-2.5 font-semibold">Created</th>
+            <th class="min-w-14 px-2 py-2.5 text-[11px] font-semibold leading-tight">Days in stage</th>
+            <th class="sticky right-0 bg-slate-50 px-2 py-2.5"></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="l in leads.data" :key="l.id"
-              class="border-b border-l-4 border-slate-100 hover:bg-slate-50/70"
+              class="group border-b border-l-4 border-slate-100 hover:bg-slate-50/70"
               :style="{ borderLeftColor: options.stageColors[l.stage] }">
-            <td v-if="canBulk" class="py-3 pl-4">
+            <td v-if="canBulk" class="py-3 pl-3">
               <input v-model="ticked" type="checkbox" :value="l.id" class="h-4 w-4" :aria-label="`Tick ${l.full_name}`" />
             </td>
-            <td class="px-4 py-3">
-              <div class="font-semibold">{{ l.full_name }}</div>
-              <div class="text-xs text-slate-400">{{ l.email }}</div>
-              <div v-if="requirementsLine(l)" class="max-w-56 text-xs text-slate-400"
+            <td class="px-2 py-3">
+              <div class="wrap-anywhere font-semibold">{{ l.full_name }}</div>
+              <div class="wrap-anywhere text-xs text-slate-400">{{ l.email }}</div>
+              <!-- w-0 min-w-full: fills the column without ever widening it -->
+              <div v-if="requirementsLine(l)" class="w-0 min-w-full truncate text-xs text-slate-400"
                    :title="requirementsLine(l, Infinity, Infinity)">{{ requirementsLine(l) }}</div>
             </td>
-            <td class="px-4 py-3">{{ l.mobile_number }}<MissingContactBadge :lead="l" /></td>
-            <td class="px-4 py-3"><StageBadge :stage="l.stage" /></td>
-            <td class="px-4 py-3">{{ l.project?.name }}</td>
-            <td class="px-4 py-3">
+            <td class="whitespace-nowrap px-2 py-3">{{ l.mobile_number }}<MissingContactBadge :lead="l" class="!whitespace-normal" /></td>
+            <td class="px-2 py-3"><StageBadge :stage="l.stage" /></td>
+            <td class="px-2 py-3">{{ l.project?.name }}</td>
+            <td class="px-2 py-3">
               {{ options.sources[l.source] }}
               <!-- the partner this lead came through, or the free text a lead
                    from before the partner list still carries -->
               <div v-if="brokerLabel(l)" class="text-xs text-slate-400">{{ brokerLabel(l) }}</div>
             </td>
-            <td v-if="isAdmin" class="px-4 py-3"><AssignedTo :user="l.owner" /></td>
-            <td class="px-4 py-3">{{ fmtDate(l.created_at) }}</td>
-            <td class="px-4 py-3 font-semibold" :class="ageClass(l.days_in_stage)">
+            <td v-if="isAdmin" class="wrap-anywhere px-2 py-3"><AssignedTo :user="l.owner" /></td>
+            <td class="whitespace-nowrap px-2 py-3">{{ fmtDate(l.created_at) }}</td>
+            <td class="px-2 py-3 font-semibold" :class="ageClass(l.days_in_stage)">
               {{ l.days_in_stage === null ? '—' : l.days_in_stage + 'd' }}
             </td>
-            <td class="px-4 py-3">
-              <div class="flex gap-1.5">
-                <button class="btn-xs" @click="openView(l.id)">View</button>
-                <button v-if="canEdit" class="btn-xs" @click="openEdit(l)">Edit</button>
-                <button v-if="isAdmin" class="btn-xs hover:!border-rose-600 hover:!text-rose-700"
+            <td class="sticky right-0 bg-white px-2 py-3 group-hover:bg-slate-50">
+              <div class="flex gap-1">
+                <button class="btn-xs min-h-8 whitespace-nowrap px-1.5" @click="openView(l.id)">View</button>
+                <button v-if="canEdit" class="btn-xs min-h-8 whitespace-nowrap px-1.5" @click="openEdit(l)">Edit</button>
+                <button v-if="isAdmin" class="btn-xs min-h-8 whitespace-nowrap px-1.5 hover:!border-rose-600 hover:!text-rose-700"
                         @click="confirmDelete(l)">Delete</button>
               </div>
             </td>
           </tr>
         </tbody>
       </table>
+      </div>
 
       <!-- mobile cards: a nine column table is unusable on a phone -->
-      <div v-if="leads.data.length" class="divide-y divide-slate-100 lg:hidden">
+      <div v-if="leads.data.length" class="divide-y divide-slate-100 min-[1366px]:hidden">
         <div v-for="l in leads.data" :key="l.id" class="border-l-4 p-4"
              :style="{ borderLeftColor: options.stageColors[l.stage] }">
           <div class="mb-2 flex items-start justify-between gap-3">
             <input v-if="canBulk" v-model="ticked" type="checkbox" :value="l.id" class="mt-1 h-4 w-4 flex-none"
                    :aria-label="`Tick ${l.full_name}`" />
-            <div class="min-w-0 flex-1">
-              <div class="truncate font-semibold">{{ l.full_name }}</div>
-              <div class="text-xs text-slate-400">{{ l.mobile_number }}</div>
-              <MissingContactBadge :lead="l" class="mt-1" />
+            <div class="flex min-w-0 flex-1 flex-col items-start gap-2 sm:flex-row sm:justify-between sm:gap-3">
+              <div class="w-full min-w-0 sm:flex-1">
+                <div class="break-words font-semibold">{{ l.full_name }}</div>
+                <div class="text-xs text-slate-400">{{ l.mobile_number }}</div>
+                <MissingContactBadge :lead="l" class="mt-1" />
+                <div v-if="l.email" class="wrap-anywhere text-xs text-slate-400">{{ l.email }}</div>
+                <div v-if="requirementsLine(l)" class="truncate text-xs text-slate-400"
+                     :title="requirementsLine(l, Infinity, Infinity)">{{ requirementsLine(l) }}</div>
+              </div>
+              <StageBadge :stage="l.stage" />
             </div>
-            <StageBadge :stage="l.stage" />
           </div>
 
-          <dl class="grid grid-cols-2 gap-y-1 text-xs">
-            <dt class="text-slate-400">Project</dt><dd class="text-right">{{ l.project?.name }}</dd>
+          <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs md:grid-cols-[6rem_minmax(0,1fr)_6rem_minmax(0,1fr)] md:gap-y-2">
+            <dt class="text-slate-400">Project</dt><dd class="text-right md:text-left">{{ l.project?.name }}</dd>
             <dt class="text-slate-400">Source</dt>
-            <dd class="text-right">
+            <dd class="text-right md:text-left">
               {{ options.sources[l.source] }}
               <span v-if="brokerLabel(l)" class="block text-slate-400">{{ brokerLabel(l) }}</span>
             </dd>
             <template v-if="isAdmin">
               <dt class="text-slate-400">Assigned to</dt>
-              <dd class="text-right"><AssignedTo :user="l.owner" /></dd>
+              <dd class="text-right md:text-left"><AssignedTo :user="l.owner" /></dd>
             </template>
+            <dt class="text-slate-400">Created</dt><dd class="text-right md:text-left">{{ fmtDate(l.created_at) }}</dd>
             <dt class="text-slate-400">Days in stage</dt>
-            <dd class="text-right font-semibold" :class="ageClass(l.days_in_stage)">
+            <dd class="text-right md:text-left font-semibold" :class="ageClass(l.days_in_stage)">
               {{ l.days_in_stage === null ? '—' : l.days_in_stage + 'd' }}
             </dd>
           </dl>
