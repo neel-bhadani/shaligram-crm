@@ -206,6 +206,19 @@ const fmtDate = v => v ? new Date(v).toLocaleDateString('en-IN',
 
 const ageClass = d => d === null ? 'text-slate-400'
   : d > 7 ? 'text-rose-700' : d > 3 ? 'text-amber-700' : 'text-slate-600'
+
+// the Name cell's requirements line: "3 BHK, 3.5 BHK · Floors 3, 4, 5"
+const requirementsLine = (l, maxTypes = 3, maxFloors = 5) => {
+  const list = (items, max) => items.slice(0, max).join(', ')
+    + (items.length > max ? ` +${items.length - max} more` : '')
+  const types = (l.residence_types ?? []).map(k => props.options.residenceTypes[k] ?? k)
+  const floors = l.preferred_floors ?? []
+
+  return [
+    list(types, maxTypes),
+    floors.length ? `${floors.length > 1 ? 'Floors' : 'Floor'} ${list(floors, maxFloors)}` : '',
+  ].filter(Boolean).join(' · ')
+}
 </script>
 
 <template>
@@ -367,6 +380,8 @@ const ageClass = d => d === null ? 'text-slate-400'
             <td class="px-4 py-3">
               <div class="font-semibold">{{ l.full_name }}</div>
               <div class="text-xs text-slate-400">{{ l.email }}</div>
+              <div v-if="requirementsLine(l)" class="max-w-56 text-xs text-slate-400"
+                   :title="requirementsLine(l, Infinity, Infinity)">{{ requirementsLine(l) }}</div>
             </td>
             <td class="px-4 py-3">{{ l.mobile_number }}<MissingContactBadge :lead="l" /></td>
             <td class="px-4 py-3"><StageBadge :stage="l.stage" /></td>
