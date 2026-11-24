@@ -207,16 +207,21 @@ const fmtDate = v => v ? new Date(v).toLocaleDateString('en-IN',
 const ageClass = d => d === null ? 'text-slate-400'
   : d > 7 ? 'text-rose-700' : d > 3 ? 'text-amber-700' : 'text-slate-600'
 
-// the Name cell's requirements line: "3 BHK, 3.5 BHK · Floors 3, 4, 5"
+// the Name cell's requirements line: "3 BHK, 3.5 BHK · Floors 3, 4, Penthouse".
+// Numbered floors show as their key; any other floor (Penthouse) by its label,
+// and on its own without the "Floor" prefix.
 const requirementsLine = (l, maxTypes = 3, maxFloors = 5) => {
   const list = (items, max) => items.slice(0, max).join(', ')
     + (items.length > max ? ` +${items.length - max} more` : '')
   const types = (l.residence_types ?? []).map(k => props.options.residenceTypes[k] ?? k)
-  const floors = l.preferred_floors ?? []
+  const floorKeys = l.preferred_floors ?? []
+  const isNumbered = k => /^\d+$/.test(k)
+  const floors = floorKeys.map(k => isNumbered(k) ? k : (props.options.floors[k] ?? k))
+  const prefix = !floorKeys.some(isNumbered) ? '' : floorKeys.length > 1 ? 'Floors ' : 'Floor '
 
   return [
     list(types, maxTypes),
-    floors.length ? `${floors.length > 1 ? 'Floors' : 'Floor'} ${list(floors, maxFloors)}` : '',
+    floors.length ? `${prefix}${list(floors, maxFloors)}` : '',
   ].filter(Boolean).join(' · ')
 }
 </script>
