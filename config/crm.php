@@ -181,6 +181,7 @@ return [
         '12' => '12th Floor',
         '13' => '13th Floor',
         '14' => '14th Floor',
+        'penthouse' => 'Penthouse',
     ],
 
     'todo_types' => [

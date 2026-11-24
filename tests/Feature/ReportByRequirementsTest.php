@@ -234,6 +234,27 @@ class ReportByRequirementsTest extends TestCase
 
     /* ---------------- helpers ---------------- */
 
+    public function test_penthouse_is_its_own_floor_row_after_the_14th_and_before_not_specified(): void
+    {
+        $this->lead(['preferred_floors' => ['3', 'penthouse']]);
+        $this->lead(['preferred_floors' => ['penthouse']]);
+        $this->lead(['preferred_floors' => ['14']]);
+        $this->lead(['preferred_floors' => null]);
+
+        $props = $this->props('floor');
+        $keys = array_column($props['rows'], 'key');
+        $report = $this->report('floor');
+
+        $this->assertSame(['14', 'penthouse', self::NOT_SPECIFIED], array_slice($keys, -3));
+        $this->assertSame('Penthouse', $report['rows']['penthouse']['label']);
+        $this->assertSame(2, $report['rows']['penthouse']['total']);
+        $this->assertSame(1, $report['rows']['3']['total']);
+        $this->assertSame(1, $report['rows']['14']['total']);
+        $this->assertSame(1, $report['rows'][self::NOT_SPECIFIED]['total']);
+        $this->assertSame(4, $report['totals']['total'], 'distinct leads, not the sum of the rows');
+        $this->assertEquals(50, $report['rows']['penthouse']['share']);
+    }
+
     /** @return array{rows: array<string, array<string, mixed>>, totals: array<string, mixed>, multi: bool} */
     private function report(string $group, ?User $as = null): array
     {

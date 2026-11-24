@@ -197,6 +197,46 @@ class LeadRequirementsTest extends TestCase
             ->assertJsonPath('lead.requirement', 'Garden facing');
     }
 
+    public function test_penthouse_can_be_saved_on_its_own(): void
+    {
+        $lead = $this->createLead(['preferred_floors' => ['penthouse']]);
+
+        $this->assertSame(['penthouse'], $lead->preferred_floors);
+        $this->assertSame('Penthouse', $lead->preferred_floor_labels);
+    }
+
+    public function test_penthouse_is_stored_after_the_numbered_floors(): void
+    {
+        $lead = $this->createLead(['preferred_floors' => ['penthouse', '14', 3]]);
+
+        $this->assertSame(['3', '14', 'penthouse'], $lead->preferred_floors);
+        $this->assertSame('3rd Floor, 14th Floor, Penthouse', $lead->preferred_floor_labels);
+    }
+
+    public function test_penthouse_is_labelled_in_the_view_popup_and_the_timeline(): void
+    {
+        $lead = $this->leadWithRequirements();
+
+        $this->edit($lead, $this->admin, ['residence_types' => ['3_bhk'], 'preferred_floors' => ['3', 'penthouse']]);
+
+        $response = $this->getJson("/leads/{$lead->id}")->assertOk()
+            ->assertJsonPath('lead.preferred_floor_labels', '3rd Floor, Penthouse');
+
+        $this->assertSame(
+            [['field' => 'Preferred floor', 'from' => '4th Floor, 5th Floor', 'to' => '3rd Floor, Penthouse']],
+            collect($response->json('timeline'))->pluck('change')->filter()->values()->all(),
+        );
+    }
+
+    public function test_the_leads_index_has_penthouse_and_its_label_for_the_table_line(): void
+    {
+        $this->createLead(['preferred_floors' => ['3', 'penthouse']]);
+
+        $this->actingAs($this->admin)->get('/leads')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('leads.data.0.preferred_floors', ['3', 'penthouse'])
+            ->where('options.floors.penthouse', 'Penthouse'));
+    }
+
     /* ---------------- fixtures ---------------- */
 
     private function leadWithRequirements(): Lead
