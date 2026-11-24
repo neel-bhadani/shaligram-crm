@@ -51,6 +51,17 @@ class Integration extends Model
         return static::firstOrNew(['provider' => $provider]);
     }
 
+    /**
+     * The project every WhatsApp lead lands on before somebody chooses its
+     * real one with Switch project, or null when none is configured.
+     */
+    public static function whatsAppDefaultProjectId(): ?int
+    {
+        $id = (int) static::where('provider', 'whatsapp')->first()?->setting('default_project_id');
+
+        return $id > 0 ? $id : null;
+    }
+
     /** One setting, or the fallback. */
     public function setting(string $key, mixed $default = null): mixed
     {

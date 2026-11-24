@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\ResolvesFilters;
+use App\Models\Integration;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
@@ -249,6 +250,8 @@ class CalendarController extends Controller
             // every project, active or not: a lead on a switched-off project
             // still has follow-ups somebody may want to narrow to
             'projects' => Project::orderBy('name')->get(['id', 'name']),
+            // LeadViewModal shows "Project not chosen" for leads on it
+            'whatsAppDefaultProjectId' => Integration::whatsAppDefaultProjectId(),
             'stages' => CrmTaxonomy::allStages(),
             // the active keys for CompleteTaskModal's stage dropdown, opened
             // from a follow-up row to log the call without leaving the page

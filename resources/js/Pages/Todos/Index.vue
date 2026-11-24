@@ -7,6 +7,7 @@ import StageBadge from '@/Components/StageBadge.vue'
 import CompleteTaskModal from '@/Components/CompleteTaskModal.vue'
 import TodoFormModal from '@/Components/TodoFormModal.vue'
 import SwitchProjectModal from '@/Components/SwitchProjectModal.vue'
+import ProjectNotChosenBadge from '@/Components/ProjectNotChosenBadge.vue'
 import CallButtons from '@/Components/CallButtons.vue'
 import AssignedTo from '@/Components/AssignedTo.vue'
 import FilterChips from '@/Components/FilterChips.vue'
@@ -221,6 +222,8 @@ const isOverdue = t => t.status === 'pending' && new Date(t.scheduled_at) < new 
  | one row's worth of detail, not the whole page.
  */
 const leadName = t => t.lead?.full_name ?? 'Lead deleted'
+// still on the WhatsApp default project: its real one is not chosen yet
+const projectNotChosen = t => !!t.lead && t.lead.project_id === props.options.whatsAppDefaultProjectId
 const leadLine = t => [t.lead?.mobile_number, t.lead?.project?.name].filter(Boolean).join(' · ') || '—'
 
 /* ---------------- inline expandable activity ---------------- */
@@ -459,7 +462,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
               </td>
               <td class="px-4 py-3">
                 <div class="font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
-                <div class="text-xs text-slate-400">{{ leadLine(t) }}</div>
+                <div class="text-xs text-slate-400">{{ leadLine(t) }}<ProjectNotChosenBadge :show="projectNotChosen(t)" /></div>
               </td>
               <td class="px-4 py-3">{{ options.types[t.type] }}</td>
               <td class="px-4 py-3">{{ fmt(t.scheduled_at) }}</td>
@@ -553,6 +556,7 @@ watch(() => props.todos, () => { expandedTodoId.value = null })
               <div class="min-w-0">
                 <div class="truncate font-semibold" :class="t.lead ? '' : 'italic text-slate-400'">{{ leadName(t) }}</div>
                 <div class="text-xs text-slate-400">{{ t.lead?.mobile_number ?? '—' }}</div>
+                <ProjectNotChosenBadge :show="projectNotChosen(t)" class="!ml-0 mt-1" />
               </div>
             </div>
             <StageBadge v-if="t.lead" :stage="t.lead.stage" />

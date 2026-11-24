@@ -8,6 +8,7 @@ use App\Http\Requests\LeadReassignRequest;
 use App\Http\Requests\LeadRequest;
 use App\Http\Requests\LeadSwitchProjectRequest;
 use App\Models\ChannelPartner;
+use App\Models\Integration;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
 use App\Models\Project;
@@ -790,6 +791,8 @@ class LeadController extends Controller
             // the Lost filter's reason dropdown: every reason, then the gap
             'lossReasons' => app(LossEvents::class)->reasonOptions(),
             'projects' => $projects,
+            // LeadViewModal shows "Project not chosen" for leads on it
+            'whatsAppDefaultProjectId' => Integration::whatsAppDefaultProjectId(),
             /*
              | The picker that replaced the free-text broker field.
              |

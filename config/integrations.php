@@ -39,6 +39,9 @@ return [
             'description' => 'Leads from the 11za WhatsApp chatbot arrive here as soon as 11za sends the contact.',
             'family' => 'whatsapp',
             'built' => true,
+            // off: every lead goes to the default project and is moved with
+            // Switch project; on: 11za tags choose the project (LeadFormRouter)
+            'tag_routing' => false,
         ],
 
         'website' => [

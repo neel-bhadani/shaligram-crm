@@ -41,7 +41,7 @@ class LeadReassignRequest extends FormRequest
             // the same "active, or the lead's own value" rule LeadRequest and
             // CompleteTodoRequest already use for a stage — see
             // ValidatesTaxonomy for why an exists-only rule would be wrong
-            'stage' => ['nullable', 'string', $this->activeStageRule($lead->stage)],
+            'stage' => ['nullable', 'string', $this->activeStageRule($lead->stage), $this->projectChosenRule($lead)],
             'assigned_to' => [
                 'required',
                 'integer',

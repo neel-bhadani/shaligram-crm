@@ -142,7 +142,9 @@ const submit = () => {
 
         <div class="grid gap-4 sm:grid-cols-2">
           <FormField label="Default project" required :error="form.errors.default_project_id"
-                     hint="Where WhatsApp leads go when no 11za tag below matches.">
+                     :hint="card.tag_routing
+                       ? 'Where WhatsApp leads go when no 11za tag below matches.'
+                       : 'Every WhatsApp lead goes to this project. Use Switch project to move it to the right one.'">
             <select v-model="form.default_project_id">
               <option value="">Choose a project</option>
               <option v-for="p in options.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
@@ -159,8 +161,8 @@ const submit = () => {
           </FormField>
         </div>
 
-        <!-- ---------- projects by 11za tag ---------- -->
-        <div class="space-y-3">
+        <!-- ---------- projects by 11za tag (only while tag routing is on) ---------- -->
+        <div v-if="card.tag_routing" class="space-y-3">
           <h5 class="text-sm font-semibold text-slate-800">
             Projects by 11za tag
             <span v-if="unmappedCount" class="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">

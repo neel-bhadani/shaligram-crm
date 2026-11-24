@@ -9,6 +9,8 @@ import LeadActivityTimeline from './LeadActivityTimeline.vue'
 import LeadWhatsAppPanel from './LeadWhatsAppPanel.vue'
 import SectionBoundary from './SectionBoundary.vue'
 import LeadReassignPanel from './LeadReassignPanel.vue'
+import ProjectNotChosenBadge from './ProjectNotChosenBadge.vue'
+import SwitchProjectModal from './SwitchProjectModal.vue'
 import { brokerLabel } from '@/lib/brokerLabel.js'
 
 const props = defineProps({
@@ -33,6 +35,12 @@ const sameMobile = ref([])
 const loading = ref(false)
 // role => candidates, not a flat list — see LeadController::reassignCandidates()
 const reassignCandidates = ref({})
+// still on the WhatsApp default project: its real one is not chosen yet.
+// Switch project needs only LeadPolicy::view(), which opening this already passed.
+const projectNotChosen = computed(() =>
+  !!lead.value?.project_id && lead.value.project_id === props.options?.whatsAppDefaultProjectId)
+const switchOpen = ref(false)
+const closeSwitch = () => { switchOpen.value = false; load() }
 
 async function load() {
   if (!props.show || !props.leadId) {
@@ -86,7 +94,11 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
         <div><dt class="text-[11px] font-semibold text-slate-400">Email</dt>
              <dd class="break-all text-sm">{{ lead.email || '—' }}</dd></div>
         <div><dt class="text-[11px] font-semibold text-slate-400">Project</dt>
-             <dd class="text-sm">{{ lead.project?.name }}</dd></div>
+             <dd class="text-sm">
+               {{ lead.project?.name }}<ProjectNotChosenBadge :show="projectNotChosen" />
+               <button v-if="projectNotChosen" type="button" class="btn-xs ml-1.5"
+                       @click="switchOpen = true">Switch project</button>
+             </dd></div>
         <div><dt class="text-[11px] font-semibold text-slate-400">Source</dt>
              <dd class="text-sm">
                {{ options.sources[lead.source] }}
@@ -139,6 +151,8 @@ const fmt = v => v ? new Date(v).toLocaleString('en-IN',
         <LeadReassignPanel v-if="allowEdit && canReassign" :lead="lead" :candidates="reassignCandidates"
                            :options="options" @reassigned="load" />
       </SectionBoundary>
+
+      <SwitchProjectModal :show="switchOpen" :todo="{ lead }" :options="options" @close="closeSwitch" />
     </div>
 
     <template #footer>
