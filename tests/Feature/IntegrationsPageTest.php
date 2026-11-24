@@ -10,6 +10,7 @@ use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\IntegrationLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -636,6 +637,56 @@ class IntegrationsPageTest extends TestCase
                 ->where('cards.2.key_mismatch', false)
                 ->where('cards.2.connected', true)
             );
+    }
+
+    public function test_a_request_with_no_api_key_is_not_a_key_mismatch(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->deliverToElevenZa(null)->assertUnauthorized();
+
+        $this->assertNull(Integration::forProvider('whatsapp')->last_rejected_at);
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.key_mismatch', false)
+                ->where('cards.2.connected', false)
+            );
+    }
+
+    public function test_a_whatsapp_test_lead_moves_neither_last_received_at_nor_last_delivery_at(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)->post('/integrations/whatsapp/test')->assertSessionHas('success');
+
+        $integration = Integration::forProvider('whatsapp');
+        $this->assertSame(1, Lead::count());
+        $this->assertNull($integration->last_received_at);
+        $this->assertNull($integration->last_delivery_at);
+    }
+
+    /** No save-and-restore: a real lead logged while a test runs keeps its timestamp. */
+    public function test_a_real_lead_logged_during_a_test_lead_still_moves_last_received_at(): void
+    {
+        $this->connect();
+        Integration::where('provider', 'facebook')->update(['last_received_at' => now()->subDay()]);
+
+        $realLeadLogged = false;
+        IntegrationEvent::created(function (IntegrationEvent $event) use (&$realLeadLogged) {
+            if ($realLeadLogged || $event->lead_id === null) {
+                return;
+            }
+
+            $realLeadLogged = true;
+            app(IntegrationLogger::class)->created('facebook', 'real-lead-1', Lead::findOrFail($event->lead_id));
+        });
+
+        $this->sendTestLead()->assertSessionHas('success');
+
+        $this->assertTrue($realLeadLogged);
+        $this->assertEquals(now(), Integration::forProvider('facebook')->last_received_at);
+        $this->assertNull(Integration::forProvider('facebook')->last_delivery_at);
     }
 
     public function test_the_whatsapp_test_lead_works_when_ready_and_does_not_connect_the_card(): void

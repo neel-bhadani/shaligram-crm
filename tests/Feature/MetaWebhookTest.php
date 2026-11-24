@@ -151,6 +151,18 @@ class MetaWebhookTest extends TestCase
         $this->assertNull($integration->last_rejected_at);
     }
 
+    public function test_a_missing_signature_header_is_refused_but_not_recorded(): void
+    {
+        Queue::fake();
+
+        $this->call('POST', self::URL, [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($this->payload()))
+            ->assertForbidden();
+
+        $integration = Integration::forProvider('facebook');
+        $this->assertNull($integration->last_rejected_at);
+        $this->assertFalse($integration->keyMismatch());
+    }
+
     public function test_an_invalid_signature_records_a_rejection(): void
     {
         Queue::fake();

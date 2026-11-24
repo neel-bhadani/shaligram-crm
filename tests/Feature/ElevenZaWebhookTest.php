@@ -120,8 +120,18 @@ class ElevenZaWebhookTest extends TestCase
         $this->assertEquals($first, Integration::forProvider('whatsapp')->last_rejected_at);
 
         Carbon::setTestNow(now()->addSeconds(31));
-        $this->deliver($this->payload(), key: null)->assertUnauthorized();
+        $this->deliver($this->payload(), key: 'still-not-our-key')->assertUnauthorized();
         $this->assertEquals(now(), Integration::forProvider('whatsapp')->last_rejected_at);
+    }
+
+    /** A bot probing the public URL with no header must not turn the badge red. */
+    public function test_a_request_with_no_api_key_header_is_refused_but_not_recorded(): void
+    {
+        $this->deliver($this->payload(), key: null)->assertUnauthorized();
+
+        $integration = Integration::forProvider('whatsapp');
+        $this->assertNull($integration->last_rejected_at);
+        $this->assertFalse($integration->keyMismatch());
     }
 
     public function test_a_rejection_is_not_recorded_before_there_is_a_key(): void

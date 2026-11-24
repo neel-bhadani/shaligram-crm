@@ -42,8 +42,9 @@ class ElevenZaWebhookController extends Controller
              */
             Log::warning('[integration:'.self::PROVIDER.'] webhook api key rejected', ['ip' => $request->ip()]);
 
-            // only once there is a key for 11za to have got wrong
-            if (filled($integration->setting('api_key'))) {
+            // only a key that was sent and is wrong, against a key we have:
+            // a bot probing the public URL with no header is not 11za
+            if (filled($request->header('x-api-key')) && filled($integration->setting('api_key'))) {
                 Integration::recordRejection(self::PROVIDER);
             }
 

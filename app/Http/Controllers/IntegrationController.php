@@ -246,23 +246,6 @@ class IntegrationController extends Controller
             return back()->with('error', 'Configure and switch on the integration before sending a test lead.');
         }
 
-        /*
-         | A test lead is not a lead received: the card's "Last lead received"
-         | is put back to what it was once the test has run. It never touches
-         | last_delivery_at, which only the webhooks write.
-         */
-        $lastReceivedAt = $integration->last_received_at;
-
-        try {
-            return $this->sendTestLead($provider);
-        } finally {
-            Integration::where('provider', $provider)->update(['last_received_at' => $lastReceivedAt]);
-        }
-    }
-
-    /** The test lead itself, for either family. */
-    private function sendTestLead(string $provider)
-    {
         if (config("integrations.providers.$provider.family") === 'whatsapp') {
             return $this->testWhatsApp();
         }
@@ -281,7 +264,7 @@ class IntegrationController extends Controller
                 ['name' => 'email',        'values' => ['test.lead@example.com']],
                 // an unrecognised question, so the test exercises that branch too
                 ['name' => 'preferred_bhk', 'values' => ['3 BHK']],
-            ]);
+            ], isTestRun: true);
         } catch (Throwable $e) {
             /*
              | The job rethrows a transient failure, because a queued delivery
@@ -310,7 +293,7 @@ class IntegrationController extends Controller
                 'name' => 'Test Lead',
                 'mobileNo' => '91'.$this->testPhone(),
                 'updatedAt' => now()->toIso8601ZuluString('millisecond'),
-            ]);
+            ], isTestRun: true);
         } catch (Throwable $e) {
             return back()->with('error', 'The test lead failed: '.$e->getMessage());
         }
