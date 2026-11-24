@@ -88,8 +88,15 @@ class MetaWebhookController extends Controller
         if ($secret === '' || ! $this->signatureIsValid($request, $secret)) {
             Log::warning("[integration:{$provider}] webhook signature rejected", ['ip' => $request->ip()]);
 
+            // only once there is a secret for Meta's signature to have missed
+            if ($secret !== '') {
+                Integration::recordRejection($provider);
+            }
+
             return response('Invalid signature.', 403);
         }
+
+        Integration::recordDelivery($provider);
 
         /*
          | Signed, so it is Meta — but not necessarily switched on. A payload

@@ -1,0 +1,1 @@
+var e=new Intl.RelativeTimeFormat(`en`,{numeric:`auto`}),t=[[`year`,31536e3],[`month`,2592e3],[`week`,604800],[`day`,86400],[`hour`,3600],[`minute`,60]];function n(n,r=Date.now()){let i=Math.round((new Date(n).getTime()-r)/1e3);if(Math.abs(i)<45)return`just now`;let[a,o]=t.find(([,e])=>Math.abs(i)>=e)??t[t.length-1];return e.format(Math.round(i/o),a)}export{n as t};
