@@ -146,7 +146,7 @@ class LeadRequest extends FormRequest
                 },
             ],
 
-            'stage' => ['required', $this->activeStageRule($lead?->stage)],
+            'stage' => ['required', $this->activeStageRule($lead?->stage), $this->projectChosenRule($lead)],
             'reason' => [
                 'nullable', 'required_if:stage,lost',
                 Rule::in(array_keys(config('crm.lost_reasons'))),

@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Concerns;
 
+use App\Models\Integration;
+use App\Models\Lead;
 use App\Support\CrmTaxonomy;
 use Illuminate\Validation\Rule;
 
@@ -43,6 +45,35 @@ trait ValidatesTaxonomy
     protected function activeStageRule(?string $current = null)
     {
         return $this->taxonomyRule('lead_stages', $current, CrmTaxonomy::stageKeys());
+    }
+
+    /**
+     * A lead still on the WhatsApp default project has no real project yet,
+     * so it may only move to a telecaller stage or to lost — a salesperson's
+     * stage needs the project chosen first, with Switch project.
+     *
+     * The project is the one this request leaves the lead on: a submitted
+     * `project_id` (the edit form, or completing a follow-up with a switch),
+     * else the lead's own. Keeping the stage it already has is not a change.
+     */
+    protected function projectChosenRule(?Lead $lead): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($lead) {
+            if ($value === 'lost' || ($lead && $value === $lead->stage)) {
+                return;
+            }
+
+            if (CrmTaxonomy::ownerRoleFor((string) $value) === 'telecaller') {
+                return;
+            }
+
+            $projectId = (int) ($this->input('project_id') ?: $lead?->project_id);
+            $holding = Integration::whatsAppDefaultProjectId();
+
+            if ($holding !== null && $projectId === $holding) {
+                $fail('Choose the project first: use Switch project.');
+            }
+        };
     }
 
     /**

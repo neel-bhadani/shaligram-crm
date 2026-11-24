@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\ResolvesDateRange;
 use App\Http\Controllers\Concerns\ResolvesFilters;
 use App\Http\Requests\CompleteTodoRequest;
 use App\Http\Requests\TodoRequest;
+use App\Models\Integration;
 use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
@@ -149,6 +150,8 @@ class TodoController extends Controller
                 // the "Switch project" action's target picker — every active
                 // project, the same list the add-lead form offers
                 'projects' => Project::active()->get(['id', 'name']),
+                // leads on it show "Project not chosen"
+                'whatsAppDefaultProjectId' => Integration::whatsAppDefaultProjectId(),
                 /*
                  | assigned_to rides along so TodoFormModal can ask whether the
                  | person this lead belongs to is already busy at the time being

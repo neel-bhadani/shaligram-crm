@@ -121,8 +121,11 @@ class IntegrationController extends Controller
         // stable across saves — it is pasted into 11za
         $integration->ensureApiKey();
 
-        // the same table and the same upsert as Facebook's lead forms
-        $this->saveForms($integration->provider, (array) $request->validated('tags', []), (array) $request->validated('removed_tags', []));
+        // the same table and the same upsert as Facebook's lead forms; with
+        // tag routing off the page has no tag list, and the rows are kept
+        if (config("integrations.providers.{$integration->provider}.tag_routing")) {
+            $this->saveForms($integration->provider, (array) $request->validated('tags', []), (array) $request->validated('removed_tags', []));
+        }
 
         return back()->with('success', 'WhatsApp settings saved.');
     }
@@ -411,7 +414,8 @@ class IntegrationController extends Controller
                 'assign_to_user_id' => $integration?->setting('assign_to_user_id'),
             ],
             'forms' => null,
-            'tags' => $this->tags($provider),
+            'tag_routing' => (bool) config("integrations.providers.$provider.tag_routing"),
+            'tags' => config("integrations.providers.$provider.tag_routing") ? $this->tags($provider) : null,
             'webhook' => [
                 'url' => route('webhooks.whatsapp.customers'),
                 // generated on the first save, like the Meta verify token

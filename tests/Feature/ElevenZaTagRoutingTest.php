@@ -59,6 +59,9 @@ class ElevenZaTagRoutingTest extends TestCase
 
         Carbon::setTestNow(Carbon::parse('2026-09-07 11:30', 'Asia/Kolkata'));
 
+        // switched off by default; these tests are the behaviour when it is on
+        config(['integrations.providers.whatsapp.tag_routing' => true]);
+
         $this->admin = $this->user('admin', 'Ann');
         $this->tia = $this->user('telecaller', 'Tia');
         $this->tom = $this->user('telecaller', 'Tom');

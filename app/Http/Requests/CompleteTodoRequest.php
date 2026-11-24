@@ -37,7 +37,7 @@ class CompleteTodoRequest extends FormRequest
              | logged against a lead in a stage that has since been retired must
              | still be closeable, including by leaving the stage where it is.
              */
-            'stage' => ['required', $this->activeStageRule($this->route('todo')?->lead?->stage)],
+            'stage' => ['required', $this->activeStageRule($this->route('todo')?->lead?->stage), $this->projectChosenRule($this->route('todo')?->lead)],
 
             'reason' => [
                 'nullable',

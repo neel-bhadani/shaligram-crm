@@ -56,6 +56,12 @@ class IncomingLeadService
      * do, so it gets no follow-up at all; it exists so the volume of such
      * leads per source and form can be seen.
      *
+     * `$repeatOnAnyProject` widens the repeat check from this project to every
+     * project: a number with a live lead anywhere is a repeat enquiry on the
+     * most recently active one, and its owner is alerted. The 11za job asks
+     * for it while tag routing is off, when every lead lands on one holding
+     * project and the customer may already have been moved to their real one.
+     *
      * @param  array{first_name: string, last_name: string, mobile_number: ?string, email: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
@@ -67,6 +73,7 @@ class IncomingLeadService
         ?int $projectId = null,
         ?int $holderId = null,
         ?string $formId = null,
+        bool $repeatOnAnyProject = false,
     ): array {
         $projectId ??= (int) $integration->setting('default_project_id');
         $holder = User::find($holderId ?? $integration->setting('assign_to_user_id'));
@@ -98,7 +105,11 @@ class IncomingLeadService
         $lockKey = $attributes['mobile_number'] ?? "external:{$externalId}";
 
         $outcome = Cache::lock("incoming-lead:{$projectId}:{$lockKey}", 30)
-            ->block(10, fn () => $this->importOnce($externalId, $attributes + ['source_form_id' => $formId], $projectId, $holder, $source));
+            ->block(10, fn () => $this->importOnce($externalId, $attributes + ['source_form_id' => $formId], $projectId, $holder, $source, $repeatOnAnyProject));
+
+        if ($repeatOnAnyProject && $outcome['result'] === self::REPEAT) {
+            $this->alertRepeat($outcome['lead'], $source);
+        }
 
         if ($outcome['result'] === 'created' && $outcome['lead']->mobile_number === null && filled($outcome['lead']->email)) {
             $this->alertNoPhone($outcome['lead'], $source);
@@ -113,7 +124,7 @@ class IncomingLeadService
      * @param  array{first_name: string, last_name: string, mobile_number: ?string, email: ?string, source_form_id: ?string}  $attributes
      * @return array{result: string, lead: ?Lead, message: string}
      */
-    private function importOnce(string $externalId, array $attributes, int $projectId, User $holder, string $source): array
+    private function importOnce(string $externalId, array $attributes, int $projectId, User $holder, string $source, bool $repeatOnAnyProject = false): array
     {
         /*
          | Idempotency, first pass.
@@ -130,6 +141,22 @@ class IncomingLeadService
                 'result' => self::DUPLICATE,
                 'lead' => $existing,
                 'message' => "Already imported as lead #{$existing->id}; nothing created.",
+            ];
+        }
+
+        $returning = $repeatOnAnyProject && $attributes['mobile_number'] !== null
+            ? Lead::where('mobile_number', $attributes['mobile_number'])
+                ->with('project:id,name')
+                ->orderByDesc('last_activity_at')
+                ->orderByDesc('id')
+                ->first()
+            : null;
+
+        if ($returning) {
+            return [
+                'result' => self::REPEAT,
+                'lead' => $returning,
+                'message' => "Already a lead on {$returning->project?->name} (lead #{$returning->id}) — a repeat enquiry, not a new lead.",
             ];
         }
 
@@ -228,6 +255,23 @@ class IncomingLeadService
         }
 
         return ['result' => 'created', 'lead' => $lead, 'message' => "Lead #{$lead->id} created."];
+    }
+
+    /** A customer who already has a lead has enquired again: tell its owner. */
+    private function alertRepeat(Lead $lead, string $source): void
+    {
+        if ($lead->trashed() || ! $lead->owner) {
+            return;
+        }
+
+        $this->alerts->raise(
+            recipient: $lead->owner,
+            type: 'lead_repeat_enquiry',
+            title: "{$lead->full_name} enquired again",
+            body: 'This customer enquired again through '.config("integrations.providers.$source.name", $source)
+                .". They are already your lead on {$lead->project?->name}.",
+            lead: $lead,
+        );
     }
 
     /**

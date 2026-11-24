@@ -35,6 +35,11 @@ use Throwable;
  * update that newly tags a number for a project either leaves it alone (it is
  * already there), moves the unrouted lead 11za created on the default project,
  * or opens a new enquiry on that project — see handleUpdate().
+ *
+ * All of that only while `integrations.providers.whatsapp.tag_routing` is on.
+ * Off, tags and labels are ignored: every lead goes to the default project and
+ * the configured telecaller, who moves it with Switch project, and a number
+ * that is already a lead on any project is a repeat enquiry on that lead.
  */
 class ProcessWhatsAppLead implements ShouldQueue
 {
@@ -80,7 +85,8 @@ class ProcessWhatsAppLead implements ShouldQueue
                 );
             }
 
-            $routing = $router->routeTags($integration, $this->tags());
+            // with tag routing off, no tags: the default project and telecaller
+            $routing = $router->routeTags($integration, $this->tagRouting() ? $this->tags() : []);
 
             if ($this->type === 'update' && $this->handleUpdate($integration, $routing, $mobile, $externalId, $log, $followUps)) {
                 return;
@@ -121,7 +127,9 @@ class ProcessWhatsAppLead implements ShouldQueue
             $existing = Lead::withTrashed()
                 ->where('mobile_number', $mobile)
                 ->where('project_id', $defaultProjectId)
-                ->first();
+                ->first()
+                // already moved off the default project with Switch project
+                ?? ($this->tagRouting() ? null : $this->latestLiveLead($mobile));
 
             /*
              | An update for a number we already have, with no project to
@@ -188,6 +196,21 @@ class ProcessWhatsAppLead implements ShouldQueue
         return true;
     }
 
+    /** Whether 11za tags choose the project; see config/integrations.php. */
+    private function tagRouting(): bool
+    {
+        return (bool) config('integrations.providers.'.self::PROVIDER.'.tag_routing', false);
+    }
+
+    /** The most recently active live lead on this number, on any project. */
+    private function latestLiveLead(string $mobile): ?Lead
+    {
+        return Lead::where('mobile_number', $mobile)
+            ->orderByDesc('last_activity_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
     /**
      * The lead 11za created on the default project without a project of its
      * own, if it is still there and still open — the one an update tagging it
@@ -247,13 +270,15 @@ class ProcessWhatsAppLead implements ShouldQueue
             holderId: $routing['holder_id'],
             // the tag that chose the project; nothing when none did
             formId: $routing['routed'] ? $routing['route']->form_id : null,
+            // tag routing off: a number already on any project is that lead's repeat
+            repeatOnAnyProject: ! $this->tagRouting(),
         );
 
         $form = $this->form($routing);
 
         match ($outcome['result']) {
             IncomingLeadService::DUPLICATE => $log->duplicate(self::PROVIDER, $externalId, $outcome['message'], $form),
-            IncomingLeadService::REPEAT => $log->repeatEnquiry(self::PROVIDER, $externalId, $outcome['message'], $form),
+            IncomingLeadService::REPEAT => $log->repeatEnquiry(self::PROVIDER, $externalId, $outcome['message'], $form, $this->tagRouting() ? null : $outcome['lead']),
             default => $log->created(self::PROVIDER, $externalId, $outcome['lead'], $form + ['note' => $this->routingNote($routing)]),
         };
 
@@ -381,6 +406,10 @@ class ProcessWhatsAppLead implements ShouldQueue
     {
         if ($routing['routed']) {
             return null;
+        }
+
+        if (! $this->tagRouting()) {
+            return 'Every WhatsApp lead goes to the default project; use Switch project to move it.';
         }
 
         if ($routing['conflict'] !== null) {

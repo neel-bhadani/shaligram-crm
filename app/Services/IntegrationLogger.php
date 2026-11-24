@@ -72,11 +72,13 @@ class IntegrationLogger
      * pending follow-up, so making another would split one conversation across
      * two rows. Worth seeing, which is why it is its own result.
      *
+     * `$lead`, when given, links the row to the lead it repeats.
+     *
      * @param  array{form_id?: ?string, form_name?: ?string}  $form
      */
-    public function repeatEnquiry(string $provider, string $externalId, string $message, array $form = []): IntegrationEvent
+    public function repeatEnquiry(string $provider, string $externalId, string $message, array $form = [], ?Lead $lead = null): IntegrationEvent
     {
-        return $this->write($provider, 'repeat_enquiry', $externalId, $message, form: $form);
+        return $this->write($provider, 'repeat_enquiry', $externalId, $message, $lead?->id, $form);
     }
 
     /**
