@@ -10,10 +10,12 @@ use App\Models\Lead;
 use App\Models\Project;
 use App\Models\Todo;
 use App\Models\User;
+use App\Services\IntegrationLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -155,16 +157,21 @@ class IntegrationsPageTest extends TestCase
             );
     }
 
-    public function test_the_card_shows_when_a_lead_last_arrived(): void
+    /** A test lead proves the import, not that Meta can reach us. */
+    public function test_a_test_lead_is_neither_a_delivery_nor_a_lead_received(): void
     {
         $this->connect();
         $this->sendTestLead()->assertSessionHas('success');
 
+        $this->assertNull(Integration::forProvider('facebook')->last_delivery_at);
+
         $this->actingAs($this->admin)
             ->get('/integrations')
             ->assertInertia(fn (Assert $page) => $page
-                ->where('cards.0.connected', true)
-                ->whereNot('cards.0.last_received_at', null)
+                ->where('cards.0.ready', true)
+                ->where('cards.0.connected', false)
+                ->where('cards.0.last_received_at', null)
+                ->where('cards.0.last_delivery_at', null)
             );
     }
 
@@ -237,7 +244,9 @@ class IntegrationsPageTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('cards.0.webhook.url', url('/webhooks/facebook/leads'))
                 ->where('cards.0.webhook.verify_token', $integration->setting('verify_token'))
-                ->where('cards.0.connected', true)
+                // saved and switched on, but Meta has not delivered anything yet
+                ->where('cards.0.ready', true)
+                ->where('cards.0.connected', false)
             );
     }
 
@@ -543,7 +552,8 @@ class IntegrationsPageTest extends TestCase
         $response->assertInertia(fn (Assert $page) => $page
             ->where('cards.2.webhook.url', url('/webhooks/whatsapp/customers'))
             ->where('cards.2.webhook.api_key', $key)
-            ->where('cards.2.connected', true)
+            ->where('cards.2.ready', true)
+            ->where('cards.2.connected', false)
             ->where('cards.2.forms', null)
             ->missing('cards.2.settings.api_key')
             ->missing('cards.2.settings.auth_token')
@@ -570,6 +580,131 @@ class IntegrationsPageTest extends TestCase
         $this->assertNotNull($lead->pendingTodo);
     }
 
+    /* ---------------- connected means delivered ---------------- */
+
+    public function test_saved_whatsapp_settings_are_waiting_for_the_first_delivery(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.configured', true)
+                ->where('cards.2.ready', true)
+                ->where('cards.2.connected', false)
+                ->where('cards.2.key_mismatch', false)
+                ->where('cards.2.last_delivery_at', null)
+            );
+    }
+
+    public function test_a_delivery_with_the_right_api_key_connects_the_whatsapp_card(): void
+    {
+        Queue::fake();
+        $this->saveWhatsApp();
+
+        $this->deliverToElevenZa(Integration::forProvider('whatsapp')->setting('api_key'))->assertOk();
+
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.connected', true)
+                ->where('cards.2.key_mismatch', false)
+                ->where('cards.2.last_delivery_at', now()->toIso8601String())
+            );
+    }
+
+    public function test_a_wrong_api_key_reads_as_a_mismatch_until_a_correct_delivery(): void
+    {
+        Queue::fake();
+        $this->saveWhatsApp();
+
+        $this->deliverToElevenZa('not-our-key')->assertUnauthorized();
+
+        $this->assertNotNull(Integration::forProvider('whatsapp')->last_rejected_at);
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.key_mismatch', true)
+                ->where('cards.2.connected', false)
+            );
+
+        Carbon::setTestNow(now()->addMinutes(5));
+        $this->deliverToElevenZa(Integration::forProvider('whatsapp')->setting('api_key'))->assertOk();
+
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.key_mismatch', false)
+                ->where('cards.2.connected', true)
+            );
+    }
+
+    public function test_a_request_with_no_api_key_is_not_a_key_mismatch(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->deliverToElevenZa(null)->assertUnauthorized();
+
+        $this->assertNull(Integration::forProvider('whatsapp')->last_rejected_at);
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.key_mismatch', false)
+                ->where('cards.2.connected', false)
+            );
+    }
+
+    public function test_a_whatsapp_test_lead_moves_neither_last_received_at_nor_last_delivery_at(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)->post('/integrations/whatsapp/test')->assertSessionHas('success');
+
+        $integration = Integration::forProvider('whatsapp');
+        $this->assertSame(1, Lead::count());
+        $this->assertNull($integration->last_received_at);
+        $this->assertNull($integration->last_delivery_at);
+    }
+
+    /** No save-and-restore: a real lead logged while a test runs keeps its timestamp. */
+    public function test_a_real_lead_logged_during_a_test_lead_still_moves_last_received_at(): void
+    {
+        $this->connect();
+        Integration::where('provider', 'facebook')->update(['last_received_at' => now()->subDay()]);
+
+        $realLeadLogged = false;
+        IntegrationEvent::created(function (IntegrationEvent $event) use (&$realLeadLogged) {
+            if ($realLeadLogged || $event->lead_id === null) {
+                return;
+            }
+
+            $realLeadLogged = true;
+            app(IntegrationLogger::class)->created('facebook', 'real-lead-1', Lead::findOrFail($event->lead_id));
+        });
+
+        $this->sendTestLead()->assertSessionHas('success');
+
+        $this->assertTrue($realLeadLogged);
+        $this->assertEquals(now(), Integration::forProvider('facebook')->last_received_at);
+        $this->assertNull(Integration::forProvider('facebook')->last_delivery_at);
+    }
+
+    public function test_the_whatsapp_test_lead_works_when_ready_and_does_not_connect_the_card(): void
+    {
+        $this->saveWhatsApp();
+
+        $this->actingAs($this->admin)->post('/integrations/whatsapp/test')->assertSessionHas('success');
+
+        $this->assertSame(1, Lead::count());
+        $this->assertNull(Integration::forProvider('whatsapp')->last_delivery_at);
+        $this->actingAs($this->admin)
+            ->get('/integrations')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('cards.2.ready', true)
+                ->where('cards.2.connected', false)
+            );
+    }
+
     public function test_whatsapp_has_no_lead_forms_to_load(): void
     {
         $this->saveWhatsApp();
@@ -586,6 +721,14 @@ class IntegrationsPageTest extends TestCase
             'assign_to_user_id' => $this->owner->id,
             'is_active' => true,
         ], $overrides));
+    }
+
+    private function deliverToElevenZa(?string $key)
+    {
+        return $this->postJson('/webhooks/whatsapp/customers', [
+            'type' => 'insert',
+            'data' => ['name' => 'Asha Mehta', 'mobileNo' => '919820012345', 'updatedAt' => '2026-09-07T06:00:00.000Z'],
+        ], ['x-api-key' => $key]);
     }
 
     /** A configured Facebook integration, written the way the form writes one. */

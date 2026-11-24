@@ -27,13 +27,18 @@ class IntegrationLogger
      * `note` replaces that Facebook wording with the caller's own — the 11za
      * job explains routing by tag rather than by form.
      *
+     * `countAsReceived` is false for a Send test lead run: the lead is real,
+     * but nobody sent it, so it does not move "Last lead received".
+     *
      * @param  array{form_id?: ?string, form_name?: ?string, routed?: ?bool, note?: ?string}  $form
      */
-    public function created(string $provider, string $externalId, Lead $lead, array $form = []): IntegrationEvent
+    public function created(string $provider, string $externalId, Lead $lead, array $form = [], bool $countAsReceived = true): IntegrationEvent
     {
         // the only outcome that means a lead actually arrived, so it is the
         // only one that moves the card's "Last lead received"
-        Integration::where('provider', $provider)->update(['last_received_at' => now()]);
+        if ($countAsReceived) {
+            Integration::where('provider', $provider)->update(['last_received_at' => now()]);
+        }
 
         $message = "Lead #{$lead->id} created.";
 

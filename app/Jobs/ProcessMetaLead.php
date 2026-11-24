@@ -55,6 +55,7 @@ class ProcessMetaLead implements ShouldQueue
         public string $leadgenId,
         public ?array $fieldData = null,
         public ?string $formId = null,
+        public bool $isTestRun = false,
     ) {}
 
     public function handle(
@@ -115,7 +116,7 @@ class ProcessMetaLead implements ShouldQueue
             match ($outcome['result']) {
                 IncomingLeadService::DUPLICATE => $log->duplicate($this->provider, $this->leadgenId, $outcome['message'], $form),
                 IncomingLeadService::REPEAT => $log->repeatEnquiry($this->provider, $this->leadgenId, $outcome['message'], $form),
-                default => $log->created($this->provider, $this->leadgenId, $outcome['lead'], $form),
+                default => $log->created($this->provider, $this->leadgenId, $outcome['lead'], $form, countAsReceived: ! $this->isTestRun),
             };
 
             if ($outcome['result'] === 'created' && ! $routing['routed']) {

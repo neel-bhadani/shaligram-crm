@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import FacebookSettingsModal from '@/Components/FacebookSettingsModal.vue'
 import WhatsAppSettingsModal from '@/Components/WhatsAppSettingsModal.vue'
+import { relativeTime } from '@/lib/relativeTime.js'
 
 /*
  | Integrations, admin only.
@@ -53,11 +54,37 @@ const sendTest = card => {
 
 /* ---------------- display helpers ---------------- */
 
+/*
+ | "Connected" means the provider has really delivered something that passed
+ | the key or signature check (last_delivery_at), never just a saved form and
+ | never a Send test lead — see IntegrationController::card().
+ */
+const AMBER = 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+
 const status = card => {
+  const whatsApp = card.family === 'whatsapp'
   if (!card.built) return { label: 'Coming soon', class: 'bg-slate-100 text-slate-500' }
-  if (card.connected) return { label: 'Connected', class: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' }
-  if (card.configured) return { label: 'Switched off', class: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' }
-  return { label: 'Not connected', class: 'bg-slate-100 text-slate-500' }
+  if (!card.configured) return { label: 'Not set up', class: 'bg-slate-100 text-slate-500' }
+  if (!card.ready) return { label: 'Switched off', class: AMBER }
+  if (card.key_mismatch) return {
+    label: "Key doesn't match",
+    class: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
+    help: whatsApp
+      ? '11za is calling the CRM but the API key is wrong. Copy the key again from Configure into 11za.'
+      : "Meta is sending leads but the App Secret doesn't match.",
+  }
+  if (!card.connected) return {
+    label: 'Waiting for first delivery',
+    class: AMBER,
+    help: whatsApp
+      ? "Paste the API URL and key into 11za (Inbound Webhooks → Customer Webhook). This turns to Connected after 11za's first delivery."
+      : "Paste the callback URL and verify token into the Meta app dashboard under Webhooks → Page → leadgen. This turns to Connected after Meta's first delivery.",
+  }
+  return {
+    label: 'Connected',
+    class: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+    help: card.last_delivery_at ? `Last delivery: ${relativeTime(card.last_delivery_at)}` : null,
+  }
 }
 
 const resultChip = result => {
@@ -113,6 +140,11 @@ const unmappedForms = computed(() =>
 
         <p class="mb-4 flex-1 text-xs leading-relaxed text-slate-500">{{ card.description }}</p>
 
+        <p v-if="status(card).help" class="mb-3 text-xs leading-relaxed"
+           :class="card.key_mismatch ? 'text-rose-700' : 'text-slate-500'">
+          {{ status(card).help }}
+        </p>
+
         <dl class="mb-4 space-y-1 border-t border-slate-100 pt-3 text-xs">
           <div class="flex justify-between gap-2">
             <dt class="text-slate-400">Last lead received</dt>
@@ -129,13 +161,14 @@ const unmappedForms = computed(() =>
           </button>
 
           <!--
-            Only on a connected card: a test lead runs the real import, so
-            offering it before there is a project and an owner to file one
-            against would only ever produce a failure in the log.
+            Only on a ready card (configured and switched on): a test lead runs
+            the real import, so offering it before there is a project and an
+            owner to file one against would only ever produce a failure in the
+            log. It does not need a delivery first — that is what it is for.
           -->
           <button v-if="card.built" class="btn flex-1 !px-3 !py-1.5 !text-xs"
-                  :disabled="!card.connected || testing === card.provider"
-                  :title="card.connected ? 'Runs the real import with a fake lead' : 'Connect the integration first'"
+                  :disabled="!card.ready || testing === card.provider"
+                  :title="card.ready ? 'Runs the real import with a fake lead' : 'Connect the integration first'"
                   @click="sendTest(card)">
             {{ testing === card.provider ? 'Sending…' : 'Send test lead' }}
           </button>

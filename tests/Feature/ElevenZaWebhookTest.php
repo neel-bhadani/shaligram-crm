@@ -96,6 +96,55 @@ class ElevenZaWebhookTest extends TestCase
         $this->assertSame(0, IntegrationEvent::count());
     }
 
+    public function test_a_matching_key_records_the_delivery(): void
+    {
+        Queue::fake();
+
+        $this->deliver($this->payload())->assertOk();
+
+        $integration = Integration::forProvider('whatsapp');
+        $this->assertEquals(now(), $integration->last_delivery_at);
+        $this->assertNull($integration->last_rejected_at);
+    }
+
+    /** The URL is public, so a flood of bad keys is one write a minute. */
+    public function test_a_rejected_key_is_recorded_at_most_once_a_minute(): void
+    {
+        $this->deliver($this->payload(), key: 'not-our-key')->assertUnauthorized();
+        $first = Integration::forProvider('whatsapp')->last_rejected_at;
+        $this->assertNotNull($first);
+        $this->assertNull(Integration::forProvider('whatsapp')->last_delivery_at);
+
+        Carbon::setTestNow(now()->addSeconds(30));
+        $this->deliver($this->payload(), key: 'not-our-key')->assertUnauthorized();
+        $this->assertEquals($first, Integration::forProvider('whatsapp')->last_rejected_at);
+
+        Carbon::setTestNow(now()->addSeconds(31));
+        $this->deliver($this->payload(), key: 'still-not-our-key')->assertUnauthorized();
+        $this->assertEquals(now(), Integration::forProvider('whatsapp')->last_rejected_at);
+    }
+
+    /** A bot probing the public URL with no header must not turn the badge red. */
+    public function test_a_request_with_no_api_key_header_is_refused_but_not_recorded(): void
+    {
+        $this->deliver($this->payload(), key: null)->assertUnauthorized();
+
+        $integration = Integration::forProvider('whatsapp');
+        $this->assertNull($integration->last_rejected_at);
+        $this->assertFalse($integration->keyMismatch());
+    }
+
+    public function test_a_rejection_is_not_recorded_before_there_is_a_key(): void
+    {
+        $integration = Integration::forProvider('whatsapp');
+        $integration->mergeSettings(['api_key' => null]);
+        $integration->save();
+
+        $this->deliver($this->payload(), key: 'anything')->assertUnauthorized();
+
+        $this->assertNull(Integration::forProvider('whatsapp')->last_rejected_at);
+    }
+
     public function test_the_route_is_public_stateless_and_rate_limited(): void
     {
         $middleware = Route::getRoutes()->getByName('webhooks.whatsapp.customers')->gatherMiddleware();

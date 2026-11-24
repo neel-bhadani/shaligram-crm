@@ -55,10 +55,12 @@ class ProcessWhatsAppLead implements ShouldQueue
     /**
      * @param  string  $type  "insert" or "update", as 11za sent it
      * @param  array{name?: ?string, mobileNo?: ?string, updatedAt?: ?string, tags?: array|string|null, masterstatus?: ?string, teamMemberEmail?: ?string, teamMemberName?: ?string}  $data
+     * @param  bool  $isTestRun  Send test lead: the lead is real, but it is not a lead received
      */
     public function __construct(
         public string $type,
         public array $data,
+        public bool $isTestRun = false,
     ) {}
 
     public function handle(
@@ -279,7 +281,7 @@ class ProcessWhatsAppLead implements ShouldQueue
         match ($outcome['result']) {
             IncomingLeadService::DUPLICATE => $log->duplicate(self::PROVIDER, $externalId, $outcome['message'], $form),
             IncomingLeadService::REPEAT => $log->repeatEnquiry(self::PROVIDER, $externalId, $outcome['message'], $form, $this->tagRouting() ? null : $outcome['lead']),
-            default => $log->created(self::PROVIDER, $externalId, $outcome['lead'], $form + ['note' => $this->routingNote($routing)]),
+            default => $log->created(self::PROVIDER, $externalId, $outcome['lead'], $form + ['note' => $this->routingNote($routing)], countAsReceived: ! $this->isTestRun),
         };
 
         if ($outcome['result'] === 'created' && ! $routing['routed']) {

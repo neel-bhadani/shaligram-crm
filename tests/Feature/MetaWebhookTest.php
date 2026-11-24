@@ -122,7 +122,58 @@ class MetaWebhookTest extends TestCase
         ]))->assertForbidden();
     }
 
+    public function test_the_handshake_records_neither_a_delivery_nor_a_rejection(): void
+    {
+        $this->get(self::URL.'?'.http_build_query([
+            'hub.verify_token' => Integration::forProvider('facebook')->setting('verify_token'),
+            'hub.challenge' => '1158201444',
+        ]))->assertOk();
+        $this->get(self::URL.'?'.http_build_query([
+            'hub.verify_token' => 'not-the-stored-token',
+            'hub.challenge' => '1158201444',
+        ]))->assertForbidden();
+
+        $integration = Integration::forProvider('facebook');
+        $this->assertNull($integration->last_delivery_at);
+        $this->assertNull($integration->last_rejected_at);
+    }
+
     /* ---------------- the door ---------------- */
+
+    public function test_a_signed_delivery_records_the_delivery(): void
+    {
+        Queue::fake();
+
+        $this->deliver($this->payload())->assertOk();
+
+        $integration = Integration::forProvider('facebook');
+        $this->assertEquals(now(), $integration->last_delivery_at);
+        $this->assertNull($integration->last_rejected_at);
+    }
+
+    public function test_a_missing_signature_header_is_refused_but_not_recorded(): void
+    {
+        Queue::fake();
+
+        $this->call('POST', self::URL, [], [], [], ['CONTENT_TYPE' => 'application/json'], json_encode($this->payload()))
+            ->assertForbidden();
+
+        $integration = Integration::forProvider('facebook');
+        $this->assertNull($integration->last_rejected_at);
+        $this->assertFalse($integration->keyMismatch());
+    }
+
+    public function test_an_invalid_signature_records_a_rejection(): void
+    {
+        Queue::fake();
+
+        $this->deliver($this->payload(), secret: 'someone-elses-secret')->assertForbidden();
+
+        $integration = Integration::forProvider('facebook');
+        $this->assertEquals(now(), $integration->last_rejected_at);
+        $this->assertNull($integration->last_delivery_at);
+        $this->assertTrue($integration->keyMismatch());
+    }
 
     public function test_an_invalid_signature_returns_403_and_queues_nothing(): void
     {

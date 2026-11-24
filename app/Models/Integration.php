@@ -23,6 +23,8 @@ class Integration extends Model
         'settings' => 'encrypted:array',
         'is_active' => 'boolean',
         'last_received_at' => 'datetime',
+        'last_delivery_at' => 'datetime',
+        'last_rejected_at' => 'datetime',
     ];
 
     /** The keys that must never be sent to the browser in the clear. */
@@ -150,6 +152,37 @@ class Integration extends Model
         }
 
         return true;
+    }
+
+    /**
+     * A provider request passed the key or signature check. One update query,
+     * no model events: it runs on every webhook delivery.
+     */
+    public static function recordDelivery(string $provider): void
+    {
+        static::where('provider', $provider)->update(['last_delivery_at' => now()]);
+    }
+
+    /**
+     * A request was refused for a wrong or missing key or signature, on a row
+     * that has a secret to compare against. The endpoints are public, so this
+     * writes at most once a minute however often it is called.
+     */
+    public static function recordRejection(string $provider): void
+    {
+        static::where('provider', $provider)
+            ->where(fn ($q) => $q->whereNull('last_rejected_at')->orWhere('last_rejected_at', '<', now()->subMinute()))
+            ->update(['last_rejected_at' => now()]);
+    }
+
+    /** Whether the last request seen was refused rather than delivered. */
+    public function keyMismatch(): bool
+    {
+        if ($this->last_rejected_at === null) {
+            return false;
+        }
+
+        return $this->last_delivery_at === null || $this->last_rejected_at->greaterThan($this->last_delivery_at);
     }
 
     /** Whether it is switched on AND has what it needs. */

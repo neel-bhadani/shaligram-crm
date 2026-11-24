@@ -264,7 +264,7 @@ class IntegrationController extends Controller
                 ['name' => 'email',        'values' => ['test.lead@example.com']],
                 // an unrecognised question, so the test exercises that branch too
                 ['name' => 'preferred_bhk', 'values' => ['3 BHK']],
-            ]);
+            ], isTestRun: true);
         } catch (Throwable $e) {
             /*
              | The job rethrows a transient failure, because a queued delivery
@@ -293,7 +293,7 @@ class IntegrationController extends Controller
                 'name' => 'Test Lead',
                 'mobileNo' => '91'.$this->testPhone(),
                 'updatedAt' => now()->toIso8601ZuluString('millisecond'),
-            ]);
+            ], isTestRun: true);
         } catch (Throwable $e) {
             return back()->with('error', 'The test lead failed: '.$e->getMessage());
         }
@@ -356,11 +356,15 @@ class IntegrationController extends Controller
             'description' => $meta['description'],
             'built' => $built,
 
-            // "Connected" is switched on AND able to work, never just a saved row
-            'connected' => $built && $integration?->isReady(),
+            // "Connected" is ready AND Meta has delivered something signed,
+            // never just a saved row
+            'connected' => $built && $integration?->isReady() && $integration->last_delivery_at !== null,
+            'ready' => $built && $integration?->isReady(),
             'configured' => $built && $integration?->isConfigured(),
             'is_active' => $built && (bool) $integration?->is_active,
             'last_received_at' => $integration?->last_received_at?->toIso8601String(),
+            'last_delivery_at' => $integration?->last_delivery_at?->toIso8601String(),
+            'key_mismatch' => $built && (bool) $integration?->keyMismatch(),
 
             'settings' => $built ? [
                 // never the tokens themselves — the last four characters, so an
@@ -405,10 +409,14 @@ class IntegrationController extends Controller
             'name' => $meta['name'],
             'description' => $meta['description'],
             'built' => true,
-            'connected' => (bool) $integration?->isReady(),
+            // ready AND 11za has delivered something with the right key
+            'connected' => $integration?->isReady() && $integration->last_delivery_at !== null,
+            'ready' => (bool) $integration?->isReady(),
             'configured' => (bool) $integration?->isConfigured(),
             'is_active' => (bool) $integration?->is_active,
             'last_received_at' => $integration?->last_received_at?->toIso8601String(),
+            'last_delivery_at' => $integration?->last_delivery_at?->toIso8601String(),
+            'key_mismatch' => (bool) $integration?->keyMismatch(),
             'settings' => [
                 'default_project_id' => $integration?->setting('default_project_id'),
                 'assign_to_user_id' => $integration?->setting('assign_to_user_id'),

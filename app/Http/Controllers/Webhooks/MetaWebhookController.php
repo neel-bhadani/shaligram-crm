@@ -88,8 +88,16 @@ class MetaWebhookController extends Controller
         if ($secret === '' || ! $this->signatureIsValid($request, $secret)) {
             Log::warning("[integration:{$provider}] webhook signature rejected", ['ip' => $request->ip()]);
 
+            // only a signature that was sent and is wrong, against a secret we
+            // have: a request with no signature header is not Meta
+            if ($secret !== '' && filled($request->header('X-Hub-Signature-256'))) {
+                Integration::recordRejection($provider);
+            }
+
             return response('Invalid signature.', 403);
         }
+
+        Integration::recordDelivery($provider);
 
         /*
          | Signed, so it is Meta — but not necessarily switched on. A payload
