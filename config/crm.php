@@ -157,13 +157,11 @@ return [
     // what a lead is looking for; order here is the order they are stored and shown in
     'residence_types' => [
         '2_bhk' => '2 BHK',
-        '2_5_bhk' => '2.5 BHK',
         '3_bhk' => '3 BHK',
         '3_5_bhk' => '3.5 BHK',
         '4_bhk' => '4 BHK',
-        '4_5_bhk' => '4.5 BHK',
         '5_bhk' => '5 BHK',
-        '5_5_bhk' => '5.5 BHK',
+        'sky_villa' => 'Sky Villa',
     ],
 
     'floors' => [

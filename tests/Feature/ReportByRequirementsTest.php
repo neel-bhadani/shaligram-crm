@@ -62,7 +62,7 @@ class ReportByRequirementsTest extends TestCase
     public static function dimensions(): array
     {
         return [
-            'residence type' => ['residence_type', 'residence_types', 'crm.residence_types', ['2_bhk', '3_bhk', '2_5_bhk']],
+            'residence type' => ['residence_type', 'residence_types', 'crm.residence_types', ['2_bhk', '3_bhk', 'sky_villa']],
             'floor' => ['floor', 'preferred_floors', 'crm.floors', ['1', '2', '11']],
         ];
     }
@@ -253,6 +253,20 @@ class ReportByRequirementsTest extends TestCase
         $this->assertSame(1, $report['rows'][self::NOT_SPECIFIED]['total']);
         $this->assertSame(4, $report['totals']['total'], 'distinct leads, not the sum of the rows');
         $this->assertEquals(50, $report['rows']['penthouse']['share']);
+    }
+
+    public function test_residence_type_rows_include_sky_villa_and_not_the_retired_half_bhk_types(): void
+    {
+        $this->lead(['residence_types' => ['4_bhk', 'sky_villa']]);
+
+        $report = $this->report('residence_type');
+
+        $this->assertSame(
+            ['2 BHK', '3 BHK', '3.5 BHK', '4 BHK', '5 BHK', 'Sky Villa', 'Not specified'],
+            array_column($report['rows'], 'label'),
+        );
+        $this->assertSame(1, $report['rows']['sky_villa']['total']);
+        $this->assertSame(1, $report['rows']['4_bhk']['total']);
     }
 
     /** @return array{rows: array<string, array<string, mixed>>, totals: array<string, mixed>, multi: bool} */

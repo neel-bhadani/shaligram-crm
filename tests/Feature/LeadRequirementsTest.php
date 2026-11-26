@@ -46,13 +46,13 @@ class LeadRequirementsTest extends TestCase
     public function test_selections_are_stored_as_keys_in_config_order(): void
     {
         $lead = $this->createLead([
-            'residence_types' => ['4_bhk', '2_5_bhk', '3_bhk'],
+            'residence_types' => ['4_bhk', '3_5_bhk', '3_bhk'],
             'preferred_floors' => ['12', 3, '1'],
         ]);
 
-        $this->assertSame(['2_5_bhk', '3_bhk', '4_bhk'], $lead->residence_types);
+        $this->assertSame(['3_bhk', '3_5_bhk', '4_bhk'], $lead->residence_types);
         $this->assertSame(['1', '3', '12'], $lead->preferred_floors);
-        $this->assertSame('2.5 BHK, 3 BHK, 4 BHK', $lead->residence_type_labels);
+        $this->assertSame('3 BHK, 3.5 BHK, 4 BHK', $lead->residence_type_labels);
         $this->assertSame('1st Floor, 3rd Floor, 12th Floor', $lead->preferred_floor_labels);
     }
 
@@ -95,6 +95,7 @@ class LeadRequirementsTest extends TestCase
     {
         return [
             'unknown residence type' => ['residence_types', ['3_bhk', '9_bhk'], 'residence_types.1'],
+            'retired residence type' => ['residence_types', ['2_5_bhk'], 'residence_types.0'],
             'duplicate residence type' => ['residence_types', ['3_bhk', '3_bhk'], 'residence_types.0'],
             'residence types not a list' => ['residence_types', '3_bhk', 'residence_types'],
             'unknown floor' => ['preferred_floors', ['15'], 'preferred_floors.0'],
@@ -237,11 +238,72 @@ class LeadRequirementsTest extends TestCase
             ->where('options.floors.penthouse', 'Penthouse'));
     }
 
+    public function test_sky_villa_can_be_saved_on_its_own(): void
+    {
+        $lead = $this->createLead(['residence_types' => ['sky_villa']]);
+
+        $this->assertSame(['sky_villa'], $lead->residence_types);
+        $this->assertSame('Sky Villa', $lead->residence_type_labels);
+    }
+
+    public function test_sky_villa_is_stored_after_the_bhk_types_and_labelled_in_the_view_popup_and_the_table_line(): void
+    {
+        $lead = $this->createLead(['residence_types' => ['sky_villa', '4_bhk']]);
+
+        $this->assertSame(['4_bhk', 'sky_villa'], $lead->residence_types);
+
+        $this->getJson("/leads/{$lead->id}")->assertOk()
+            ->assertJsonPath('lead.residence_type_labels', '4 BHK, Sky Villa');
+
+        $this->get('/leads')->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('leads.data.0.residence_types', ['4_bhk', 'sky_villa'])
+            ->where('options.residenceTypes.sky_villa', 'Sky Villa'));
+    }
+
+    public function test_the_retired_half_bhk_types_are_no_longer_options(): void
+    {
+        $this->assertSame(
+            ['2_bhk' => '2 BHK', '3_bhk' => '3 BHK', '3_5_bhk' => '3.5 BHK', '4_bhk' => '4 BHK', '5_bhk' => '5 BHK', 'sky_villa' => 'Sky Villa'],
+            config('crm.residence_types'),
+        );
+    }
+
+    public function test_the_migration_removes_retired_types_from_every_lead(): void
+    {
+        $mixed = $this->storedLead(['2_5_bhk', '4_bhk']);
+        $only = $this->storedLead(['5_5_bhk']);
+        $untouched = $this->storedLead(['3_bhk', 'sky_villa']);
+        $only->delete();
+
+        (require database_path('migrations/2026_11_25_175301_remove_retired_residence_types_from_leads.php'))->up();
+
+        $this->assertSame(['4_bhk'], $mixed->fresh()->residence_types);
+        $this->assertNull(DB::table('leads')->where('id', $only->id)->value('residence_types'), 'soft-deleted leads too, and null when nothing is left');
+        $this->assertSame(['3_bhk', 'sky_villa'], $untouched->fresh()->residence_types);
+    }
+
     /* ---------------- fixtures ---------------- */
 
     private function leadWithRequirements(): Lead
     {
         return $this->createLead(['residence_types' => ['3_bhk'], 'preferred_floors' => ['4', '5']]);
+    }
+
+    /** @param  list<string>  $residenceTypes  written straight to the column, bypassing validation */
+    private function storedLead(array $residenceTypes): Lead
+    {
+        $lead = Lead::create([
+            'first_name' => 'Meera',
+            'last_name' => 'Sharma',
+            'mobile_number' => (string) fake()->unique()->numberBetween(9000000000, 9999999999),
+            'project_id' => $this->project->id,
+            'source' => 'walk_in',
+            'stage' => 'fresh',
+            'created_by' => $this->admin->id,
+        ]);
+        DB::table('leads')->where('id', $lead->id)->update(['residence_types' => json_encode($residenceTypes)]);
+
+        return $lead;
     }
 
     /** @param  array<string, mixed>  $fields */

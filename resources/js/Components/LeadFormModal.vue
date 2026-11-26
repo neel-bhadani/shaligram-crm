@@ -480,7 +480,7 @@ const submit = () => {
       <div class="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Requirements</div>
 
       <FormField label="Type of residence" :error="form.errors.residence_types">
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" role="group" aria-label="Type of residence">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3" role="group" aria-label="Type of residence">
           <label v-for="(label, key) in options.residenceTypes" :key="key" class="flex items-center gap-2 text-sm">
             <input v-model="form.residence_types" type="checkbox" :value="key" class="h-4 w-4 flex-none" />
             {{ label }}
